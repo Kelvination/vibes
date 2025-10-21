@@ -377,13 +377,27 @@ function showWinScreen() {
 }
 
 function startGame() {
+    console.log('Starting game...', {
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        gameState: gameState
+    });
+
     gameState = 'playing';
     document.getElementById('start-screen').classList.add('hidden');
+
     ball.reset();
     slingshot.init();
     createTargets();
     updateScore();
     updateLevel();
+
+    console.log('Game started!', {
+        ballPos: { x: ball.x, y: ball.y },
+        slingshotPos: { x: slingshot.x, y: slingshot.y },
+        numTargets: targets.length,
+        gameState: gameState
+    });
 }
 
 function nextLevel() {
@@ -397,8 +411,17 @@ function nextLevel() {
 }
 
 // Button event listeners
-document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('start-btn').addEventListener('click', () => {
+    console.log('Start button clicked!');
+    startGame();
+});
 document.getElementById('next-level-btn').addEventListener('click', nextLevel);
+
+// Initialize on page load
+console.log('Game initializing...', {
+    canvasWidth: canvas.width,
+    canvasHeight: canvas.height
+});
 
 // Start game loop
 gameLoop();
