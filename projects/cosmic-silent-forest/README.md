@@ -2,6 +2,8 @@
 
 A mobile-first responsive browser game featuring physics-based slingshot mechanics.
 
+**Play now:** Automatically deployed to Vercel on every update!
+
 ## How to Play
 
 1. **Pull**: Touch and drag down on the golden ball at the bottom of the screen
