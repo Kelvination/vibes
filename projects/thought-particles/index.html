@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thought Particles - Watch Your Ideas Form</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1447 100%);
+            color: #e0e7ff;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        .ui {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 2rem;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .ui > * {
+            pointer-events: auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            font-size: clamp(1.5rem, 5vw, 3rem);
+            font-weight: 300;
+            letter-spacing: 0.05em;
+            background: linear-gradient(45deg, #818cf8, #c084fc, #818cf8);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: gradientShift 4s ease infinite;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: #a5b4fc;
+            margin-top: 0.5rem;
+            font-weight: 300;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+
+        button {
+            background: rgba(129, 140, 248, 0.1);
+            border: 1px solid rgba(129, 140, 248, 0.3);
+            color: #c7d2fe;
+            padding: 0.75rem 1.5rem;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            font-family: inherit;
+        }
+
+        button:hover {
+            background: rgba(129, 140, 248, 0.2);
+            border-color: rgba(129, 140, 248, 0.5);
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .input-container {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 600px;
+            z-index: 10;
+        }
+
+        #thoughtInput {
+            width: 100%;
+            background: rgba(30, 27, 75, 0.8);
+            border: 1px solid rgba(129, 140, 248, 0.3);
+            border-radius: 16px;
+            padding: 1rem 1.5rem;
+            color: #e0e7ff;
+            font-size: 1rem;
+            font-family: inherit;
+            backdrop-filter: blur(20px);
+            transition: all 0.3s ease;
+        }
+
+        #thoughtInput:focus {
+            outline: none;
+            border-color: rgba(129, 140, 248, 0.6);
+            box-shadow: 0 0 20px rgba(129, 140, 248, 0.2);
+        }
+
+        #thoughtInput::placeholder {
+            color: rgba(165, 180, 252, 0.5);
+        }
+
+        .info {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            font-size: 0.8rem;
+            color: rgba(165, 180, 252, 0.6);
+            text-align: right;
+            max-width: 200px;
+        }
+
+        @media (max-width: 768px) {
+            .ui {
+                padding: 1rem;
+            }
+
+            .controls {
+                gap: 0.5rem;
+            }
+
+            button {
+                padding: 0.6rem 1rem;
+                font-size: 0.8rem;
+            }
+
+            .input-container {
+                bottom: 1rem;
+                width: 95%;
+            }
+
+            .info {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui">
+        <div class="header">
+            <h1>Thought Particles</h1>
+            <p class="subtitle">Type your thoughts. Watch them become matter.</p>
+        </div>
+        <div class="controls">
+            <button id="clearBtn">Clear Canvas</button>
+            <button id="toggleGravity">Toggle Gravity</button>
+            <button id="toggleConnections">Toggle Connections</button>
+        </div>
+    </div>
+
+    <div class="input-container">
+        <input
+            type="text"
+            id="thoughtInput"
+            placeholder="Type a thought and press Enter..."
+            autocomplete="off"
+        >
+    </div>
+
+    <div class="info">
+        Click and drag to create particles<br>
+        Type to give them meaning
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const input = document.getElementById('thoughtInput');
+
+        let particles = [];
+        let mouse = { x: 0, y: 0, down: false };
+        let gravity = true;
+        let showConnections = true;
+
+        // Set canvas size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Particle class
+        class Particle {
+            constructor(x, y, text = '') {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 4;
+                this.vy = (Math.random() - 0.5) * 4;
+                this.text = text;
+                this.radius = text ? 3 + text.length * 0.5 : 2;
+                this.color = this.getColor();
+                this.life = 1.0;
+                this.fadeRate = text ? 0.001 : 0.003;
+            }
+
+            getColor() {
+                const colors = [
+                    '#818cf8', // indigo
+                    '#c084fc', // purple
+                    '#f472b6', // pink
+                    '#fb923c', // orange
+                    '#34d399', // emerald
+                    '#60a5fa', // blue
+                ];
+                return colors[Math.floor(Math.random() * colors.length)];
+            }
+
+            update() {
+                // Apply gravity
+                if (gravity) {
+                    this.vy += 0.1;
+                }
+
+                // Mouse interaction
+                const dx = mouse.x - this.x;
+                const dy = mouse.y - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (mouse.down && dist < 100) {
+                    const force = (100 - dist) / 100;
+                    this.vx += (dx / dist) * force * 0.5;
+                    this.vy += (dy / dist) * force * 0.5;
+                }
+
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Bounce off walls
+                if (this.x < this.radius || this.x > canvas.width - this.radius) {
+                    this.vx *= -0.8;
+                    this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+                }
+                if (this.y < this.radius || this.y > canvas.height - this.radius) {
+                    this.vy *= -0.8;
+                    this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+                }
+
+                // Apply friction
+                this.vx *= 0.99;
+                this.vy *= 0.99;
+
+                // Fade out
+                this.life -= this.fadeRate;
+            }
+
+            draw() {
+                ctx.globalAlpha = this.life;
+
+                // Draw particle glow
+                const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 2);
+                gradient.addColorStop(0, this.color);
+                gradient.addColorStop(1, 'transparent');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(this.x - this.radius * 2, this.y - this.radius * 2, this.radius * 4, this.radius * 4);
+
+                // Draw core
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw text if exists
+                if (this.text) {
+                    ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+                    ctx.fillStyle = '#e0e7ff';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(this.text, this.x, this.y - this.radius - 8);
+                }
+
+                ctx.globalAlpha = 1;
+            }
+
+            isDead() {
+                return this.life <= 0;
+            }
+        }
+
+        // Create particles from text
+        function createThoughtParticles(text) {
+            const words = text.split(' ').filter(w => w.length > 0);
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+
+            words.forEach((word, i) => {
+                const angle = (Math.PI * 2 * i) / words.length;
+                const radius = 50 + Math.random() * 50;
+                const x = centerX + Math.cos(angle) * radius;
+                const y = centerY + Math.sin(angle) * radius;
+                particles.push(new Particle(x, y, word));
+            });
+
+            // Add extra particles for visual effect
+            for (let i = 0; i < words.length * 3; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.random() * 100;
+                const x = centerX + Math.cos(angle) * radius;
+                const y = centerY + Math.sin(angle) * radius;
+                particles.push(new Particle(x, y));
+            }
+        }
+
+        // Draw connections between nearby particles
+        function drawConnections() {
+            if (!showConnections) return;
+
+            ctx.globalAlpha = 0.1;
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                    const dx = particles[i].x - particles[j].x;
+                    const dy = particles[i].y - particles[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < 120) {
+                        const alpha = (120 - dist) / 120;
+                        ctx.strokeStyle = `rgba(129, 140, 248, ${alpha * 0.3})`;
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.stroke();
+                    }
+                }
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        // Animation loop
+        function animate() {
+            ctx.fillStyle = 'rgba(10, 14, 39, 0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawConnections();
+
+            particles = particles.filter(p => {
+                p.update();
+                p.draw();
+                return !p.isDead();
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        // Event listeners
+        canvas.addEventListener('mousedown', (e) => {
+            mouse.down = true;
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+
+            if (mouse.down && Math.random() > 0.7) {
+                particles.push(new Particle(e.clientX, e.clientY));
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            mouse.down = false;
+        });
+
+        canvas.addEventListener('click', (e) => {
+            for (let i = 0; i < 5; i++) {
+                particles.push(new Particle(e.clientX, e.clientY));
+            }
+        });
+
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && input.value.trim()) {
+                createThoughtParticles(input.value);
+                input.value = '';
+            }
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            particles = [];
+        });
+
+        document.getElementById('toggleGravity').addEventListener('click', () => {
+            gravity = !gravity;
+        });
+
+        document.getElementById('toggleConnections').addEventListener('click', () => {
+            showConnections = !showConnections;
+        });
+
+        // Touch support
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            mouse.down = true;
+            mouse.x = e.touches[0].clientX;
+            mouse.y = e.touches[0].clientY;
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            mouse.x = e.touches[0].clientX;
+            mouse.y = e.touches[0].clientY;
+
+            if (Math.random() > 0.7) {
+                particles.push(new Particle(mouse.x, mouse.y));
+            }
+        });
+
+        canvas.addEventListener('touchend', () => {
+            mouse.down = false;
+        });
+
+        // Start animation
+        animate();
+
+        // Welcome message
+        setTimeout(() => {
+            createThoughtParticles('Welcome to the particle space');
+        }, 500);
+    </script>
+</body>
+</html>
