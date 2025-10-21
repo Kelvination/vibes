@@ -823,8 +823,8 @@ function handleStart(e) {
 
     // If no ball exists or ball is active, and we're in the shooting zone, create new slingshot
     if (!mainBall || mainBall.active) {
-        // Only create new slingshot if all balls are inactive
-        if (balls.every(b => b.active)) return;
+        // Only create new slingshot if all balls are inactive (or no balls exist)
+        if (balls.length > 0 && balls.every(b => b.active)) return;
 
         // Create slingshot at touch position
         slingshot.setPosition(pos.x, pos.y);
