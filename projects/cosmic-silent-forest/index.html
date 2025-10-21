@@ -13,18 +13,25 @@
         <div id="ui">
             <div id="score">Score: <span id="score-value">0</span></div>
             <div id="level">Level: <span id="level-value">1</span></div>
+            <div id="shots">Shots: <span id="shots-value">0</span></div>
         </div>
         <canvas id="gameCanvas"></canvas>
         <div id="start-screen" class="screen">
             <h1>Slingshot!</h1>
-            <p>Pull down the slingshot to launch the ball</p>
-            <p>Hit all targets to advance!</p>
+            <p>Touch anywhere in the bottom zone to create a slingshot</p>
+            <p>Drag to aim, release to shoot!</p>
+            <p>Hit all targets with limited shots!</p>
             <button id="start-btn">Start Game</button>
         </div>
         <div id="win-screen" class="screen hidden">
             <h1>Level Complete!</h1>
             <p>Score: <span id="final-score">0</span></p>
             <button id="next-level-btn">Next Level</button>
+        </div>
+        <div id="gameover-screen" class="screen hidden">
+            <h1>Game Over!</h1>
+            <p>Final Score: <span id="gameover-score">0</span></p>
+            <button id="restart-btn">Try Again</button>
         </div>
     </div>
 
