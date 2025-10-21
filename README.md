@@ -30,7 +30,17 @@ vibes/
 
 ## Deployment Options
 
-### Vercel (Recommended)
+### Automated Deployment (Recommended)
+
+This repo includes GitHub Actions that **automatically deploy to Vercel** when you merge a PR:
+
+1. Merge a PR that changes files in `projects/your-project/`
+2. GitHub Actions detects the change and deploys automatically
+3. Get a comment on your PR with the live URL
+
+**Setup required**: See [.github/DEPLOYMENT.md](.github/DEPLOYMENT.md) for complete setup instructions.
+
+### Manual Vercel Deployment
 
 Each project folder can be deployed as a separate Vercel project:
 
