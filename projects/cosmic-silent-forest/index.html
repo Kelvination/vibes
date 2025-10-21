@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Slingshot Gravity Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="ui">
+            <div id="score">Score: <span id="score-value">0</span></div>
+            <div id="level">Level: <span id="level-value">1</span></div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+        <div id="start-screen" class="screen">
+            <h1>Slingshot!</h1>
+            <p>Pull down the slingshot to launch the ball</p>
+            <p>Hit all targets to advance!</p>
+            <button id="start-btn">Start Game</button>
+        </div>
+        <div id="win-screen" class="screen hidden">
+            <h1>Level Complete!</h1>
+            <p>Score: <span id="final-score">0</span></p>
+            <button id="next-level-btn">Next Level</button>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
