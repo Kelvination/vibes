@@ -11,19 +11,27 @@ jobs:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
-      projects: ${{ steps.filter.outputs.changes }}
+      projects: ${{ steps.detect.outputs.projects }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Detect changed projects
-        id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            thought-particles:
-              - 'projects/thought-particles/**'
+        id: detect
+        run: |
+          # Get list of changed files in the PR
+          changed_files=$(git diff --name-only HEAD~1 HEAD)
+
+          # Extract unique project directories from changed files
+          projects=$(echo "$changed_files" | \
+            grep '^projects/' | \
+            cut -d'/' -f2 | \
+            sort -u | \
+            jq -R -s -c 'split("\n") | map(select(length > 0))')
+
+          echo "projects=$projects" >> $GITHUB_OUTPUT
+          echo "Detected changed projects: $projects"
 
   deploy:
     needs: detect-changes
