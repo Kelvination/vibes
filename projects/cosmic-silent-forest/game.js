@@ -1,9 +1,9 @@
 // Game configuration
 const config = {
-    gravity: 0.5,
+    gravity: 0.3,
     friction: 0.99,
     restitution: 0.7,
-    slingshotStrength: 0.15,
+    slingshotStrength: 0.25,
     maxPullDistance: 150,
     ballRadius: 15,
     targetRadius: 20,
@@ -137,34 +137,36 @@ const slingshot = {
         ctx.lineTo(this.rightAnchorX, this.anchorY + 50);
         ctx.stroke();
 
-        // Draw elastic bands
-        ctx.strokeStyle = '#654321';
-        ctx.lineWidth = 4;
+        // Draw elastic bands (only when ball is not active)
+        if (!ball.active) {
+            ctx.strokeStyle = '#654321';
+            ctx.lineWidth = 4;
 
-        if (this.pulling) {
-            // Left band (stretched)
-            ctx.beginPath();
-            ctx.moveTo(this.leftAnchorX, this.anchorY);
-            ctx.lineTo(this.pullX, this.pullY);
-            ctx.stroke();
+            if (this.pulling) {
+                // Left band (stretched)
+                ctx.beginPath();
+                ctx.moveTo(this.leftAnchorX, this.anchorY);
+                ctx.lineTo(this.pullX, this.pullY);
+                ctx.stroke();
 
-            // Right band (stretched)
-            ctx.beginPath();
-            ctx.moveTo(this.rightAnchorX, this.anchorY);
-            ctx.lineTo(this.pullX, this.pullY);
-            ctx.stroke();
-        } else {
-            // Left band
-            ctx.beginPath();
-            ctx.moveTo(this.leftAnchorX, this.anchorY);
-            ctx.lineTo(ball.x, ball.y);
-            ctx.stroke();
+                // Right band (stretched)
+                ctx.beginPath();
+                ctx.moveTo(this.rightAnchorX, this.anchorY);
+                ctx.lineTo(this.pullX, this.pullY);
+                ctx.stroke();
+            } else {
+                // Left band
+                ctx.beginPath();
+                ctx.moveTo(this.leftAnchorX, this.anchorY);
+                ctx.lineTo(ball.x, ball.y);
+                ctx.stroke();
 
-            // Right band
-            ctx.beginPath();
-            ctx.moveTo(this.rightAnchorX, this.anchorY);
-            ctx.lineTo(ball.x, ball.y);
-            ctx.stroke();
+                // Right band
+                ctx.beginPath();
+                ctx.moveTo(this.rightAnchorX, this.anchorY);
+                ctx.lineTo(ball.x, ball.y);
+                ctx.stroke();
+            }
         }
     }
 };
@@ -292,6 +294,10 @@ function handleMove(e) {
 
     slingshot.pullX = pullX;
     slingshot.pullY = pullY;
+
+    // Move the ball to the pull position
+    ball.x = pullX;
+    ball.y = pullY;
 }
 
 function handleEnd(e) {
