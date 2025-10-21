@@ -13,6 +13,11 @@ const config = {
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+// Game state - declared early so resizeCanvas can access it
+let gameState = 'start'; // 'start', 'playing', 'win'
+let score = 0;
+let level = 1;
+
 // Responsive canvas sizing
 function resizeCanvas() {
     const maxWidth = Math.min(window.innerWidth - 40, 600);
@@ -30,11 +35,6 @@ function resizeCanvas() {
 
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
-
-// Game state
-let gameState = 'start'; // 'start', 'playing', 'win'
-let score = 0;
-let level = 1;
 
 // Ball object
 const ball = {
