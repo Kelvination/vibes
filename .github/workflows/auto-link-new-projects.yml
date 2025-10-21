@@ -1,0 +1,135 @@
+name: Auto-Link New Projects to Vercel
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - 'projects/**'
+
+jobs:
+  detect-and-link:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Install GitHub CLI
+        run: |
+          type -p gh > /dev/null || (
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt update
+            sudo apt install gh -y
+          )
+
+      - name: Detect new project directories
+        id: detect
+        run: |
+          # Get list of directories in projects/ (excluding hidden dirs and templates)
+          current_dirs=$(find projects -mindepth 1 -maxdepth 1 -type d ! -name ".*" ! -name ".templates" -exec basename {} \; | sort)
+
+          # Check each directory to see if it has a .vercel folder
+          new_projects=""
+          for dir in $current_dirs; do
+            if [ ! -d "projects/$dir/.vercel" ]; then
+              echo "New project detected: $dir"
+              if [ -z "$new_projects" ]; then
+                new_projects="$dir"
+              else
+                new_projects="$new_projects $dir"
+              fi
+            fi
+          done
+
+          echo "new_projects=$new_projects" >> $GITHUB_OUTPUT
+          echo "Found new projects: $new_projects"
+
+      - name: Link new projects to Vercel and create secrets
+        if: steps.detect.outputs.new_projects != ''
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          GITHUB_PAT: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          for project in ${{ steps.detect.outputs.new_projects }}; do
+            echo "====================================="
+            echo "Linking project: $project"
+            echo "====================================="
+
+            cd "projects/$project"
+
+            # Link to Vercel
+            vercel link --yes --token=$VERCEL_TOKEN
+
+            # Extract project ID
+            if [ -f ".vercel/project.json" ]; then
+              PROJECT_ID=$(cat .vercel/project.json | grep -o '"projectId":"[^"]*"' | cut -d'"' -f4)
+              echo "Project ID: $PROJECT_ID"
+
+              # Convert project name to secret format (replace hyphens with underscores)
+              SECRET_NAME="VERCEL_PROJECT_ID_$(echo $project | tr '-' '_')"
+              echo "Creating GitHub secret: $SECRET_NAME"
+
+              # Create GitHub secret using gh CLI
+              echo "$PROJECT_ID" | gh secret set "$SECRET_NAME" --repo ${{ github.repository }}
+
+              echo "✅ Successfully linked $project and created secret $SECRET_NAME"
+            else
+              echo "❌ Failed to link $project - no project.json found"
+            fi
+
+            cd ../..
+          done
+
+      - name: Update workflow to include new projects
+        if: steps.detect.outputs.new_projects != ''
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          echo "New projects linked. You may want to update .github/workflows/deploy-to-vercel.yml"
+          echo "to add path filters for the following projects:"
+          for project in ${{ steps.detect.outputs.new_projects }}; do
+            echo "  - $project"
+          done
+
+          # Optionally create an issue to remind you
+          gh issue create \
+            --title "Add new projects to deployment workflow" \
+            --body "The following projects were auto-linked to Vercel:
+
+          ${{ steps.detect.outputs.new_projects }}
+
+          Please update \`.github/workflows/deploy-to-vercel.yml\` to add path filters for these projects.
+
+          Example:
+          \`\`\`yaml
+          filters: |
+            project-name:
+              - 'projects/project-name/**'
+          \`\`\`
+
+          This issue was automatically created by the auto-link-new-projects workflow." \
+            --label "automation" \
+            || echo "Issue creation failed or already exists"
+
+      - name: Summary
+        if: steps.detect.outputs.new_projects != ''
+        run: |
+          echo "## Auto-Link Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Successfully linked the following projects to Vercel:" >> $GITHUB_STEP_SUMMARY
+          for project in ${{ steps.detect.outputs.new_projects }}; do
+            SECRET_NAME="VERCEL_PROJECT_ID_$(echo $project | tr '-' '_')"
+            echo "- **$project** → Secret: \`$SECRET_NAME\`" >> $GITHUB_STEP_SUMMARY
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "Update \`.github/workflows/deploy-to-vercel.yml\` to add these projects to the path filter." >> $GITHUB_STEP_SUMMARY
