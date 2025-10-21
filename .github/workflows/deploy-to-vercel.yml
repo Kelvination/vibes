@@ -24,6 +24,8 @@ jobs:
           filters: |
             thought-particles:
               - 'projects/thought-particles/**'
+            cosmic-silent-forest:
+              - 'projects/cosmic-silent-forest/**'
 
   deploy:
     needs: detect-changes
