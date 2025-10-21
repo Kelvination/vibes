@@ -810,28 +810,53 @@ function getTouchPos(e) {
 }
 
 function handleStart(e) {
-    if (gameState !== 'playing') return;
-    if (shotsRemaining === 0) return;
+    console.log('handleStart called', {
+        gameState,
+        shotsRemaining,
+        ballsCount: balls.length
+    });
+
+    if (gameState !== 'playing') {
+        console.log('Not playing, gameState:', gameState);
+        return;
+    }
+    if (shotsRemaining === 0) {
+        console.log('No shots remaining');
+        return;
+    }
 
     e.preventDefault();
     const pos = getTouchPos(e);
+    console.log('Touch position:', pos);
 
     // Check if in shooting zone (bottom third)
-    if (!slingshot.isInShootingZone(pos.y)) return;
+    const shootingZoneY = canvas.height * 0.67;
+    console.log('Shooting zone check:', { posY: pos.y, shootingZoneY, inZone: pos.y >= shootingZoneY });
+
+    if (!slingshot.isInShootingZone(pos.y)) {
+        console.log('Not in shooting zone');
+        return;
+    }
 
     const mainBall = balls[0];
+    console.log('Main ball:', mainBall);
 
     // If no ball exists or ball is active, and we're in the shooting zone, create new slingshot
     if (!mainBall || mainBall.active) {
         // Only create new slingshot if all balls are inactive (or no balls exist)
-        if (balls.length > 0 && balls.every(b => b.active)) return;
+        if (balls.length > 0 && balls.every(b => b.active)) {
+            console.log('All balls active, cannot create slingshot');
+            return;
+        }
 
+        console.log('Creating slingshot at:', pos);
         // Create slingshot at touch position
         slingshot.setPosition(pos.x, pos.y);
         slingshot.createBallAtPosition();
         slingshot.pulling = true;
         slingshot.pullX = pos.x;
         slingshot.pullY = pos.y;
+        console.log('Slingshot created!', { active: slingshot.active, ballsCount: balls.length });
         return;
     }
 
@@ -844,6 +869,7 @@ function handleStart(e) {
         slingshot.pulling = true;
         touchStartX = pos.x;
         touchStartY = pos.y;
+        console.log('Pulling existing ball');
     }
 }
 
@@ -1041,6 +1067,7 @@ function showGameOverScreen() {
 }
 
 function startGame() {
+    console.log('=== STARTING GAME ===');
     gameState = 'playing';
     score = 0;
     level = 1;
@@ -1053,6 +1080,14 @@ function startGame() {
     createLevel(level);
     updateScore();
     updateLevel();
+
+    console.log('Game started:', {
+        gameState,
+        shotsRemaining,
+        targetsCount: targets.length,
+        ballsCount: balls.length,
+        slingshotActive: slingshot.active
+    });
 }
 
 function nextLevel() {
