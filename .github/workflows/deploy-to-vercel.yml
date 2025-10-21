@@ -38,6 +38,14 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
+      - name: Convert project name to secret format
+        id: secret_name
+        run: |
+          # Replace hyphens with underscores for secret name
+          SECRET_NAME=$(echo "${{ matrix.project }}" | tr '-' '_')
+          echo "name=VERCEL_PROJECT_ID_${SECRET_NAME}" >> $GITHUB_OUTPUT
+          echo "Secret name: VERCEL_PROJECT_ID_${SECRET_NAME}"
+
       - name: Pull Vercel Environment Information
         run: |
           vercel pull --yes \
@@ -47,14 +55,14 @@ jobs:
         working-directory: projects/${{ matrix.project }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets[format('VERCEL_PROJECT_ID_{0}', matrix.project)] }}
+          VERCEL_PROJECT_ID: ${{ secrets[steps.secret_name.outputs.name] }}
 
       - name: Build Project Artifacts
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         working-directory: projects/${{ matrix.project }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets[format('VERCEL_PROJECT_ID_{0}', matrix.project)] }}
+          VERCEL_PROJECT_ID: ${{ secrets[steps.secret_name.outputs.name] }}
 
       - name: Deploy Project Artifacts to Vercel
         id: deploy
@@ -65,7 +73,7 @@ jobs:
         working-directory: projects/${{ matrix.project }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets[format('VERCEL_PROJECT_ID_{0}', matrix.project)] }}
+          VERCEL_PROJECT_ID: ${{ secrets[steps.secret_name.outputs.name] }}
 
       - name: Comment deployment URL on PR
         if: success()

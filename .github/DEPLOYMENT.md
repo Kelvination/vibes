@@ -48,14 +48,18 @@ Add these **Repository Secrets**:
 
 1. **VERCEL_TOKEN**: The token you just created
 2. **VERCEL_ORG_ID**: Your organization ID from `.vercel/project.json`
-3. **VERCEL_PROJECT_ID_thought-particles**: Project ID for thought-particles
-4. **VERCEL_PROJECT_ID_your-next-project**: Project ID for your next project
+3. **VERCEL_PROJECT_ID_thought_particles**: Project ID for thought-particles (note: underscores, not hyphens!)
+4. **VERCEL_PROJECT_ID_your_next_project**: Project ID for your next project
 
 **Important**: The project ID secret format is:
 ```
-VERCEL_PROJECT_ID_{project-folder-name}
+VERCEL_PROJECT_ID_{project_folder_name}
 ```
-Replace hyphens with underscores if needed, e.g., `VERCEL_PROJECT_ID_my_cool_app`
+
+**GitHub secrets don't allow hyphens** - the workflow automatically converts project folder names:
+- Folder: `thought-particles` → Secret: `VERCEL_PROJECT_ID_thought_particles`
+- Folder: `my-cool-app` → Secret: `VERCEL_PROJECT_ID_my_cool_app`
+- Folder: `some_app` → Secret: `VERCEL_PROJECT_ID_some_app`
 
 ### 4. Update the Workflow
 
@@ -115,9 +119,11 @@ Common issues:
 ### Secret Naming
 
 For project `my-cool-app`:
-- ✅ Correct: `VERCEL_PROJECT_ID_my-cool-app`
-- ❌ Wrong: `VERCEL_PROJECT_ID_my_cool_app` (unless folder uses underscores)
+- ✅ Correct: `VERCEL_PROJECT_ID_my_cool_app` (underscores, hyphens auto-converted!)
+- ❌ Wrong: `VERCEL_PROJECT_ID_my-cool-app` (GitHub doesn't allow hyphens in secrets)
 - ❌ Wrong: `VERCEL_PROJECT_ID` (needs project name suffix)
+
+The workflow automatically converts hyphens to underscores when looking up secrets.
 
 ## Workflow Details
 
