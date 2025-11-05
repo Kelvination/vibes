@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Cannon Strike</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <!-- UI Overlay -->
+        <div id="ui">
+            <div id="score">Score: <span id="score-value">0</span></div>
+            <div id="shots">Shots: <span id="shots-value">0</span></div>
+        </div>
+
+        <!-- Power Button -->
+        <div id="power-controls">
+            <button id="fire-btn" class="fire-button">
+                <div class="fire-button-inner">
+                    <span>FIRE</span>
+                    <div id="power-meter"></div>
+                </div>
+            </button>
+            <div id="power-label">Hold to charge</div>
+        </div>
+
+        <!-- Instructions Screen -->
+        <div id="start-screen" class="screen">
+            <h1>Cannon Strike</h1>
+            <p>Drag on screen to aim the cannon</p>
+            <p>Hold FIRE button to charge power</p>
+            <p>Land cannonballs in the holes to score!</p>
+            <button id="start-btn">Start Game</button>
+        </div>
+
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <!-- Three.js and Cannon-es physics -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"></script>
+
+    <!-- Game Logic -->
+    <script src="game.js"></script>
+</body>
+</html>
