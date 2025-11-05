@@ -53,8 +53,8 @@ jobs:
       - name: Convert project name to secret format
         id: secret_name
         run: |
-          # Replace hyphens with underscores for secret name
-          SECRET_NAME=$(echo "${{ matrix.project }}" | tr '-' '_')
+          # Replace hyphens with underscores and convert to uppercase for secret name
+          SECRET_NAME=$(echo "${{ matrix.project }}" | tr '-' '_' | tr '[:lower:]' '[:upper:]')
           echo "name=VERCEL_PROJECT_ID_${SECRET_NAME}" >> $GITHUB_OUTPUT
           echo "Secret name: VERCEL_PROJECT_ID_${SECRET_NAME}"
 

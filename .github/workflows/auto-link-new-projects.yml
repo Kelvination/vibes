@@ -74,8 +74,8 @@ jobs:
               PROJECT_ID=$(cat .vercel/project.json | grep -o '"projectId":"[^"]*"' | cut -d'"' -f4)
               echo "Project ID: $PROJECT_ID"
 
-              # Convert project name to secret format (replace hyphens with underscores)
-              SECRET_NAME="VERCEL_PROJECT_ID_$(echo $project | tr '-' '_')"
+              # Convert project name to secret format (replace hyphens with underscores and uppercase)
+              SECRET_NAME="VERCEL_PROJECT_ID_$(echo $project | tr '-' '_' | tr '[:lower:]' '[:upper:]')"
               echo "Creating GitHub secret: $SECRET_NAME"
 
               # Create GitHub secret using gh CLI
@@ -127,7 +127,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ Successfully linked the following projects to Vercel:" >> $GITHUB_STEP_SUMMARY
           for project in ${{ steps.detect.outputs.new_projects }}; do
-            SECRET_NAME="VERCEL_PROJECT_ID_$(echo $project | tr '-' '_')"
+            SECRET_NAME="VERCEL_PROJECT_ID_$(echo $project | tr '-' '_' | tr '[:lower:]' '[:upper:]')"
             echo "- **$project** → Secret: \`$SECRET_NAME\`" >> $GITHUB_STEP_SUMMARY
           done
           echo "" >> $GITHUB_STEP_SUMMARY
