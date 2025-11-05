@@ -1,6 +1,10 @@
 import Matter from 'matter-js';
 import { Vector2D, EntityType } from '../../types';
 
+/**
+ * Base class for all game entities
+ * Provides common functionality for physics-based game objects
+ */
 export abstract class Entity {
   protected body: Matter.Body;
   public readonly id: string;

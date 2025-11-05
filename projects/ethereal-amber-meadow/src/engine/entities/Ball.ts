@@ -2,7 +2,7 @@ import Matter from 'matter-js';
 import { Entity } from './Entity';
 import { Vector2D } from '../../types';
 import { BALL, PHYSICS } from '../../utils/constants';
-import type { PhysicsEngine } from '../Physics';
+import { PhysicsEngine } from '../Physics';
 
 export interface BallOptions {
   position: Vector2D;
@@ -11,28 +11,31 @@ export interface BallOptions {
   mass?: number;
 }
 
+/**
+ * Ball entity - the main player-controlled object in the game
+ * Moves according to physics and can be manipulated by the player
+ */
 export class Ball extends Entity {
   private readonly radius: number;
   private readonly color: string;
   private readonly outlineColor: string;
 
-  constructor(physicsEngine: PhysicsEngine, options: BallOptions, id: string = 'player-ball') {
+  constructor(
+    physicsEngine: PhysicsEngine,
+    options: BallOptions,
+    id: string = 'player-ball'
+  ) {
     const radius = options.radius ?? BALL.RADIUS;
     const mass = options.mass ?? BALL.MASS;
 
     // Create physics body
-    const body = physicsEngine.createCircle(
-      options.position.x,
-      options.position.y,
-      radius,
-      {
-        friction: PHYSICS.DEFAULT_FRICTION,
-        restitution: PHYSICS.DEFAULT_RESTITUTION,
-        density: mass / (Math.PI * radius * radius),
-        label: `ball-${id}`,
-        isStatic: false,
-      }
-    );
+    const body = physicsEngine.createCircle(options.position.x, options.position.y, radius, {
+      friction: PHYSICS.DEFAULT_FRICTION,
+      restitution: PHYSICS.DEFAULT_RESTITUTION,
+      density: mass / (Math.PI * radius * radius),
+      label: `ball-${id}`,
+      isStatic: false,
+    });
 
     super(body, id, 'ball');
 
