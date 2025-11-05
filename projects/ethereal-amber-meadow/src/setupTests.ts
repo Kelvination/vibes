@@ -45,7 +45,9 @@ if (typeof performance === 'undefined') {
 HTMLCanvasElement.prototype.getContext = vi.fn(function (this: HTMLCanvasElement, contextId: string) {
   if (contextId === '2d') {
     return {
+      // Canvas reference
       canvas: this,
+      // Drawing styles
       fillStyle: '',
       strokeStyle: '',
       lineWidth: 1,
@@ -61,9 +63,13 @@ HTMLCanvasElement.prototype.getContext = vi.fn(function (this: HTMLCanvasElement
       textBaseline: 'alphabetic',
       globalAlpha: 1,
       globalCompositeOperation: 'source-over',
+      imageSmoothingEnabled: true,
+      lineDashOffset: 0,
+      // Rectangle methods
       fillRect: vi.fn(),
       strokeRect: vi.fn(),
       clearRect: vi.fn(),
+      // Path methods
       beginPath: vi.fn(),
       closePath: vi.fn(),
       moveTo: vi.fn(),
@@ -74,11 +80,13 @@ HTMLCanvasElement.prototype.getContext = vi.fn(function (this: HTMLCanvasElement
       rect: vi.fn(),
       quadraticCurveTo: vi.fn(),
       bezierCurveTo: vi.fn(),
+      // Drawing methods
       fill: vi.fn(),
       stroke: vi.fn(),
       clip: vi.fn(),
       isPointInPath: vi.fn(() => false),
       isPointInStroke: vi.fn(() => false),
+      // Transform methods
       save: vi.fn(),
       restore: vi.fn(),
       translate: vi.fn(),
@@ -87,10 +95,13 @@ HTMLCanvasElement.prototype.getContext = vi.fn(function (this: HTMLCanvasElement
       transform: vi.fn(),
       setTransform: vi.fn(),
       resetTransform: vi.fn(),
+      getTransform: vi.fn(),
+      // Image methods
       drawImage: vi.fn(),
       createImageData: vi.fn(),
       getImageData: vi.fn(),
       putImageData: vi.fn(),
+      // Gradient and pattern methods
       createLinearGradient: vi.fn(() => ({
         addColorStop: vi.fn(),
       })),
@@ -98,12 +109,13 @@ HTMLCanvasElement.prototype.getContext = vi.fn(function (this: HTMLCanvasElement
         addColorStop: vi.fn(),
       })),
       createPattern: vi.fn(),
+      // Text methods
       fillText: vi.fn(),
       strokeText: vi.fn(),
       measureText: vi.fn(() => ({ width: 0 })),
+      // Line dash methods
       getLineDash: vi.fn(() => []),
       setLineDash: vi.fn(),
-      lineDashOffset: 0,
     } as unknown as CanvasRenderingContext2D;
   }
   return null;
