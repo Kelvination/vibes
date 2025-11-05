@@ -41,32 +41,67 @@ if (typeof performance === 'undefined') {
   performance.now = () => Date.now() - startTime;
 }
 
-// Extend expect matchers
-expect.extend({});
-
-// Mock HTMLCanvasElement.prototype.getContext
-HTMLCanvasElement.prototype.getContext = vi.fn((contextType: string) => {
-  if (contextType === '2d') {
+// Mock Canvas API
+HTMLCanvasElement.prototype.getContext = vi.fn(function (this: HTMLCanvasElement, contextId: string) {
+  if (contextId === '2d') {
     return {
-      save: vi.fn(),
-      restore: vi.fn(),
-      scale: vi.fn(),
-      rotate: vi.fn(),
-      translate: vi.fn(),
-      beginPath: vi.fn(),
-      moveTo: vi.fn(),
-      lineTo: vi.fn(),
-      arc: vi.fn(),
-      closePath: vi.fn(),
-      fill: vi.fn(),
-      stroke: vi.fn(),
+      // Canvas reference
+      canvas: this,
+      // Drawing styles
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      lineCap: 'butt',
+      lineJoin: 'miter',
+      miterLimit: 10,
+      shadowBlur: 0,
+      shadowColor: 'rgba(0, 0, 0, 0)',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      font: '10px sans-serif',
+      textAlign: 'start',
+      textBaseline: 'alphabetic',
+      globalAlpha: 1,
+      globalCompositeOperation: 'source-over',
+      imageSmoothingEnabled: true,
+      lineDashOffset: 0,
+      // Rectangle methods
       fillRect: vi.fn(),
       strokeRect: vi.fn(),
       clearRect: vi.fn(),
-      fillText: vi.fn(),
-      strokeText: vi.fn(),
-      measureText: vi.fn(() => ({ width: 0 })),
+      // Path methods
+      beginPath: vi.fn(),
+      closePath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      arcTo: vi.fn(),
+      ellipse: vi.fn(),
+      rect: vi.fn(),
+      quadraticCurveTo: vi.fn(),
+      bezierCurveTo: vi.fn(),
+      // Drawing methods
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      clip: vi.fn(),
+      isPointInPath: vi.fn(() => false),
+      isPointInStroke: vi.fn(() => false),
+      // Transform methods
+      save: vi.fn(),
+      restore: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
+      scale: vi.fn(),
+      transform: vi.fn(),
+      setTransform: vi.fn(),
+      resetTransform: vi.fn(),
+      getTransform: vi.fn(),
+      // Image methods
       drawImage: vi.fn(),
+      createImageData: vi.fn(),
+      getImageData: vi.fn(),
+      putImageData: vi.fn(),
+      // Gradient and pattern methods
       createLinearGradient: vi.fn(() => ({
         addColorStop: vi.fn(),
       })),
@@ -74,37 +109,17 @@ HTMLCanvasElement.prototype.getContext = vi.fn((contextType: string) => {
         addColorStop: vi.fn(),
       })),
       createPattern: vi.fn(),
-      setTransform: vi.fn(),
-      resetTransform: vi.fn(),
-      getTransform: vi.fn(),
-      clip: vi.fn(),
-      isPointInPath: vi.fn(),
-      isPointInStroke: vi.fn(),
-      getImageData: vi.fn(),
-      putImageData: vi.fn(),
-      createImageData: vi.fn(),
-      setLineDash: vi.fn(),
+      // Text methods
+      fillText: vi.fn(),
+      strokeText: vi.fn(),
+      measureText: vi.fn(() => ({ width: 0 })),
+      // Line dash methods
       getLineDash: vi.fn(() => []),
-      // Properties
-      canvas: null,
-      fillStyle: '',
-      strokeStyle: '',
-      globalAlpha: 1,
-      globalCompositeOperation: 'source-over',
-      imageSmoothingEnabled: true,
-      lineCap: 'butt',
-      lineDashOffset: 0,
-      lineJoin: 'miter',
-      lineWidth: 1,
-      miterLimit: 10,
-      shadowBlur: 0,
-      shadowColor: '',
-      shadowOffsetX: 0,
-      shadowOffsetY: 0,
-      textAlign: 'start',
-      textBaseline: 'alphabetic',
-      font: '10px sans-serif',
-    } as any;
+      setLineDash: vi.fn(),
+    } as unknown as CanvasRenderingContext2D;
   }
   return null;
 }) as any;
+
+// Extend expect matchers
+expect.extend({});
