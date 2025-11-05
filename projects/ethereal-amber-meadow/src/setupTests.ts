@@ -30,5 +30,16 @@ global.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
 
 global.cancelAnimationFrame = vi.fn();
 
+// Mock performance.now() for Matter.js
+// Use Date.now() to provide consistent timing
+const startTime = Date.now();
+if (typeof performance === 'undefined') {
+  (global as any).performance = {
+    now: () => Date.now() - startTime,
+  };
+} else if (!performance.now) {
+  performance.now = () => Date.now() - startTime;
+}
+
 // Extend expect matchers
 expect.extend({});
