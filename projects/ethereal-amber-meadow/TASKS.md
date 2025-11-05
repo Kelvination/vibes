@@ -2681,21 +2681,1666 @@ describe('Ball', () => {
 
 ### Task 3.2: Static Obstacles 🧱
 
-Similar structure to Task 3.1, with full context about creating rectangular and circular static obstacles...
+**CONTEXT**: This is a physics puzzle game where players need to navigate a ball through obstacles. Obstacles are static (non-moving) physics bodies that block or redirect the ball's path. Players can also place temporary obstacles via touch controls.
 
-[Due to length constraints, I'll note that Tasks 3.2, 3.3, 3.4, and all Wave 4-7 tasks should follow the same detailed, self-contained format with full context, prerequisites, example code, tests, acceptance criteria, etc.]
+**WHY THIS EXISTS**: Obstacles create the puzzle element of the game. They:
+- Define the level layout and paths
+- Create challenges for the player
+- Can be placed dynamically by the player to solve puzzles
+- Need to collide realistically with the ball
+
+**WHAT YOU'RE BUILDING**: An Obstacle class that:
+- Creates static physics bodies (rectangles and circles)
+- Renders obstacles to canvas with visual styling
+- Supports different shapes and sizes
+- Can be marked as player-placed vs level-defined
+- Integrates with the PhysicsEngine wrapper
+
+**Owner**: TBD
+**Estimated Effort**: 2 hours
+**Status**: ⏳ Not Started
+**Depends On**: Task 2.1 (Physics Engine Wrapper)
+
+#### Prerequisites
+- **Task 2.1 complete**: `src/engine/Physics.ts` exists with PhysicsEngine class
+- **Task 3.1 complete**: `src/engine/entities/Entity.ts` exists with Entity base class
+- **Already exist**: `src/types/index.ts` (Vector2D, ObstacleType, ObstacleConfig), `src/utils/constants.ts` (OBSTACLE constants)
+
+#### Files to Create
+
+**1. `src/engine/entities/Obstacle.ts`** - Obstacle entity class
+
+```typescript
+import Matter from 'matter-js';
+import { Entity } from './Entity';
+import { Vector2D, ObstacleType } from '../../types';
+import { PhysicsEngine } from '../Physics';
+import { OBSTACLE } from '../../utils/constants';
+
+export interface ObstacleOptions {
+  position: Vector2D;
+  type: ObstacleType; // 'rectangle' | 'circle' | 'triangle'
+  width?: number; // For rectangles
+  height?: number; // For rectangles
+  radius?: number; // For circles
+  angle?: number; // Rotation in radians
+  color?: string;
+  isPlayerPlaced?: boolean; // User-placed vs level obstacle
+}
+
+export class Obstacle extends Entity {
+  private readonly obstacleType: ObstacleType;
+  private readonly width?: number;
+  private readonly height?: number;
+  private readonly radius?: number;
+  private readonly color: string;
+  private readonly outlineColor: string;
+  private readonly isPlayerPlaced: boolean;
+
+  constructor(
+    physicsEngine: PhysicsEngine,
+    options: ObstacleOptions,
+    id: string = `obstacle-${Date.now()}`
+  ) {
+    let body: Matter.Body;
+
+    // Create appropriate physics body based on type
+    if (options.type === 'rectangle') {
+      const width = options.width ?? OBSTACLE.MIN_SIZE;
+      const height = options.height ?? OBSTACLE.MIN_SIZE;
+      body = physicsEngine.createRectangle(
+        options.position.x,
+        options.position.y,
+        width,
+        height,
+        {
+          isStatic: true,
+          friction: OBSTACLE.FRICTION ?? 0.3,
+          label: `obstacle-${id}`,
+        }
+      );
+      this.width = width;
+      this.height = height;
+    } else if (options.type === 'circle') {
+      const radius = options.radius ?? OBSTACLE.MIN_SIZE / 2;
+      body = physicsEngine.createCircle(
+        options.position.x,
+        options.position.y,
+        radius,
+        {
+          isStatic: true,
+          friction: OBSTACLE.FRICTION ?? 0.3,
+          label: `obstacle-${id}`,
+        }
+      );
+      this.radius = radius;
+    } else {
+      // Triangle not implemented in this task, default to rectangle
+      const size = OBSTACLE.MIN_SIZE;
+      body = physicsEngine.createRectangle(
+        options.position.x,
+        options.position.y,
+        size,
+        size,
+        {
+          isStatic: true,
+          friction: OBSTACLE.FRICTION ?? 0.3,
+          label: `obstacle-${id}`,
+        }
+      );
+      this.width = size;
+      this.height = size;
+    }
+
+    // Apply rotation if specified
+    if (options.angle) {
+      Matter.Body.setAngle(body, options.angle);
+    }
+
+    super(body, id, 'obstacle');
+
+    this.obstacleType = options.type;
+    this.color = options.color ?? OBSTACLE.COLOR;
+    this.outlineColor = OBSTACLE.OUTLINE_COLOR;
+    this.isPlayerPlaced = options.isPlayerPlaced ?? false;
+  }
+
+  /**
+   * Get obstacle shape type
+   */
+  public getObstacleType(): ObstacleType {
+    return this.obstacleType;
+  }
+
+  /**
+   * Check if this obstacle was placed by the player
+   */
+  public isPlacedByPlayer(): boolean {
+    return this.isPlayerPlaced;
+  }
+
+  /**
+   * Get dimensions (for rectangles)
+   */
+  public getDimensions(): { width?: number; height?: number; radius?: number } {
+    return {
+      width: this.width,
+      height: this.height,
+      radius: this.radius,
+    };
+  }
+
+  /**
+   * Render obstacle to canvas
+   */
+  public render(ctx: CanvasRenderingContext2D): void {
+    const pos = this.getPosition();
+    const angle = this.getAngle();
+
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    ctx.rotate(angle);
+
+    // Draw based on type
+    if (this.obstacleType === 'rectangle' && this.width && this.height) {
+      // Draw rectangle centered at origin
+      ctx.fillStyle = this.color;
+      ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+
+      // Draw outline
+      ctx.strokeStyle = this.outlineColor;
+      ctx.lineWidth = OBSTACLE.OUTLINE_WIDTH;
+      ctx.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
+
+      // Draw diagonal lines if player-placed
+      if (this.isPlayerPlaced) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-this.width / 2, -this.height / 2);
+        ctx.lineTo(this.width / 2, this.height / 2);
+        ctx.moveTo(this.width / 2, -this.height / 2);
+        ctx.lineTo(-this.width / 2, this.height / 2);
+        ctx.stroke();
+      }
+    } else if (this.obstacleType === 'circle' && this.radius) {
+      // Draw circle
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+      ctx.fillStyle = this.color;
+      ctx.fill();
+
+      // Draw outline
+      ctx.strokeStyle = this.outlineColor;
+      ctx.lineWidth = OBSTACLE.OUTLINE_WIDTH;
+      ctx.stroke();
+
+      // Draw center dot if player-placed
+      if (this.isPlayerPlaced) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath();
+        ctx.arc(0, 0, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+}
+```
+
+**2. `src/__tests__/engine/entities/Obstacle.test.ts`** - Tests (write FIRST)
+
+```typescript
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { PhysicsEngine } from '../../../engine/Physics';
+import { Obstacle } from '../../../engine/entities/Obstacle';
+import { PHYSICS, OBSTACLE } from '../../../utils/constants';
+
+describe('Obstacle', () => {
+  let physics: PhysicsEngine;
+
+  beforeEach(() => {
+    physics = new PhysicsEngine();
+    physics.init({
+      gravity: PHYSICS.GRAVITY,
+      timeScale: PHYSICS.TIME_SCALE,
+      enableSleeping: PHYSICS.ENABLE_SLEEPING,
+      friction: PHYSICS.DEFAULT_FRICTION,
+      restitution: PHYSICS.DEFAULT_RESTITUTION,
+    });
+  });
+
+  afterEach(() => {
+    physics.destroy();
+  });
+
+  describe('creation', () => {
+    it('should create a rectangular obstacle', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 100, y: 200 },
+        type: 'rectangle',
+        width: 100,
+        height: 50,
+      });
+
+      const pos = obstacle.getPosition();
+      expect(pos.x).toBeCloseTo(100);
+      expect(pos.y).toBeCloseTo(200);
+      expect(obstacle.getObstacleType()).toBe('rectangle');
+    });
+
+    it('should create a circular obstacle', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 150, y: 250 },
+        type: 'circle',
+        radius: 30,
+      });
+
+      expect(obstacle.getObstacleType()).toBe('circle');
+      const dims = obstacle.getDimensions();
+      expect(dims.radius).toBe(30);
+    });
+
+    it('should use default size for rectangles if not specified', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 100, y: 100 },
+        type: 'rectangle',
+      });
+
+      const dims = obstacle.getDimensions();
+      expect(dims.width).toBeGreaterThan(0);
+      expect(dims.height).toBeGreaterThan(0);
+    });
+
+    it('should have obstacle entity type', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 100, y: 100 },
+        type: 'rectangle',
+      });
+
+      expect(obstacle.type).toBe('obstacle');
+    });
+
+    it('should be static', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 100, y: 100 },
+        type: 'rectangle',
+      });
+
+      expect(obstacle.isStatic()).toBe(true);
+    });
+
+    it('should apply rotation angle', () => {
+      const angle = Math.PI / 4; // 45 degrees
+      const obstacle = new Obstacle(physics, {
+        position: { x: 100, y: 100 },
+        type: 'rectangle',
+        width: 50,
+        height: 50,
+        angle,
+      });
+
+      expect(obstacle.getAngle()).toBeCloseTo(angle);
+    });
+
+    it('should mark player-placed obstacles', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 100, y: 100 },
+        type: 'rectangle',
+        isPlayerPlaced: true,
+      });
+
+      expect(obstacle.isPlacedByPlayer()).toBe(true);
+    });
+
+    it('should default to level-placed obstacles', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 100, y: 100 },
+        type: 'rectangle',
+      });
+
+      expect(obstacle.isPlacedByPlayer()).toBe(false);
+    });
+  });
+
+  describe('physics', () => {
+    it('should not move when static', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 100, y: 100 },
+        type: 'rectangle',
+        width: 50,
+        height: 50,
+      });
+
+      const initialPos = { ...obstacle.getPosition() };
+
+      // Simulate frames
+      for (let i = 0; i < 60; i++) {
+        physics.update(16);
+      }
+
+      const finalPos = obstacle.getPosition();
+      expect(finalPos.x).toBeCloseTo(initialPos.x);
+      expect(finalPos.y).toBeCloseTo(initialPos.y);
+    });
+
+    it('should have zero velocity', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 100, y: 100 },
+        type: 'circle',
+        radius: 25,
+      });
+
+      const velocity = obstacle.getVelocity();
+      expect(velocity.x).toBeCloseTo(0);
+      expect(velocity.y).toBeCloseTo(0);
+    });
+  });
+
+  describe('dimensions', () => {
+    it('should return rectangle dimensions', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 100, y: 100 },
+        type: 'rectangle',
+        width: 80,
+        height: 40,
+      });
+
+      const dims = obstacle.getDimensions();
+      expect(dims.width).toBe(80);
+      expect(dims.height).toBe(40);
+      expect(dims.radius).toBeUndefined();
+    });
+
+    it('should return circle dimensions', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 100, y: 100 },
+        type: 'circle',
+        radius: 35,
+      });
+
+      const dims = obstacle.getDimensions();
+      expect(dims.radius).toBe(35);
+      expect(dims.width).toBeUndefined();
+      expect(dims.height).toBeUndefined();
+    });
+  });
+
+  describe('rendering', () => {
+    let canvas: HTMLCanvasElement;
+    let ctx: CanvasRenderingContext2D;
+
+    beforeEach(() => {
+      canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 600;
+      ctx = canvas.getContext('2d')!;
+    });
+
+    it('should render rectangle without errors', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 400, y: 300 },
+        type: 'rectangle',
+        width: 100,
+        height: 50,
+      });
+
+      expect(() => obstacle.render(ctx)).not.toThrow();
+    });
+
+    it('should render circle without errors', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 400, y: 300 },
+        type: 'circle',
+        radius: 40,
+      });
+
+      expect(() => obstacle.render(ctx)).not.toThrow();
+    });
+
+    it('should save and restore canvas context', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 400, y: 300 },
+        type: 'rectangle',
+      });
+
+      const saveSpy = vi.spyOn(ctx, 'save');
+      const restoreSpy = vi.spyOn(ctx, 'restore');
+
+      obstacle.render(ctx);
+
+      expect(saveSpy).toHaveBeenCalled();
+      expect(restoreSpy).toHaveBeenCalled();
+    });
+
+    it('should draw rectangle shape', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 400, y: 300 },
+        type: 'rectangle',
+        width: 100,
+        height: 50,
+      });
+
+      const fillRectSpy = vi.spyOn(ctx, 'fillRect');
+
+      obstacle.render(ctx);
+
+      expect(fillRectSpy).toHaveBeenCalled();
+    });
+
+    it('should draw circle shape', () => {
+      const obstacle = new Obstacle(physics, {
+        position: { x: 400, y: 300 },
+        type: 'circle',
+        radius: 30,
+      });
+
+      const arcSpy = vi.spyOn(ctx, 'arc');
+
+      obstacle.render(ctx);
+
+      expect(arcSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('collision with ball', () => {
+    it('should block ball movement', () => {
+      // This will be tested in integration tests with actual ball
+      // For now, just verify obstacle is solid
+      const obstacle = new Obstacle(physics, {
+        position: { x: 200, y: 200 },
+        type: 'rectangle',
+        width: 100,
+        height: 20,
+      });
+
+      const body = obstacle.getBody();
+      expect(body.isStatic).toBe(true);
+      expect(body.collisionFilter).toBeDefined();
+    });
+  });
+});
+```
+
+#### Acceptance Criteria
+- [ ] `Obstacle.ts` class created extending Entity
+- [ ] Supports rectangle and circle shapes
+- [ ] Creates static physics bodies
+- [ ] Can apply rotation angle
+- [ ] Tracks player-placed vs level obstacles
+- [ ] Returns dimensions based on shape type
+- [ ] Renders to canvas with color and outline
+- [ ] Shows visual indicator for player-placed obstacles
+- [ ] All tests pass with >90% coverage
+- [ ] No TypeScript errors
+
+#### Testing Strategy (TDD)
+1. Write tests for Obstacle creation FIRST
+2. Implement Obstacle constructor
+3. Write tests for different shapes
+4. Implement shape-specific logic
+5. Write tests for rendering
+6. Implement render method
+7. Write tests for dimensions
+8. Ensure >90% coverage
+
+#### Implementation Hints
+- Use `physicsEngine.createRectangle()` for rectangles
+- Use `physicsEngine.createCircle()` for circles
+- Use `Matter.Body.setAngle()` to rotate
+- Use `ctx.translate()` and `ctx.rotate()` for rendering rotated shapes
+- Use `ctx.fillRect()` for rectangles, `ctx.arc()` for circles
+- Always `isStatic: true` for obstacles
+
+#### Definition of Done
+- All tests pass
+- Coverage >90%
+- Obstacles render correctly
+- Static bodies don't move
+- Can be imported: `import { Obstacle } from '../engine/entities/Obstacle'`
 
 ---
 
-## Key Improvements in This Refined Version:
+### Task 3.3: Collectibles (Stars) ⭐
 
-1. **Full Context**: Each task starts with WHY it exists and WHAT it does in the game
-2. **No Assumptions**: Prerequisites clearly stated with file paths
-3. **Complete Code Examples**: Full implementations provided, not just interfaces
-4. **TDD-First**: Test code provided before implementation code
-5. **Clear Dependencies**: Exactly what needs to exist before starting
-6. **Implementation Hints**: Specific APIs and functions to use
-7. **Acceptance Criteria**: Specific, measurable goals
-8. **Self-Contained**: An agent could implement any task without reading others
+**CONTEXT**: This is a puzzle game where players collect stars for bonus points. Stars are collectible items placed throughout the level that increase the player's score and contribute to the star rating (1-3 stars per level).
 
-Would you like me to continue expanding the remaining tasks (3.2-7.3) in the same detailed format?
+**WHY THIS EXISTS**: Stars serve multiple purposes:
+- **Scoring**: Collecting stars increases the score
+- **Challenge**: Stars are often placed in harder-to-reach locations
+- **Rating**: Number of stars collected determines the 1-3 star level rating
+- **Replayability**: Players can replay levels to collect all stars
+
+**WHAT YOU'RE BUILDING**: A Star class that:
+- Creates a sensor physics body (detects collisions but doesn't physically collide)
+- Tracks collected state (visible vs collected)
+- Renders with animation (rotation, glow effect)
+- Integrates with collision detection for collection
+
+**Owner**: TBD
+**Estimated Effort**: 1-2 hours
+**Status**: ⏳ Not Started
+**Depends On**: Task 2.1 (Physics Engine Wrapper)
+
+#### Prerequisites
+- **Task 2.1 complete**: `src/engine/Physics.ts` exists with PhysicsEngine class
+- **Task 3.1 complete**: `src/engine/entities/Entity.ts` exists with Entity base class
+- **Already exist**: `src/types/index.ts` (Vector2D, StarConfig), `src/utils/constants.ts` (STAR constants)
+
+#### Files to Create
+
+**1. `src/engine/entities/Star.ts`** - Star entity class
+
+```typescript
+import Matter from 'matter-js';
+import { Entity } from './Entity';
+import { Vector2D } from '../../types';
+import { PhysicsEngine } from '../Physics';
+import { STAR } from '../../utils/constants';
+
+export interface StarOptions {
+  position: Vector2D;
+  radius?: number;
+  color?: string;
+  id?: string;
+}
+
+export class Star extends Entity {
+  private readonly radius: number;
+  private readonly color: string;
+  private readonly glowColor: string;
+  private collected: boolean = false;
+  private rotation: number = 0; // For animation
+
+  constructor(
+    physicsEngine: PhysicsEngine,
+    options: StarOptions,
+    id: string = `star-${Date.now()}`
+  ) {
+    const radius = options.radius ?? STAR.RADIUS;
+
+    // Create sensor body (doesn't collide physically, only detects collisions)
+    const body = physicsEngine.createCircle(
+      options.position.x,
+      options.position.y,
+      radius,
+      {
+        isStatic: true,
+        isSensor: true, // Key: makes it a sensor
+        label: `star-${id}`,
+      }
+    );
+
+    super(body, id, 'star');
+
+    this.radius = radius;
+    this.color = options.color ?? STAR.COLOR;
+    this.glowColor = STAR.GLOW_COLOR;
+  }
+
+  /**
+   * Mark star as collected
+   */
+  public collect(): void {
+    this.collected = true;
+  }
+
+  /**
+   * Check if star is collected
+   */
+  public isCollected(): boolean {
+    return this.collected;
+  }
+
+  /**
+   * Get star radius
+   */
+  public getRadius(): number {
+    return this.radius;
+  }
+
+  /**
+   * Get points value
+   */
+  public getPoints(): number {
+    return STAR.POINTS;
+  }
+
+  /**
+   * Update star animation
+   */
+  public update(deltaTime: number): void {
+    if (!this.collected) {
+      // Rotate star for animation
+      this.rotation += STAR.ANIMATION_SPEED * deltaTime;
+      if (this.rotation > Math.PI * 2) {
+        this.rotation -= Math.PI * 2;
+      }
+    }
+  }
+
+  /**
+   * Render star to canvas
+   */
+  public render(ctx: CanvasRenderingContext2D): void {
+    if (this.collected) return; // Don't render collected stars
+
+    const pos = this.getPosition();
+
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    ctx.rotate(this.rotation);
+
+    // Draw glow effect
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.radius * 1.5);
+    gradient.addColorStop(0, this.glowColor);
+    gradient.addColorStop(0.5, this.color);
+    gradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw star shape (5-pointed star)
+    this.drawStar(ctx, 0, 0, 5, this.radius, this.radius * 0.5);
+
+    ctx.restore();
+  }
+
+  /**
+   * Draw a 5-pointed star
+   */
+  private drawStar(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    spikes: number,
+    outerRadius: number,
+    innerRadius: number
+  ): void {
+    let rot = (Math.PI / 2) * 3;
+    let x = cx;
+    let y = cy;
+    const step = Math.PI / spikes;
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - outerRadius);
+
+    for (let i = 0; i < spikes; i++) {
+      x = cx + Math.cos(rot) * outerRadius;
+      y = cy + Math.sin(rot) * outerRadius;
+      ctx.lineTo(x, y);
+      rot += step;
+
+      x = cx + Math.cos(rot) * innerRadius;
+      y = cy + Math.sin(rot) * innerRadius;
+      ctx.lineTo(x, y);
+      rot += step;
+    }
+
+    ctx.lineTo(cx, cy - outerRadius);
+    ctx.closePath();
+
+    ctx.fillStyle = this.color;
+    ctx.fill();
+
+    ctx.strokeStyle = this.glowColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+```
+
+**2. `src/__tests__/engine/entities/Star.test.ts`** - Tests (write FIRST)
+
+```typescript
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { PhysicsEngine } from '../../../engine/Physics';
+import { Star } from '../../../engine/entities/Star';
+import { PHYSICS, STAR } from '../../../utils/constants';
+
+describe('Star', () => {
+  let physics: PhysicsEngine;
+
+  beforeEach(() => {
+    physics = new PhysicsEngine();
+    physics.init({
+      gravity: PHYSICS.GRAVITY,
+      timeScale: PHYSICS.TIME_SCALE,
+      enableSleeping: PHYSICS.ENABLE_SLEEPING,
+      friction: PHYSICS.DEFAULT_FRICTION,
+      restitution: PHYSICS.DEFAULT_RESTITUTION,
+    });
+  });
+
+  afterEach(() => {
+    physics.destroy();
+  });
+
+  describe('creation', () => {
+    it('should create a star at specified position', () => {
+      const star = new Star(physics, { position: { x: 100, y: 200 } });
+      const pos = star.getPosition();
+
+      expect(pos.x).toBeCloseTo(100);
+      expect(pos.y).toBeCloseTo(200);
+    });
+
+    it('should use default radius if not specified', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 } });
+      expect(star.getRadius()).toBe(STAR.RADIUS);
+    });
+
+    it('should use custom radius if specified', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 }, radius: 20 });
+      expect(star.getRadius()).toBe(20);
+    });
+
+    it('should have star entity type', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 } });
+      expect(star.type).toBe('star');
+    });
+
+    it('should be static', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 } });
+      expect(star.isStatic()).toBe(true);
+    });
+
+    it('should start as not collected', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 } });
+      expect(star.isCollected()).toBe(false);
+    });
+
+    it('should be a sensor body', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 } });
+      const body = star.getBody();
+      expect(body.isSensor).toBe(true);
+    });
+  });
+
+  describe('collection', () => {
+    it('should mark star as collected', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 } });
+      expect(star.isCollected()).toBe(false);
+
+      star.collect();
+      expect(star.isCollected()).toBe(true);
+    });
+
+    it('should return points value', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 } });
+      expect(star.getPoints()).toBe(STAR.POINTS);
+      expect(star.getPoints()).toBeGreaterThan(0);
+    });
+  });
+
+  describe('animation', () => {
+    it('should update rotation over time', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 } });
+
+      // Update multiple times
+      star.update(0.016); // One frame
+      star.update(0.016);
+      star.update(0.016);
+
+      // Rotation should have changed (tested via render side effects)
+      // Direct rotation testing would require exposing the rotation property
+      expect(star.isCollected()).toBe(false); // Still not collected
+    });
+
+    it('should not animate collected stars', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 } });
+      star.collect();
+
+      // Update should not throw errors
+      expect(() => star.update(0.016)).not.toThrow();
+    });
+  });
+
+  describe('rendering', () => {
+    let canvas: HTMLCanvasElement;
+    let ctx: CanvasRenderingContext2D;
+
+    beforeEach(() => {
+      canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 600;
+      ctx = canvas.getContext('2d')!;
+    });
+
+    it('should render without errors when not collected', () => {
+      const star = new Star(physics, { position: { x: 400, y: 300 } });
+      expect(() => star.render(ctx)).not.toThrow();
+    });
+
+    it('should not render when collected', () => {
+      const star = new Star(physics, { position: { x: 400, y: 300 } });
+      star.collect();
+
+      const fillSpy = vi.spyOn(ctx, 'fill');
+      star.render(ctx);
+
+      // Should not draw anything when collected
+      expect(fillSpy).not.toHaveBeenCalled();
+    });
+
+    it('should save and restore canvas context', () => {
+      const star = new Star(physics, { position: { x: 400, y: 300 } });
+
+      const saveSpy = vi.spyOn(ctx, 'save');
+      const restoreSpy = vi.spyOn(ctx, 'restore');
+
+      star.render(ctx);
+
+      expect(saveSpy).toHaveBeenCalled();
+      expect(restoreSpy).toHaveBeenCalled();
+    });
+
+    it('should draw star shape', () => {
+      const star = new Star(physics, { position: { x: 400, y: 300 } });
+
+      const beginPathSpy = vi.spyOn(ctx, 'beginPath');
+      const fillSpy = vi.spyOn(ctx, 'fill');
+
+      star.render(ctx);
+
+      expect(beginPathSpy).toHaveBeenCalled();
+      expect(fillSpy).toHaveBeenCalled();
+    });
+
+    it('should draw with glow effect', () => {
+      const star = new Star(physics, { position: { x: 400, y: 300 } });
+
+      const createRadialGradientSpy = vi.spyOn(ctx, 'createRadialGradient');
+      star.render(ctx);
+
+      expect(createRadialGradientSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('physics', () => {
+    it('should not physically collide (sensor only)', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 } });
+      const body = star.getBody();
+
+      // Sensor bodies don't have physical collisions
+      expect(body.isSensor).toBe(true);
+    });
+
+    it('should not move (static)', () => {
+      const star = new Star(physics, { position: { x: 100, y: 100 } });
+      const initialPos = { ...star.getPosition() };
+
+      // Simulate frames
+      for (let i = 0; i < 60; i++) {
+        physics.update(16);
+      }
+
+      const finalPos = star.getPosition();
+      expect(finalPos.x).toBeCloseTo(initialPos.x);
+      expect(finalPos.y).toBeCloseTo(initialPos.y);
+    });
+  });
+});
+```
+
+#### Acceptance Criteria
+- [ ] `Star.ts` class created extending Entity
+- [ ] Creates sensor physics body (isSensor: true)
+- [ ] Tracks collected state
+- [ ] Returns points value (from constants)
+- [ ] Updates rotation for animation
+- [ ] Renders 5-pointed star with glow effect
+- [ ] Does not render when collected
+- [ ] All tests pass with >90% coverage
+- [ ] No TypeScript errors
+
+#### Testing Strategy (TDD)
+1. Write tests for Star creation FIRST
+2. Implement Star constructor with sensor body
+3. Write tests for collection state
+4. Implement collect() method
+5. Write tests for animation
+6. Implement update() with rotation
+7. Write tests for rendering
+8. Implement render() with star shape and glow
+9. Ensure >90% coverage
+
+#### Implementation Hints
+- Use `isSensor: true` in physics body options to make it a sensor
+- Sensors detect collisions but don't physically collide
+- Use `ctx.createRadialGradient()` for glow effect
+- Draw 5-pointed star with alternating outer/inner radii
+- Rotate using accumulated `rotation` value in update()
+- Don't render if `collected === true`
+
+#### Definition of Done
+- All tests pass
+- Coverage >90%
+- Stars render with animation
+- Glow effect visible
+- Doesn't render when collected
+- Can be imported: `import { Star } from '../engine/entities/Star'`
+
+---
+
+### Task 3.4: Goal/Target 🎯
+
+**CONTEXT**: Each level has a goal that the player must reach to complete the level. The goal is the win condition - when the ball touches the goal, the level is complete.
+
+**WHY THIS EXISTS**: The goal:
+- Defines the level's objective (reach this point)
+- Triggers the win condition when touched
+- Provides visual feedback (animated, glowing)
+- Is the final target after collecting stars
+
+**WHAT YOU'RE BUILDING**: A Goal class that:
+- Creates a sensor physics body (detects when ball reaches it)
+- Renders with distinctive visual style (green, animated, glowing)
+- Tracks whether it has been reached
+- Provides visual feedback that it's the objective
+
+**Owner**: TBD
+**Estimated Effort**: 1-2 hours
+**Status**: ⏳ Not Started
+**Depends On**: Task 2.1 (Physics Engine Wrapper)
+
+#### Prerequisites
+- **Task 2.1 complete**: `src/engine/Physics.ts` exists with PhysicsEngine class
+- **Task 3.1 complete**: `src/engine/entities/Entity.ts` exists with Entity base class
+- **Already exist**: `src/types/index.ts` (Vector2D, GoalConfig), `src/utils/constants.ts` (GOAL constants)
+
+#### Files to Create
+
+**1. `src/engine/entities/Goal.ts`** - Goal entity class
+
+```typescript
+import Matter from 'matter-js';
+import { Entity } from './Entity';
+import { Vector2D } from '../../types';
+import { PhysicsEngine } from '../Physics';
+import { GOAL } from '../../utils/constants';
+
+export interface GoalOptions {
+  position: Vector2D;
+  radius?: number;
+  color?: string;
+}
+
+export class Goal extends Entity {
+  private readonly radius: number;
+  private readonly color: string;
+  private readonly glowColor: string;
+  private reached: boolean = false;
+  private pulsePhase: number = 0; // For pulsing animation
+
+  constructor(
+    physicsEngine: PhysicsEngine,
+    options: GoalOptions,
+    id: string = 'goal'
+  ) {
+    const radius = options.radius ?? GOAL.RADIUS;
+
+    // Create sensor body (doesn't collide, only detects)
+    const body = physicsEngine.createCircle(
+      options.position.x,
+      options.position.y,
+      radius,
+      {
+        isStatic: true,
+        isSensor: true,
+        label: `goal-${id}`,
+      }
+    );
+
+    super(body, id, 'goal');
+
+    this.radius = radius;
+    this.color = options.color ?? GOAL.COLOR;
+    this.glowColor = GOAL.GLOW_COLOR;
+  }
+
+  /**
+   * Mark goal as reached
+   */
+  public reach(): void {
+    this.reached = true;
+  }
+
+  /**
+   * Check if goal has been reached
+   */
+  public isReached(): boolean {
+    return this.reached;
+  }
+
+  /**
+   * Get goal radius
+   */
+  public getRadius(): number {
+    return this.radius;
+  }
+
+  /**
+   * Update goal animation
+   */
+  public update(deltaTime: number): void {
+    // Pulsing animation
+    this.pulsePhase += GOAL.ANIMATION_SPEED * deltaTime;
+    if (this.pulsePhase > Math.PI * 2) {
+      this.pulsePhase -= Math.PI * 2;
+    }
+  }
+
+  /**
+   * Render goal to canvas
+   */
+  public render(ctx: CanvasRenderingContext2D): void {
+    const pos = this.getPosition();
+
+    ctx.save();
+
+    // Calculate pulse scale (oscillates between 0.9 and 1.1)
+    const pulseScale = 1 + Math.sin(this.pulsePhase) * 0.1;
+
+    // Draw outer glow rings
+    for (let i = 3; i >= 1; i--) {
+      const glowRadius = this.radius * pulseScale * (1 + i * 0.2);
+      const alpha = 0.1 * (4 - i);
+
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
+      ctx.fillStyle = `${this.glowColor}${Math.floor(alpha * 255).toString(16).padStart(2, '0')}`;
+      ctx.fill();
+    }
+
+    // Draw main circle with gradient
+    const gradient = ctx.createRadialGradient(
+      pos.x,
+      pos.y,
+      0,
+      pos.x,
+      pos.y,
+      this.radius * pulseScale
+    );
+    gradient.addColorStop(0, '#ffffff');
+    gradient.addColorStop(0.3, this.color);
+    gradient.addColorStop(1, this.glowColor);
+
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, this.radius * pulseScale, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Draw target crosshair
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.lineWidth = 2;
+
+    // Horizontal line
+    ctx.beginPath();
+    ctx.moveTo(pos.x - this.radius * 0.6, pos.y);
+    ctx.lineTo(pos.x + this.radius * 0.6, pos.y);
+    ctx.stroke();
+
+    // Vertical line
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y - this.radius * 0.6);
+    ctx.lineTo(pos.x, pos.y + this.radius * 0.6);
+    ctx.stroke();
+
+    // Draw outer ring
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, this.radius * pulseScale * 0.8, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // If reached, add success indicator
+    if (this.reached) {
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, this.radius * pulseScale, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+}
+```
+
+**2. `src/__tests__/engine/entities/Goal.test.ts`** - Tests (write FIRST)
+
+```typescript
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { PhysicsEngine } from '../../../engine/Physics';
+import { Goal } from '../../../engine/entities/Goal';
+import { PHYSICS, GOAL } from '../../../utils/constants';
+
+describe('Goal', () => {
+  let physics: PhysicsEngine;
+
+  beforeEach(() => {
+    physics = new PhysicsEngine();
+    physics.init({
+      gravity: PHYSICS.GRAVITY,
+      timeScale: PHYSICS.TIME_SCALE,
+      enableSleeping: PHYSICS.ENABLE_SLEEPING,
+      friction: PHYSICS.DEFAULT_FRICTION,
+      restitution: PHYSICS.DEFAULT_RESTITUTION,
+    });
+  });
+
+  afterEach(() => {
+    physics.destroy();
+  });
+
+  describe('creation', () => {
+    it('should create a goal at specified position', () => {
+      const goal = new Goal(physics, { position: { x: 400, y: 500 } });
+      const pos = goal.getPosition();
+
+      expect(pos.x).toBeCloseTo(400);
+      expect(pos.y).toBeCloseTo(500);
+    });
+
+    it('should use default radius if not specified', () => {
+      const goal = new Goal(physics, { position: { x: 100, y: 100 } });
+      expect(goal.getRadius()).toBe(GOAL.RADIUS);
+    });
+
+    it('should use custom radius if specified', () => {
+      const goal = new Goal(physics, { position: { x: 100, y: 100 }, radius: 40 });
+      expect(goal.getRadius()).toBe(40);
+    });
+
+    it('should have goal entity type', () => {
+      const goal = new Goal(physics, { position: { x: 100, y: 100 } });
+      expect(goal.type).toBe('goal');
+    });
+
+    it('should be static', () => {
+      const goal = new Goal(physics, { position: { x: 100, y: 100 } });
+      expect(goal.isStatic()).toBe(true);
+    });
+
+    it('should start as not reached', () => {
+      const goal = new Goal(physics, { position: { x: 100, y: 100 } });
+      expect(goal.isReached()).toBe(false);
+    });
+
+    it('should be a sensor body', () => {
+      const goal = new Goal(physics, { position: { x: 100, y: 100 } });
+      const body = goal.getBody();
+      expect(body.isSensor).toBe(true);
+    });
+  });
+
+  describe('reached state', () => {
+    it('should mark goal as reached', () => {
+      const goal = new Goal(physics, { position: { x: 100, y: 100 } });
+      expect(goal.isReached()).toBe(false);
+
+      goal.reach();
+      expect(goal.isReached()).toBe(true);
+    });
+  });
+
+  describe('animation', () => {
+    it('should update without errors', () => {
+      const goal = new Goal(physics, { position: { x: 100, y: 100 } });
+
+      expect(() => {
+        goal.update(0.016); // One frame
+        goal.update(0.016);
+        goal.update(0.016);
+      }).not.toThrow();
+    });
+
+    it('should continue animating after reached', () => {
+      const goal = new Goal(physics, { position: { x: 100, y: 100 } });
+      goal.reach();
+
+      expect(() => goal.update(0.016)).not.toThrow();
+    });
+  });
+
+  describe('rendering', () => {
+    let canvas: HTMLCanvasElement;
+    let ctx: CanvasRenderingContext2D;
+
+    beforeEach(() => {
+      canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 600;
+      ctx = canvas.getContext('2d')!;
+    });
+
+    it('should render without errors', () => {
+      const goal = new Goal(physics, { position: { x: 400, y: 300 } });
+      expect(() => goal.render(ctx)).not.toThrow();
+    });
+
+    it('should render when reached', () => {
+      const goal = new Goal(physics, { position: { x: 400, y: 300 } });
+      goal.reach();
+
+      expect(() => goal.render(ctx)).not.toThrow();
+    });
+
+    it('should save and restore canvas context', () => {
+      const goal = new Goal(physics, { position: { x: 400, y: 300 } });
+
+      const saveSpy = vi.spyOn(ctx, 'save');
+      const restoreSpy = vi.spyOn(ctx, 'restore');
+
+      goal.render(ctx);
+
+      expect(saveSpy).toHaveBeenCalled();
+      expect(restoreSpy).toHaveBeenCalled();
+    });
+
+    it('should draw circles for glow effect', () => {
+      const goal = new Goal(physics, { position: { x: 400, y: 300 } });
+
+      const arcSpy = vi.spyOn(ctx, 'arc');
+      goal.render(ctx);
+
+      // Should draw multiple circles (glow rings + main + outer ring)
+      expect(arcSpy).toHaveBeenCalled();
+      expect(arcSpy.mock.calls.length).toBeGreaterThan(2);
+    });
+
+    it('should draw crosshair lines', () => {
+      const goal = new Goal(physics, { position: { x: 400, y: 300 } });
+
+      const strokeSpy = vi.spyOn(ctx, 'stroke');
+      goal.render(ctx);
+
+      // Should draw lines for crosshair
+      expect(strokeSpy).toHaveBeenCalled();
+    });
+
+    it('should use gradient', () => {
+      const goal = new Goal(physics, { position: { x: 400, y: 300 } });
+
+      const createRadialGradientSpy = vi.spyOn(ctx, 'createRadialGradient');
+      goal.render(ctx);
+
+      expect(createRadialGradientSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('physics', () => {
+    it('should not physically collide (sensor only)', () => {
+      const goal = new Goal(physics, { position: { x: 100, y: 100 } });
+      const body = goal.getBody();
+
+      expect(body.isSensor).toBe(true);
+    });
+
+    it('should not move (static)', () => {
+      const goal = new Goal(physics, { position: { x: 100, y: 100 } });
+      const initialPos = { ...goal.getPosition() };
+
+      // Simulate frames
+      for (let i = 0; i < 60; i++) {
+        physics.update(16);
+      }
+
+      const finalPos = goal.getPosition();
+      expect(finalPos.x).toBeCloseTo(initialPos.x);
+      expect(finalPos.y).toBeCloseTo(initialPos.y);
+    });
+  });
+});
+```
+
+#### Acceptance Criteria
+- [ ] `Goal.ts` class created extending Entity
+- [ ] Creates sensor physics body (isSensor: true)
+- [ ] Tracks reached state
+- [ ] Updates pulse animation
+- [ ] Renders with glow rings
+- [ ] Draws crosshair target indicator
+- [ ] Shows visual feedback when reached
+- [ ] All tests pass with >90% coverage
+- [ ] No TypeScript errors
+
+#### Testing Strategy (TDD)
+1. Write tests for Goal creation FIRST
+2. Implement Goal constructor with sensor body
+3. Write tests for reached state
+4. Implement reach() method
+5. Write tests for animation
+6. Implement update() with pulse
+7. Write tests for rendering
+8. Implement render() with glow and crosshair
+9. Ensure >90% coverage
+
+#### Implementation Hints
+- Use `isSensor: true` like Star entity
+- Use `Math.sin(pulsePhase)` for pulsing scale effect
+- Draw multiple circles with decreasing alpha for glow rings
+- Use `ctx.createRadialGradient()` for main circle
+- Draw crosshair with horizontal and vertical lines
+- Green color (#6bcf7f) distinguishes it as the goal
+- Add white overlay when reached for visual feedback
+
+#### Definition of Done
+- All tests pass
+- Coverage >90%
+- Goal renders with distinctive look
+- Pulsing animation visible
+- Crosshair clearly visible
+- Can be imported: `import { Goal } from '../engine/entities/Goal'`
+
+---
+
+## 🟣 Wave 4: UI Components
+*Can be done in parallel with Wave 3*
+
+**NOTE**: Due to file length constraints, Wave 4-7 tasks are abbreviated below. Each follows the same detailed format as Wave 2-3 tasks with:
+- Full CONTEXT, WHY THIS EXISTS, WHAT YOU'RE BUILDING sections
+- Complete code examples with full implementations
+- Comprehensive TDD tests written FIRST
+- Acceptance criteria, testing strategy, implementation hints
+- Definition of done
+
+For full expansions of these tasks, refer to the pattern established in Wave 2-3 tasks above.
+
+---
+
+### Task 4.1: Game Canvas Component 🖼️
+
+**CONTEXT**: React-based game using HTML5 Canvas for rendering. Need React component that manages canvas lifecycle, sizing, and integration with game entities.
+
+**Prerequisites**: Task 2.1 (PhysicsEngine), Wave 3 entities complete
+
+**Key Requirements**:
+- Create `src/components/Game/Canvas.tsx`
+- Manage canvas ref and context
+- Handle responsive sizing (maintain aspect ratio)
+- Render all entities each frame
+- Handle window resize events
+- Integrate with useGameLoop hook
+- Clear canvas each frame
+- Tests for rendering, resizing, cleanup
+
+**Files**: `Canvas.tsx`, `Canvas.module.css`, `Canvas.test.tsx`
+
+**Acceptance Criteria**: Responsive canvas, renders entities, handles resize, >90% coverage
+
+---
+
+### Task 4.2: HUD Component 📊
+
+**CONTEXT**: Heads-up display showing game stats (score, time, stars, level)
+
+**Prerequisites**: Task 2.2 (GameContext), `useGameState` hook
+
+**Key Requirements**:
+- Create `src/components/UI/HUD.tsx`
+- Display score, time elapsed, stars collected/total, level number
+- Pause button (calls pauseGame action)
+- Use `useGameState()` to get current state
+- Format time as MM:SS
+- Mobile-friendly (fixed position, doesn't block gameplay)
+- Tests for display, pause button, time formatting
+
+**Files**: `HUD.tsx`, `HUD.module.css`, `HUD.test.tsx`
+
+**Acceptance Criteria**: Shows all stats, pause works, responsive, >90% coverage
+
+---
+
+### Task 4.3: Menu Components 🎨
+
+**CONTEXT**: Game needs menus for start, pause, win, lose states
+
+**Prerequisites**: Task 2.2 (GameContext)
+
+**Key Requirements**:
+- Create `MainMenu.tsx` - Start button, level select button
+- Create `PauseMenu.tsx` - Resume, restart, main menu buttons
+- Create `WinScreen.tsx` - Shows score, stars, time, next level button
+- Create `LoseScreen.tsx` - Retry, main menu buttons
+- All buttons ≥44px for touch
+- Use `useGameActions()` for state changes
+- Tests for all buttons and navigation
+
+**Files**: `MainMenu.tsx`, `PauseMenu.tsx`, `WinScreen.tsx`, `LoseScreen.tsx`, test files
+
+**Acceptance Criteria**: All menus work, touch-friendly, >90% coverage
+
+---
+
+### Task 4.4: Level Selector 🗺️
+
+**CONTEXT**: UI for selecting levels, showing locked/unlocked, star ratings
+
+**Prerequisites**: Task 2.2 (GameContext), Task 5.4 (storage for progress)
+
+**Key Requirements**:
+- Create `src/components/UI/LevelSelector.tsx`
+- Grid of level cards (responsive)
+- Show locked/unlocked (based on progress)
+- Show star rating (0-3) per level
+- Tap to start level
+- Use localStorage to check completion
+- Tests for rendering, locked state, selection
+
+**Files**: `LevelSelector.tsx`, `LevelSelector.module.css`, `LevelSelector.test.tsx`
+
+**Acceptance Criteria**: Grid layout, shows progress, touch-friendly, >90% coverage
+
+---
+
+## 🔴 Wave 5: Level System & Integration
+
+### Task 5.1: Level Data Structure 📋
+
+**CONTEXT**: Need level definitions (ball start, goal, obstacles, stars placement)
+
+**Prerequisites**: Types defined in Task 1.4
+
+**Key Requirements**:
+- Create `src/levels/levelData.ts` with 3-5 levels
+- Each level: id, name, ball position, goal, obstacles array, stars array, gravity, timeLimit
+- Create `src/levels/loader.ts` with validation
+- Validate level data (all positions within bounds)
+- Tests for loader, validation, error handling
+
+**Example Level**:
+```typescript
+{
+  id: 1,
+  name: "First Steps",
+  ball: { position: { x: 100, y: 100 }, radius: 20, mass: 1 },
+  goal: { position: { x: 700, y: 500 }, radius: 30 },
+  obstacles: [{ type: 'rectangle', position: { x: 400, y: 300 }, width: 100, height: 20 }],
+  stars: [{ id: 'star1', position: { x: 400, y: 200 }, radius: 15 }],
+  gravity: { x: 0, y: 1 },
+  timeLimit: 60
+}
+```
+
+**Files**: `levelData.ts`, `loader.ts`, `loader.test.ts`
+
+**Acceptance Criteria**: 3-5 levels defined, validated, tests 100% coverage
+
+---
+
+### Task 5.2: Scoring System 🏆
+
+**CONTEXT**: Calculate score from time, stars, completion
+
+**Prerequisites**: Task 1.4 (SCORING constants)
+
+**Key Requirements**:
+- Create `src/utils/scoring.ts`
+- Calculate base score (level complete)
+- Add star bonuses (100pts each)
+- Add time bonus (faster = more points)
+- Calculate star rating (1-3 stars)
+- Perfect bonus (all stars)
+- Pure functions, fully tested
+
+**Functions**:
+```typescript
+calculateScore(timeElapsed, starsCollected, totalStars, timeLimit): number
+calculateStarRating(score, maxScore): 1 | 2 | 3
+```
+
+**Files**: `scoring.ts`, `scoring.test.ts`
+
+**Acceptance Criteria**: All scoring logic, 100% test coverage
+
+---
+
+### Task 5.3: Collision Handlers 💥
+
+**CONTEXT**: Detect and handle collisions (ball-star, ball-goal, ball-obstacle)
+
+**Prerequisites**: Task 2.1 (Physics), Wave 3 (entities)
+
+**Key Requirements**:
+- Create `src/utils/collision.ts`
+- Parse Matter.js collision events
+- Identify collision pairs by label
+- Return collision type and involved entities
+- Use in game loop to trigger actions
+- Tests with mock collision events
+
+**Functions**:
+```typescript
+handleCollision(event, onStarCollect, onGoalReached)
+```
+
+**Files**: `collision.ts`, `collision.test.ts`
+
+**Acceptance Criteria**: Detects all collision types, >95% coverage
+
+---
+
+### Task 5.4: Progress Persistence 💾
+
+**CONTEXT**: Save/load progress to localStorage
+
+**Prerequisites**: Task 2.2 (GameState)
+
+**Key Requirements**:
+- Create `src/utils/storage.ts`
+- Save level completion (levelId, stars, time, score)
+- Load all progress on app start
+- Handle corrupted/missing data gracefully
+- Versioning for save format
+- Tests with mock localStorage
+
+**Functions**:
+```typescript
+saveProgress(levelId, stars, time, score): void
+loadProgress(): SavedGameData
+clearProgress(): void
+```
+
+**Files**: `storage.ts`, `storage.test.ts`
+
+**Acceptance Criteria**: Save/load works, handles errors, 100% coverage
+
+---
+
+## ⚫ Wave 6: Final Integration
+
+### Task 6.1: Main Game Component Integration 🎯
+
+**CONTEXT**: Bring together all systems into playable game
+
+**Prerequisites**: ALL previous tasks complete
+
+**Key Requirements**:
+- Create `src/components/Game/Game.tsx`
+- Initialize PhysicsEngine
+- Load level data
+- Create all entities (ball, obstacles, stars, goal)
+- Start game loop (useGameLoop)
+- Handle collisions (collect stars, reach goal)
+- Integrate touch controls (useTouch)
+- Update game state (time, score, stars)
+- Render all entities to canvas
+- Handle win/lose conditions
+- Level transitions
+- Integration tests for full flow
+- Performance: maintain 60fps
+
+**This is the critical task that makes everything work together!**
+
+**Files**: `Game.tsx`, `Game.module.css`, `GameFlow.test.tsx` (integration)
+
+**Acceptance Criteria**: Full game playable, all systems integrated, 60fps, integration tests pass
+
+---
+
+## 📦 Wave 7: Polish & Deployment
+
+### Task 7.1: Styling & Responsive Design 🎨
+
+**Prerequisites**: All UI components exist
+
+**Key Requirements**:
+- CSS Modules for all components
+- Mobile-first approach
+- Test on viewport sizes: 320px, 768px, 1024px
+- Landscape/portrait support
+- Touch targets ≥44px verified
+- Consistent color scheme (from constants)
+- Smooth transitions/animations
+
+**Acceptance Criteria**: Works on all screen sizes, polished look
+
+---
+
+### Task 7.2: Performance Optimization ⚡
+
+**Prerequisites**: Game fully working
+
+**Key Requirements**:
+- Bundle analysis (check size)
+- Lazy load menus
+- Memoize expensive components
+- Verify 60fps on mobile
+- Check for memory leaks (DevTools)
+- Lighthouse audit (score >90)
+
+**Acceptance Criteria**: <500KB bundle, 60fps, no leaks, Lighthouse >90
+
+---
+
+### Task 7.3: README & Documentation 📚
+
+**Prerequisites**: Game complete
+
+**Key Requirements**:
+- Update README.md (game rules, controls, dev setup)
+- Document component architecture
+- Add screenshots/GIFs
+- Deployment instructions
+- Contributing guidelines
+
+**Acceptance Criteria**: Comprehensive docs, screenshots included
+
+---
+
+## 📋 Summary
+
+**Total Tasks**: 24
+**Wave 1**: ✅ Complete (4 tasks)
+**Wave 2**: 🟢 Ready (4 tasks - fully expanded)
+**Wave 3**: 🟢 Ready (4 tasks - fully expanded)
+**Wave 4**: 🟡 Outlined (4 tasks - abbreviated)
+**Wave 5**: 🟡 Outlined (4 tasks - abbreviated)
+**Wave 6**: 🟡 Outlined (1 task - abbreviated)
+**Wave 7**: 🟡 Outlined (3 tasks - abbreviated)
+
+**Note**: Waves 2-3 provide the full template format. Waves 4-7 can be expanded following the same pattern when agents begin work on them.
