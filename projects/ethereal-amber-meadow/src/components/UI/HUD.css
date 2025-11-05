@@ -1,0 +1,179 @@
+/* HUD (Heads-Up Display) Styles */
+
+.hud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 1rem;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.8) 0%,
+    rgba(0, 0, 0, 0.6) 50%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  z-index: 1000;
+  pointer-events: none; /* Allow clicks to pass through to game canvas */
+}
+
+/* Individual HUD items */
+.hud-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 80px;
+}
+
+/* HUD labels (Score, Time, Stars) */
+.hud-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* HUD values (actual numbers) */
+.hud-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* Stars specific styling */
+.hud-stars .hud-value {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.star-icon {
+  font-size: 1.25rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+}
+
+/* Color coding for different HUD items */
+.hud-score .hud-value {
+  color: #ffd700; /* Gold */
+}
+
+.hud-time .hud-value {
+  color: #00bfff; /* Deep Sky Blue */
+}
+
+.hud-stars .hud-value {
+  color: #ffeb3b; /* Yellow */
+}
+
+/* Responsive design - Mobile */
+@media (max-width: 600px) {
+  .hud {
+    padding: 0.75rem 0.5rem;
+  }
+
+  .hud-item {
+    min-width: 60px;
+    gap: 0.125rem;
+  }
+
+  .hud-label {
+    font-size: 0.625rem;
+  }
+
+  .hud-value {
+    font-size: 1.125rem;
+  }
+
+  .star-icon {
+    font-size: 1rem;
+  }
+}
+
+/* Responsive design - Small mobile */
+@media (max-width: 400px) {
+  .hud {
+    padding: 0.5rem 0.25rem;
+  }
+
+  .hud-item {
+    min-width: 50px;
+  }
+
+  .hud-label {
+    font-size: 0.5rem;
+  }
+
+  .hud-value {
+    font-size: 1rem;
+  }
+
+  .star-icon {
+    font-size: 0.875rem;
+  }
+}
+
+/* Tablet and larger */
+@media (min-width: 768px) {
+  .hud {
+    padding: 1.5rem 2rem;
+  }
+
+  .hud-item {
+    min-width: 100px;
+    gap: 0.5rem;
+  }
+
+  .hud-label {
+    font-size: 0.875rem;
+  }
+
+  .hud-value {
+    font-size: 2rem;
+  }
+
+  .star-icon {
+    font-size: 1.5rem;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .hud {
+    background: rgba(0, 0, 0, 0.95);
+  }
+
+  .hud-label {
+    color: #ffffff;
+  }
+
+  .hud-value {
+    text-shadow: none;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .hud * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Print styles - hide HUD when printing */
+@media print {
+  .hud {
+    display: none;
+  }
+}
