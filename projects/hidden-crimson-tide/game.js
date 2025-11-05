@@ -10,7 +10,7 @@ const game = {
     cannonballs: [],
     holes: [],
     cannon: null,
-    cannonRotation: { horizontal: 0, vertical: -0.5 }, // vertical: negative = up angle
+    cannonRotation: { horizontal: 0, vertical: 0.3 }, // vertical: positive = up angle
 };
 
 // Three.js Setup
@@ -26,10 +26,10 @@ function initThree() {
     scene.background = new THREE.Color(0x87CEEB); // Sky blue
     scene.fog = new THREE.Fog(0x87CEEB, 50, 300);
 
-    // Camera - positioned to look at cannon from behind and slightly above
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 8, 15);
-    camera.lookAt(0, 5, 0);
+    // Camera - positioned higher and angled down to see the landscape
+    camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 15, 20);
+    camera.lookAt(0, 2, -15);
 
     // Renderer
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -75,20 +75,6 @@ function createLedge() {
     ledge.castShadow = true;
     ledge.receiveShadow = true;
     scene.add(ledge);
-
-    // Add some stone texture blocks
-    for (let i = 0; i < 3; i++) {
-        const blockGeometry = new THREE.BoxGeometry(2, 2, 2);
-        const blockMaterial = new THREE.MeshStandardMaterial({
-            color: 0x696969,
-            roughness: 0.9
-        });
-        const block = new THREE.Mesh(blockGeometry, blockMaterial);
-        block.position.set(-5 + i * 5, 4, -5);
-        block.castShadow = true;
-        block.receiveShadow = true;
-        scene.add(block);
-    }
 }
 
 // Create the cannon
@@ -452,7 +438,7 @@ function setupControls() {
         game.cannonRotation.vertical += deltaY * 0.002;
 
         // Clamp vertical rotation (don't let it point too far down or up)
-        game.cannonRotation.vertical = Math.max(-1.2, Math.min(-0.1, game.cannonRotation.vertical));
+        game.cannonRotation.vertical = Math.max(-0.2, Math.min(1.2, game.cannonRotation.vertical));
 
         // Apply rotation to cannon
         cannonGroup.rotation.y = game.cannonRotation.horizontal;
