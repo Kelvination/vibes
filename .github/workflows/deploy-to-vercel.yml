@@ -50,13 +50,36 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
-      - name: Convert project name to secret format
-        id: secret_name
+      - name: Get Vercel Project ID
+        id: project_id
+        env:
+          # Pass all project secrets as env vars
+          VERCEL_PROJECT_ID_RADIANT_VELVET_PEAK: ${{ secrets.VERCEL_PROJECT_ID_RADIANT_VELVET_PEAK }}
+          VERCEL_PROJECT_ID_COSMIC_SILENT_FOREST: ${{ secrets.VERCEL_PROJECT_ID_COSMIC_SILENT_FOREST }}
+          VERCEL_PROJECT_ID_THOUGHT_PARTICLES: ${{ secrets.VERCEL_PROJECT_ID_THOUGHT_PARTICLES }}
+          VERCEL_PROJECT_ID_ETHEREAL_AMBER_MEADOW: ${{ secrets.VERCEL_PROJECT_ID_ETHEREAL_AMBER_MEADOW }}
+          VERCEL_PROJECT_ID_HIDDEN_CRIMSON_TIDE: ${{ secrets.VERCEL_PROJECT_ID_HIDDEN_CRIMSON_TIDE }}
+          VERCEL_PROJECT_ID_LUMINOUS_GENTLE_HORIZON: ${{ secrets.VERCEL_PROJECT_ID_LUMINOUS_GENTLE_HORIZON }}
+          VERCEL_PROJECT_ID_MYSTIC_SILVER_CANYON: ${{ secrets.VERCEL_PROJECT_ID_MYSTIC_SILVER_CANYON }}
+          VERCEL_PROJECT_ID_VELVET_ELECTRIC_DAWN: ${{ secrets.VERCEL_PROJECT_ID_VELVET_ELECTRIC_DAWN }}
+          VERCEL_PROJECT_ID_SERENE_FROZEN_ECHO: ${{ secrets.VERCEL_PROJECT_ID_SERENE_FROZEN_ECHO }}
+          VERCEL_PROJECT_ID_BRIGHT_DANCING_RIVER: ${{ secrets.VERCEL_PROJECT_ID_BRIGHT_DANCING_RIVER }}
+          VERCEL_PROJECT_ID_TREE_ROCKET_MOUNTAIN: ${{ secrets.VERCEL_PROJECT_ID_TREE_ROCKET_MOUNTAIN }}
         run: |
-          # Replace hyphens with underscores for secret name
-          SECRET_NAME=$(echo "${{ matrix.project }}" | tr '-' '_')
-          echo "name=VERCEL_PROJECT_ID_${SECRET_NAME}" >> $GITHUB_OUTPUT
-          echo "Secret name: VERCEL_PROJECT_ID_${SECRET_NAME}"
+          # Convert project name to secret format
+          SECRET_VAR="VERCEL_PROJECT_ID_$(echo "${{ matrix.project }}" | tr '-' '_' | tr '[:lower:]' '[:upper:]')"
+          echo "Looking for secret: $SECRET_VAR"
+
+          # Get the value using bash indirect variable expansion
+          PROJECT_ID="${!SECRET_VAR}"
+
+          if [ -z "$PROJECT_ID" ]; then
+            echo "Error: Secret $SECRET_VAR not found or is empty"
+            exit 1
+          fi
+
+          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
+          echo "Found project ID for ${{ matrix.project }}"
 
       - name: Pull Vercel Environment Information
         run: |
@@ -67,14 +90,14 @@ jobs:
         working-directory: projects/${{ matrix.project }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets[steps.secret_name.outputs.name] }}
+          VERCEL_PROJECT_ID: ${{ steps.project_id.outputs.project_id }}
 
       - name: Build Project Artifacts
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         working-directory: projects/${{ matrix.project }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets[steps.secret_name.outputs.name] }}
+          VERCEL_PROJECT_ID: ${{ steps.project_id.outputs.project_id }}
 
       - name: Deploy Project Artifacts to Vercel
         id: deploy
@@ -85,7 +108,7 @@ jobs:
         working-directory: projects/${{ matrix.project }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets[steps.secret_name.outputs.name] }}
+          VERCEL_PROJECT_ID: ${{ steps.project_id.outputs.project_id }}
 
       - name: Comment deployment URL on PR
         if: success()
