@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Cannon Shooting Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <!-- UI Overlay -->
+        <div id="ui-overlay">
+            <div id="score-display">
+                Score: <span id="score">0</span>
+            </div>
+            <div id="instructions">
+                Drag to aim | Hold button to charge power
+            </div>
+            <div id="power-container">
+                <div id="power-label">Power</div>
+                <div id="power-bar-bg">
+                    <div id="power-bar"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fire Button -->
+        <button id="fire-button">
+            <div class="button-content">
+                <span class="button-text">HOLD TO CHARGE</span>
+                <span class="button-subtext">Release to Fire</span>
+            </div>
+        </button>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="screen">
+            <h1>🎯 Cannon Master</h1>
+            <p>Shoot cannonballs into the holes to score points!</p>
+            <ul class="instructions-list">
+                <li>Drag anywhere to aim the cannon</li>
+                <li>Hold the button to charge power</li>
+                <li>Release to fire!</li>
+            </ul>
+            <button id="start-btn" class="menu-button">Start Game</button>
+        </div>
+    </div>
+
+    <!-- Three.js and Cannon-es from CDN -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module" src="game.js"></script>
+</body>
+</html>
