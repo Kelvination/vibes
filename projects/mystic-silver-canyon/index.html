@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quarto Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Quarto</h1>
+
+        <div class="game-info">
+            <div id="status">Player 1: Select a piece for Player 2</div>
+            <button id="resetBtn">New Game</button>
+        </div>
+
+        <div class="game-container">
+            <!-- Game Board -->
+            <div class="board-container">
+                <h2>Board</h2>
+                <div id="board" class="board"></div>
+            </div>
+
+            <!-- Available Pieces -->
+            <div class="pieces-container">
+                <h2>Available Pieces</h2>
+                <div id="pieces" class="pieces"></div>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <h3>How to Play</h3>
+            <ul>
+                <li><strong>Goal:</strong> Get 4 pieces in a row (horizontal, vertical, or diagonal) that share at least one attribute</li>
+                <li><strong>Attributes:</strong> Tall/Short, Light/Dark, Square/Circle, Hollow/Solid</li>
+                <li><strong>Twist:</strong> Your opponent chooses which piece you must place!</li>
+                <li><strong>Turn 1:</strong> Player 1 selects a piece for Player 2</li>
+                <li><strong>Turn 2+:</strong> Place your piece on the board, then select a piece for your opponent</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
