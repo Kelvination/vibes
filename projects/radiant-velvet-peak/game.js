@@ -26,18 +26,18 @@ const carState = {
 // Car parameters
 const carParams = {
     mass: 1200,
-    suspensionStiffness: 120000,
-    suspensionDamping: 8000,
+    suspensionStiffness: 35000,
+    suspensionDamping: 4500,
     suspensionRestLength: 0.6,
     suspensionMaxTravel: 0.4,
     wheelRadius: 0.4,
     engineForce: 0,
-    maxEngineForce: 15000,
+    maxEngineForce: 25000,
     brakeForce: 0,
-    maxBrakeForce: 8000,
+    maxBrakeForce: 12000,
     steeringAngle: 0,
-    maxSteeringAngle: 0.5,
-    steeringSpeed: 2.5,
+    maxSteeringAngle: 0.6,
+    steeringSpeed: 3.5,
     dragCoefficient: 0.3,
     rollingResistance: 50,
 };
@@ -272,9 +272,12 @@ function updatePhysics(dt) {
 
             // Suspension compression
             const compression = carParams.suspensionRestLength - carState.wheelSuspensionLengths[i];
-            const compressionVelocity = carState.velocity.y; // Vertical velocity component
 
-            // Spring and damper force (much stronger to counter gravity)
+            // Damper resists the rate of compression/extension
+            // Negative velocity.y (falling) should produce positive damping force (upward)
+            const compressionVelocity = -carState.velocity.y;
+
+            // Spring force based on compression, damper resists velocity
             const springForce = compression * carParams.suspensionStiffness;
             const damperForce = compressionVelocity * carParams.suspensionDamping;
             const suspensionForce = (springForce + damperForce) / carParams.mass;
@@ -305,8 +308,9 @@ function updatePhysics(dt) {
             totalForce.add(brakeForceVec);
         }
 
-        // Apply steering torque
-        const steeringTorque = new THREE.Vector3(0, carParams.steeringAngle * carState.velocity.length() * 2, 0);
+        // Apply steering torque (based on forward velocity)
+        const forwardSpeed = forwardVector.dot(carState.velocity);
+        const steeringTorque = new THREE.Vector3(0, carParams.steeringAngle * Math.abs(forwardSpeed) * 5, 0);
         totalTorque.add(steeringTorque);
 
         // Drag and rolling resistance
@@ -332,14 +336,13 @@ function updatePhysics(dt) {
     carState.angularVelocity.add(totalTorque.multiplyScalar(dt * 0.5));
     carState.angularVelocity.multiplyScalar(0.95); // Angular damping
 
+    // Add some velocity damping when on ground to help settle
+    if (wheelsOnGround > 0) {
+        carState.velocity.multiplyScalar(0.999);
+    }
+
     // Update position
     carState.position.add(carState.velocity.clone().multiplyScalar(dt));
-
-    // Prevent car from going below ground
-    if (carState.position.y < 0.5) {
-        carState.position.y = 0.5;
-        carState.velocity.y = Math.max(0, carState.velocity.y);
-    }
 
     // Update rotation
     const rotationChange = carState.angularVelocity.clone().multiplyScalar(dt);
