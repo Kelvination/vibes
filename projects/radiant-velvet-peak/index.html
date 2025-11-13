@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Raycast Racer</title>
+    <title>3D Raycast Car Physics</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,14 +11,20 @@
         <canvas id="gameCanvas"></canvas>
         <div class="hud">
             <div class="speed">Speed: <span id="speedometer">0</span> km/h</div>
+            <div class="info">
+                <div>Wheels on ground: <span id="wheelsGrounded">0</span>/4</div>
+                <div>Height: <span id="carHeight">0</span>m</div>
+            </div>
             <div class="controls">
                 <div>W - Accelerate</div>
-                <div>S - Brake</div>
+                <div>S - Brake/Reverse</div>
                 <div>A - Turn Left</div>
                 <div>D - Turn Right</div>
+                <div>Space - Handbrake</div>
             </div>
         </div>
     </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="game.js"></script>
 </body>
 </html>

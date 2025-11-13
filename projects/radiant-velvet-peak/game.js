@@ -1,288 +1,402 @@
-// Canvas setup
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-canvas.width = 800;
-canvas.height = 600;
+// Three.js Scene Setup
+let scene, camera, renderer;
+let car, wheels = [];
+let ground;
+let raycaster, rayHelpers = [];
 
-// Game state
-const game = {
-    speed: 0,
-    maxSpeed: 200,
-    acceleration: 0.3,
-    deceleration: 0.5,
-    brake: 1.2,
-    turnSpeed: 0.03,
-    position: 0,
-    curve: 0,
-    playerX: 0,
+// Physics constants
+const GRAVITY = -20;
+const WHEEL_POSITIONS = [
+    { x: -0.8, z: 1.2 },  // Front left
+    { x: 0.8, z: 1.2 },   // Front right
+    { x: -0.8, z: -1.2 }, // Rear left
+    { x: 0.8, z: -1.2 }   // Rear right
+];
+
+// Car physics state
+const carState = {
+    position: new THREE.Vector3(0, 5, 0),
+    velocity: new THREE.Vector3(0, 0, 0),
+    rotation: new THREE.Euler(0, 0, 0),
+    angularVelocity: new THREE.Vector3(0, 0, 0),
+    wheelGroundContacts: [false, false, false, false],
+    wheelSuspensionLengths: [0, 0, 0, 0],
 };
 
-// Keyboard state
+// Car parameters
+const carParams = {
+    mass: 1200,
+    suspensionStiffness: 30000,
+    suspensionDamping: 2000,
+    suspensionRestLength: 0.5,
+    suspensionMaxTravel: 0.3,
+    wheelRadius: 0.4,
+    engineForce: 0,
+    maxEngineForce: 15000,
+    brakeForce: 0,
+    maxBrakeForce: 8000,
+    steeringAngle: 0,
+    maxSteeringAngle: 0.5,
+    steeringSpeed: 2.5,
+    dragCoefficient: 0.3,
+    rollingResistance: 50,
+};
+
+// Input state
 const keys = {};
 
-// Road parameters
-const roadWidth = 2000;
-const segmentLength = 200;
-const rumbleLength = 3;
-const drawDistance = 300;
-const cameraHeight = 1000;
-const cameraDepth = 1 / Math.tan((Math.PI / 180) * 40); // FOV 80 degrees
+// Initialize Three.js
+function init() {
+    // Scene
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog = new THREE.Fog(0x87CEEB, 50, 200);
 
-// Road segments
-let roadSegments = [];
+    // Camera
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 5, -10);
 
-// Colors
-const colors = {
-    sky: '#72B7FF',
-    ground: {
-        grass: ['#10AA10', '#009A00'],
-        rumble: ['#FFFFFF', '#000000'],
-        road: ['#888888', '#666666']
+    // Renderer
+    const canvas = document.getElementById('gameCanvas');
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    dirLight.position.set(50, 100, 50);
+    dirLight.castShadow = true;
+    dirLight.shadow.camera.left = -100;
+    dirLight.shadow.camera.right = 100;
+    dirLight.shadow.camera.top = 100;
+    dirLight.shadow.camera.bottom = -100;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    scene.add(dirLight);
+
+    // Ground
+    createGround();
+
+    // Car
+    createCar();
+
+    // Raycaster
+    raycaster = new THREE.Raycaster();
+
+    // Create ray helpers for visualization
+    for (let i = 0; i < 4; i++) {
+        const rayHelper = new THREE.ArrowHelper(
+            new THREE.Vector3(0, -1, 0),
+            new THREE.Vector3(0, 0, 0),
+            2,
+            0xff0000
+        );
+        rayHelpers.push(rayHelper);
+        scene.add(rayHelper);
     }
-};
 
-// Initialize road segments
-function initRoad() {
-    for (let i = 0; i < 1600; i++) {
-        const segment = {
-            index: i,
-            curve: 0,
-        };
+    // Event listeners
+    window.addEventListener('resize', onWindowResize);
+    window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
+    window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
 
-        // Add some curves
-        if (i > 300 && i < 400) {
-            segment.curve = 2;
-        } else if (i > 500 && i < 600) {
-            segment.curve = -2;
-        } else if (i > 750 && i < 900) {
-            segment.curve = -3;
-        } else if (i > 1000 && i < 1200) {
-            segment.curve = 1.5;
-        }
+    // Start animation loop
+    animate();
+}
 
-        roadSegments.push(segment);
+function createGround() {
+    // Create a larger ground plane with some texture
+    const groundGeometry = new THREE.PlaneGeometry(200, 200, 50, 50);
+    const groundMaterial = new THREE.MeshStandardMaterial({
+        color: 0x3a7d3a,
+        roughness: 0.8,
+    });
+
+    // Add some height variation
+    const positions = groundGeometry.attributes.position;
+    for (let i = 0; i < positions.count; i++) {
+        const x = positions.getX(i);
+        const z = positions.getY(i);
+        const y = Math.sin(x * 0.1) * Math.cos(z * 0.1) * 2;
+        positions.setZ(i, y);
     }
+    groundGeometry.computeVertexNormals();
+
+    ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Add a grid for reference
+    const gridHelper = new THREE.GridHelper(200, 40, 0x000000, 0x555555);
+    gridHelper.material.opacity = 0.2;
+    gridHelper.material.transparent = true;
+    scene.add(gridHelper);
 }
 
-// Project 3D to 2D
-function project(p) {
-    return {
-        scale: cameraDepth / (p.z + 0.01),
-        x: (1 + p.scale * p.x) * canvas.width / 2,
-        y: (1 - p.scale * p.y) * canvas.height / 2,
-        w: p.scale * roadWidth * canvas.width / 2,
-    };
-}
-
-// Draw polygon
-function drawPolygon(x1, y1, x2, y2, x3, y3, x4, y4, color) {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.lineTo(x3, y3);
-    ctx.lineTo(x4, y4);
-    ctx.closePath();
-    ctx.fill();
-}
-
-// Draw segment
-function drawSegment(segment, p1, p2) {
-    const grassColor = colors.ground.grass[segment.index % 2];
-    const rumbleColor = colors.ground.rumble[Math.floor(segment.index / rumbleLength) % 2];
-    const roadColor = colors.ground.road[Math.floor(segment.index / rumbleLength) % 2];
-
-    // Draw grass
-    drawPolygon(
-        0, p1.y,
-        canvas.width, p1.y,
-        canvas.width, p2.y,
-        0, p2.y,
-        grassColor
-    );
-
-    // Draw rumble strips
-    const rumbleWidth = p1.w * 1.2;
-    drawPolygon(
-        p1.x - rumbleWidth, p1.y,
-        p1.x + rumbleWidth, p1.y,
-        p2.x + rumbleWidth, p2.y,
-        p2.x - rumbleWidth, p2.y,
-        rumbleColor
-    );
-
-    // Draw road
-    drawPolygon(
-        p1.x - p1.w, p1.y,
-        p1.x + p1.w, p1.y,
-        p2.x + p2.w, p2.y,
-        p2.x - p2.w, p2.y,
-        roadColor
-    );
-}
-
-// Draw car
-function drawCar() {
-    const carWidth = 80;
-    const carHeight = 100;
-    const carX = canvas.width / 2 + (game.playerX * canvas.width / 2) - carWidth / 2;
-    const carY = canvas.height - carHeight - 20;
-
-    // Shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.fillRect(carX + 5, carY + carHeight - 5, carWidth, 10);
+function createCar() {
+    car = new THREE.Group();
 
     // Car body
-    ctx.fillStyle = '#FF0000';
-    ctx.fillRect(carX, carY + 30, carWidth, 60);
+    const bodyGeometry = new THREE.BoxGeometry(2, 0.8, 3);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.position.y = 0.4;
+    body.castShadow = true;
+    car.add(body);
 
-    // Car top
-    ctx.fillStyle = '#CC0000';
-    ctx.fillRect(carX + 10, carY + 15, carWidth - 20, 30);
+    // Car cabin
+    const cabinGeometry = new THREE.BoxGeometry(1.6, 0.6, 1.8);
+    const cabinMaterial = new THREE.MeshStandardMaterial({ color: 0x330000 });
+    const cabin = new THREE.Mesh(cabinGeometry, cabinMaterial);
+    cabin.position.y = 1.1;
+    cabin.position.z = -0.2;
+    cabin.castShadow = true;
+    car.add(cabin);
 
-    // Windshield
-    ctx.fillStyle = '#87CEEB';
-    ctx.fillRect(carX + 15, carY + 20, carWidth - 30, 20);
+    // Windows
+    const windowMaterial = new THREE.MeshStandardMaterial({
+        color: 0x87CEEB,
+        transparent: true,
+        opacity: 0.6
+    });
+
+    const frontWindow = new THREE.Mesh(
+        new THREE.BoxGeometry(1.5, 0.5, 0.1),
+        windowMaterial
+    );
+    frontWindow.position.set(0, 1.1, 0.7);
+    car.add(frontWindow);
 
     // Wheels
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(carX + 5, carY + 30, 15, 25);
-    ctx.fillRect(carX + carWidth - 20, carY + 30, 15, 25);
-    ctx.fillRect(carX + 5, carY + 65, 15, 25);
-    ctx.fillRect(carX + carWidth - 20, carY + 65, 15, 25);
+    const wheelGeometry = new THREE.CylinderGeometry(carParams.wheelRadius, carParams.wheelRadius, 0.3, 16);
+    const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+
+    WHEEL_POSITIONS.forEach((pos, i) => {
+        const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(pos.x, 0, pos.z);
+        wheel.castShadow = true;
+        wheels.push(wheel);
+        car.add(wheel);
+    });
+
+    car.position.copy(carState.position);
+    scene.add(car);
 }
 
-// Update game state
-function update(dt) {
+function performRaycasts() {
+    const rayOrigin = new THREE.Vector3();
+    const rayDirection = new THREE.Vector3(0, -1, 0);
+    const maxRayDistance = carParams.suspensionRestLength + carParams.suspensionMaxTravel + carParams.wheelRadius;
+
+    WHEEL_POSITIONS.forEach((wheelPos, i) => {
+        // Calculate world position of wheel
+        rayOrigin.set(wheelPos.x, 0, wheelPos.z);
+        rayOrigin.applyQuaternion(car.quaternion);
+        rayOrigin.add(carState.position);
+
+        // Cast ray downward
+        raycaster.set(rayOrigin, rayDirection);
+        const intersects = raycaster.intersectObject(ground);
+
+        // Update ray helper
+        rayHelpers[i].position.copy(rayOrigin);
+        rayHelpers[i].setDirection(rayDirection);
+
+        if (intersects.length > 0) {
+            const hitDistance = intersects[0].distance;
+
+            if (hitDistance <= maxRayDistance) {
+                carState.wheelGroundContacts[i] = true;
+                carState.wheelSuspensionLengths[i] = hitDistance - carParams.wheelRadius;
+                rayHelpers[i].setColor(0x00ff00);
+                rayHelpers[i].setLength(hitDistance);
+            } else {
+                carState.wheelGroundContacts[i] = false;
+                carState.wheelSuspensionLengths[i] = carParams.suspensionRestLength + carParams.suspensionMaxTravel;
+                rayHelpers[i].setColor(0xff0000);
+                rayHelpers[i].setLength(maxRayDistance);
+            }
+        } else {
+            carState.wheelGroundContacts[i] = false;
+            carState.wheelSuspensionLengths[i] = carParams.suspensionRestLength + carParams.suspensionMaxTravel;
+            rayHelpers[i].setColor(0xff0000);
+            rayHelpers[i].setLength(maxRayDistance);
+        }
+    });
+}
+
+function updatePhysics(dt) {
     // Handle input
-    if (keys['w'] || keys['W'] || keys['ArrowUp']) {
-        game.speed += game.acceleration * dt;
-    } else if (keys['s'] || keys['S'] || keys['ArrowDown']) {
-        game.speed -= game.brake * dt;
+    if (keys['w']) {
+        carParams.engineForce = carParams.maxEngineForce;
+    } else if (keys['s']) {
+        carParams.engineForce = -carParams.maxEngineForce * 0.5;
     } else {
-        game.speed -= game.deceleration * dt;
+        carParams.engineForce = 0;
     }
 
-    // Clamp speed
-    game.speed = Math.max(0, Math.min(game.maxSpeed, game.speed));
-
-    // Handle turning (only when moving)
-    if (game.speed > 0) {
-        if (keys['a'] || keys['A'] || keys['ArrowLeft']) {
-            game.playerX -= game.turnSpeed * dt;
-            game.curve -= game.turnSpeed * dt * 0.3;
-        }
-        if (keys['d'] || keys['D'] || keys['ArrowRight']) {
-            game.playerX += game.turnSpeed * dt;
-            game.curve += game.turnSpeed * dt * 0.3;
-        }
+    if (keys[' ']) {
+        carParams.brakeForce = carParams.maxBrakeForce;
+    } else {
+        carParams.brakeForce = 0;
     }
 
-    // Clamp player position
-    game.playerX = Math.max(-1, Math.min(1, game.playerX));
+    // Steering
+    const targetSteering = keys['a'] ? carParams.maxSteeringAngle :
+                          keys['d'] ? -carParams.maxSteeringAngle : 0;
+
+    const steeringDiff = targetSteering - carParams.steeringAngle;
+    carParams.steeringAngle += steeringDiff * carParams.steeringSpeed * dt;
+
+    // Perform raycasts
+    performRaycasts();
+
+    // Calculate suspension forces
+    const upVector = new THREE.Vector3(0, 1, 0);
+    upVector.applyQuaternion(car.quaternion);
+
+    const totalForce = new THREE.Vector3(0, 0, 0);
+    const totalTorque = new THREE.Vector3(0, 0, 0);
+
+    let wheelsOnGround = 0;
+
+    WHEEL_POSITIONS.forEach((wheelPos, i) => {
+        if (carState.wheelGroundContacts[i]) {
+            wheelsOnGround++;
+
+            // Suspension compression
+            const compression = carParams.suspensionRestLength - carState.wheelSuspensionLengths[i];
+            const compressionVelocity = upVector.dot(carState.velocity);
+
+            // Spring and damper force
+            const springForce = compression * carParams.suspensionStiffness;
+            const damperForce = compressionVelocity * carParams.suspensionDamping;
+            const suspensionForce = (springForce + damperForce) / carParams.mass;
+
+            // Add suspension force
+            const force = upVector.clone().multiplyScalar(suspensionForce);
+            totalForce.add(force);
+
+            // Calculate torque (position relative to center of mass)
+            const wheelWorldPos = new THREE.Vector3(wheelPos.x, 0, wheelPos.z);
+            wheelWorldPos.applyQuaternion(car.quaternion);
+            const torque = new THREE.Vector3().crossVectors(wheelWorldPos, force);
+            totalTorque.add(torque);
+        }
+    });
+
+    // Apply engine force (rear wheels)
+    if (wheelsOnGround > 0) {
+        const forwardVector = new THREE.Vector3(0, 0, 1);
+        forwardVector.applyQuaternion(car.quaternion);
+
+        const engineForceVec = forwardVector.clone().multiplyScalar(carParams.engineForce / carParams.mass);
+        totalForce.add(engineForceVec);
+
+        // Apply braking
+        if (carParams.brakeForce > 0) {
+            const brakeForceVec = carState.velocity.clone().normalize().multiplyScalar(-carParams.brakeForce / carParams.mass);
+            totalForce.add(brakeForceVec);
+        }
+
+        // Apply steering torque
+        const steeringTorque = new THREE.Vector3(0, carParams.steeringAngle * carState.velocity.length() * 2, 0);
+        totalTorque.add(steeringTorque);
+
+        // Drag and rolling resistance
+        const speed = carState.velocity.length();
+        const drag = carState.velocity.clone().normalize().multiplyScalar(
+            -carParams.dragCoefficient * speed * speed / carParams.mass
+        );
+        totalForce.add(drag);
+
+        const rollingResist = carState.velocity.clone().normalize().multiplyScalar(
+            -carParams.rollingResistance / carParams.mass
+        );
+        totalForce.add(rollingResist);
+    }
+
+    // Apply gravity
+    totalForce.y += GRAVITY;
+
+    // Update velocity
+    carState.velocity.add(totalForce.clone().multiplyScalar(dt));
+
+    // Update angular velocity
+    carState.angularVelocity.add(totalTorque.multiplyScalar(dt * 0.5));
+    carState.angularVelocity.multiplyScalar(0.95); // Angular damping
 
     // Update position
-    game.position += game.speed * dt;
+    carState.position.add(carState.velocity.clone().multiplyScalar(dt));
 
-    // Loop the track
-    while (game.position >= roadSegments.length * segmentLength) {
-        game.position -= roadSegments.length * segmentLength;
-    }
+    // Update rotation
+    const rotationChange = carState.angularVelocity.clone().multiplyScalar(dt);
+    car.rotation.x += rotationChange.x;
+    car.rotation.y += rotationChange.y;
+    car.rotation.z += rotationChange.z;
 
-    // Apply curve influence on player position
-    const baseSegment = Math.floor(game.position / segmentLength) % roadSegments.length;
-    const segment = roadSegments[baseSegment];
+    // Update car transform
+    car.position.copy(carState.position);
 
-    if (segment.curve !== 0) {
-        game.playerX += segment.curve * 0.001 * game.speed * dt;
-    }
+    // Update wheels rotation and steering
+    const wheelRotation = carState.velocity.length() * dt * 3;
+    wheels.forEach((wheel, i) => {
+        // Rotate wheels based on speed
+        wheel.rotation.x += wheelRotation;
 
-    // Decay curve
-    game.curve *= 0.9;
+        // Apply steering to front wheels
+        if (i < 2) {
+            wheel.rotation.y = carParams.steeringAngle;
+        }
 
-    // Update speedometer
-    document.getElementById('speedometer').textContent = Math.floor(game.speed);
+        // Position wheels based on suspension
+        const targetY = -carParams.suspensionRestLength + carState.wheelSuspensionLengths[i];
+        wheel.position.y = targetY;
+    });
+
+    // Update HUD
+    const speed = Math.abs(carState.velocity.length() * 3.6); // Convert to km/h
+    document.getElementById('speedometer').textContent = Math.floor(speed);
+    document.getElementById('wheelsGrounded').textContent = wheelsOnGround;
+    document.getElementById('carHeight').textContent = carState.position.y.toFixed(2);
 }
 
-// Render
-function render() {
-    // Clear canvas
-    ctx.fillStyle = colors.sky;
-    ctx.fillRect(0, 0, canvas.width, canvas.height / 2);
+function updateCamera() {
+    // Follow car with camera
+    const cameraOffset = new THREE.Vector3(0, 3, -8);
+    cameraOffset.applyQuaternion(car.quaternion);
 
-    ctx.fillStyle = colors.ground.grass[0];
-    ctx.fillRect(0, canvas.height / 2, canvas.width, canvas.height / 2);
+    const targetCameraPos = car.position.clone().add(cameraOffset);
+    camera.position.lerp(targetCameraPos, 0.1);
 
-    // Calculate base segment
-    const baseSegment = Math.floor(game.position / segmentLength);
-    const basePercent = (game.position % segmentLength) / segmentLength;
-
-    // Draw road segments
-    let x = 0;
-    let dx = 0;
-
-    for (let n = 0; n < drawDistance; n++) {
-        const segment = roadSegments[(baseSegment + n) % roadSegments.length];
-        const segmentPercent = (n === 0 ? basePercent : 0);
-
-        // Calculate world position
-        const z = (n + segmentPercent) * segmentLength;
-
-        // Project current segment
-        const p1 = project({
-            x: x + dx,
-            y: cameraHeight,
-            z: z,
-            scale: 1
-        });
-
-        // Next segment
-        x += dx;
-        dx += segment.curve;
-
-        const nextSegment = roadSegments[(baseSegment + n + 1) % roadSegments.length];
-        const nextZ = (n + 1 + segmentPercent) * segmentLength;
-
-        const p2 = project({
-            x: x + dx,
-            y: cameraHeight,
-            z: nextZ,
-            scale: 1
-        });
-
-        // Offset by player position and curve
-        p1.x -= p1.scale * game.playerX * roadWidth * 2;
-        p2.x -= p2.scale * game.playerX * roadWidth * 2;
-
-        // Draw segment
-        drawSegment(segment, p1, p2);
-    }
-
-    // Draw car
-    drawCar();
+    const lookAtOffset = new THREE.Vector3(0, 0.5, 2);
+    lookAtOffset.applyQuaternion(car.quaternion);
+    const targetLookAt = car.position.clone().add(lookAtOffset);
+    camera.lookAt(targetLookAt);
 }
 
-// Game loop
-let lastTime = 0;
-function gameLoop(timestamp) {
-    const dt = Math.min((timestamp - lastTime) / 16.667, 3); // Delta time in frames (60fps)
-    lastTime = timestamp;
+function animate() {
+    requestAnimationFrame(animate);
 
-    update(dt);
-    render();
+    const dt = 1 / 60; // Fixed timestep
 
-    requestAnimationFrame(gameLoop);
+    updatePhysics(dt);
+    updateCamera();
+
+    renderer.render(scene, camera);
 }
 
-// Keyboard event listeners
-window.addEventListener('keydown', (e) => {
-    keys[e.key] = true;
-});
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
 
-window.addEventListener('keyup', (e) => {
-    keys[e.key] = false;
-});
-
-// Initialize and start
-initRoad();
-requestAnimationFrame(gameLoop);
+// Start the game
+init();
