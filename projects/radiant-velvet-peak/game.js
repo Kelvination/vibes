@@ -15,7 +15,7 @@ const WHEEL_POSITIONS = [
 
 // Car physics state
 const carState = {
-    position: new THREE.Vector3(0, 5, 0),
+    position: new THREE.Vector3(0, 3, 0),
     velocity: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Euler(0, 0, 0),
     angularVelocity: new THREE.Vector3(0, 0, 0),
@@ -26,10 +26,10 @@ const carState = {
 // Car parameters
 const carParams = {
     mass: 1200,
-    suspensionStiffness: 30000,
-    suspensionDamping: 2000,
-    suspensionRestLength: 0.5,
-    suspensionMaxTravel: 0.3,
+    suspensionStiffness: 120000,
+    suspensionDamping: 8000,
+    suspensionRestLength: 0.6,
+    suspensionMaxTravel: 0.4,
     wheelRadius: 0.4,
     engineForce: 0,
     maxEngineForce: 15000,
@@ -192,15 +192,16 @@ function createCar() {
 function performRaycasts() {
     const rayOrigin = new THREE.Vector3();
     const rayDirection = new THREE.Vector3(0, -1, 0);
+    rayDirection.applyQuaternion(car.quaternion).normalize();
     const maxRayDistance = carParams.suspensionRestLength + carParams.suspensionMaxTravel + carParams.wheelRadius;
 
     WHEEL_POSITIONS.forEach((wheelPos, i) => {
-        // Calculate world position of wheel
-        rayOrigin.set(wheelPos.x, 0, wheelPos.z);
+        // Calculate world position of wheel (start from chassis, not y=0)
+        rayOrigin.set(wheelPos.x, 0.4, wheelPos.z); // 0.4 is body height
         rayOrigin.applyQuaternion(car.quaternion);
         rayOrigin.add(carState.position);
 
-        // Cast ray downward
+        // Cast ray downward in car's local down direction
         raycaster.set(rayOrigin, rayDirection);
         const intersects = raycaster.intersectObject(ground);
 
@@ -258,8 +259,7 @@ function updatePhysics(dt) {
     performRaycasts();
 
     // Calculate suspension forces
-    const upVector = new THREE.Vector3(0, 1, 0);
-    upVector.applyQuaternion(car.quaternion);
+    const worldUpVector = new THREE.Vector3(0, 1, 0); // World up for suspension forces
 
     const totalForce = new THREE.Vector3(0, 0, 0);
     const totalTorque = new THREE.Vector3(0, 0, 0);
@@ -272,15 +272,15 @@ function updatePhysics(dt) {
 
             // Suspension compression
             const compression = carParams.suspensionRestLength - carState.wheelSuspensionLengths[i];
-            const compressionVelocity = upVector.dot(carState.velocity);
+            const compressionVelocity = carState.velocity.y; // Vertical velocity component
 
-            // Spring and damper force
+            // Spring and damper force (much stronger to counter gravity)
             const springForce = compression * carParams.suspensionStiffness;
             const damperForce = compressionVelocity * carParams.suspensionDamping;
             const suspensionForce = (springForce + damperForce) / carParams.mass;
 
-            // Add suspension force
-            const force = upVector.clone().multiplyScalar(suspensionForce);
+            // Add suspension force (always upward in world space)
+            const force = worldUpVector.clone().multiplyScalar(suspensionForce);
             totalForce.add(force);
 
             // Calculate torque (position relative to center of mass)
@@ -335,6 +335,12 @@ function updatePhysics(dt) {
     // Update position
     carState.position.add(carState.velocity.clone().multiplyScalar(dt));
 
+    // Prevent car from going below ground
+    if (carState.position.y < 0.5) {
+        carState.position.y = 0.5;
+        carState.velocity.y = Math.max(0, carState.velocity.y);
+    }
+
     // Update rotation
     const rotationChange = carState.angularVelocity.clone().multiplyScalar(dt);
     car.rotation.x += rotationChange.x;
@@ -356,7 +362,8 @@ function updatePhysics(dt) {
         }
 
         // Position wheels based on suspension
-        const targetY = -carParams.suspensionRestLength + carState.wheelSuspensionLengths[i];
+        const suspensionOffset = carState.wheelSuspensionLengths[i] - carParams.suspensionRestLength;
+        const targetY = 0.4 - carParams.suspensionRestLength - carParams.wheelRadius + suspensionOffset;
         wheel.position.y = targetY;
     });
 
