@@ -15,6 +15,7 @@ const densityInput = document.getElementById('density');
 const exagInput = document.getElementById('exaggeration');
 const colorSchemeSelect = document.getElementById('colorScheme');
 const wireframeCheckbox = document.getElementById('wireframe');
+const apiSourceSelect = document.getElementById('apiSource');
 
 const rangeVal = document.getElementById('range-val');
 const densityVal = document.getElementById('density-val');
@@ -145,81 +146,91 @@ const colorSchemes = {
 // Helper: sleep ms
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// Fetch a single batch with retry on 429
-async function fetchBatchWithRetry(url, batchNum, totalBatches, maxRetries = 4) {
+// Fetch with retry on 429/network errors
+async function fetchWithRetry(url, batchNum, totalBatches, apiName, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let resp;
     try {
       resp = await fetch(url);
     } catch (fetchErr) {
-      debugAppend(`FETCH ERROR (batch ${batchNum}, attempt ${attempt + 1}): ${fetchErr.message}`);
-      if (attempt === maxRetries) {
-        showDebug();
-        throw new Error(`Network error on batch ${batchNum}: ${fetchErr.message}`);
-      }
+      debugAppend(`[${apiName}] FETCH ERROR (batch ${batchNum}, attempt ${attempt + 1}): ${fetchErr.message}`);
+      if (attempt === maxRetries) throw fetchErr;
       const wait = 2000 * (attempt + 1);
       debugAppend(`Retrying in ${wait}ms...`);
-      loadingText.textContent = `Rate limited, waiting ${wait / 1000}s...`;
       await sleep(wait);
       continue;
     }
-
-    const bodyText = await resp.text();
 
     if (resp.status === 429) {
       const wait = 3000 * (attempt + 1);
-      debugAppend(`429 rate limited (batch ${batchNum}, attempt ${attempt + 1}). Waiting ${wait}ms...`);
-      loadingText.textContent = `Rate limited, retrying in ${wait / 1000}s... (batch ${batchNum}/${totalBatches})`;
-      if (attempt === maxRetries) {
-        debugAppend(`Response body: ${bodyText.substring(0, 300)}`);
-        showDebug();
-        throw new Error(`Rate limited after ${maxRetries + 1} attempts on batch ${batchNum}. See debug panel.`);
-      }
+      debugAppend(`[${apiName}] 429 rate limited (batch ${batchNum}, attempt ${attempt + 1}). Waiting ${wait}ms...`);
+      loadingText.textContent = `Rate limited, retrying in ${wait / 1000}s...`;
+      if (attempt === maxRetries) throw new Error(`429 after ${maxRetries + 1} attempts`);
       await sleep(wait);
       continue;
     }
 
-    if (!resp.ok) {
-      debugAppend(`HTTP ${resp.status} ${resp.statusText} (batch ${batchNum})`);
-      debugAppend(`Response body: ${bodyText.substring(0, 500)}`);
-      debugAppend(`Request URL (first 300 chars): ${url.substring(0, 300)}...`);
-      showDebug();
-      throw new Error(`API returned ${resp.status} on batch ${batchNum}. See debug panel.`);
-    }
-
-    let data;
-    try {
-      data = JSON.parse(bodyText);
-    } catch (parseErr) {
-      debugAppend(`JSON PARSE ERROR (batch ${batchNum}): ${parseErr.message}`);
-      debugAppend(`Raw response: ${bodyText.substring(0, 500)}`);
-      showDebug();
-      throw new Error(`Invalid JSON on batch ${batchNum}. See debug panel.`);
-    }
-
-    if (data.elevation) {
-      return data.elevation;
-    } else {
-      debugAppend(`NO ELEVATION DATA (batch ${batchNum})`);
-      debugAppend(`Response keys: ${Object.keys(data).join(', ')}`);
-      debugAppend(`Full response: ${bodyText.substring(0, 500)}`);
-      showDebug();
-      throw new Error(`No elevation data in batch ${batchNum}. See debug panel.`);
-    }
+    return resp;
   }
 }
 
-// Fetch elevation data from Open-Meteo API
-async function fetchElevations(locations) {
-  // Large batches = fewer requests = less chance of rate limiting
-  const BATCH_SIZE = 200;
-  const DELAY_BETWEEN_BATCHES = 500; // ms delay between batches to avoid 429
+// --- Open Topo Data provider ---
+// Docs: https://www.opentopodata.org/api/
+// Limits: 100 locations/req, 1 req/sec, 1000 req/day
+async function fetchOpenTopoData(locations, onProgress) {
+  const BATCH_SIZE = 100;
+  const DELAY = 1100; // just over 1s to respect 1 req/sec
   const results = [];
   const totalBatches = Math.ceil(locations.length / BATCH_SIZE);
 
-  debugAppend(`Total points: ${locations.length}, batches: ${totalBatches}, batch size: ${BATCH_SIZE}`);
-  debugAppend(`Lat range: ${locations[0].lat.toFixed(4)} to ${locations[locations.length - 1].lat.toFixed(4)}`);
-  debugAppend(`Lng range: ${locations[0].lng.toFixed(4)} to ${locations[locations.length - 1].lng.toFixed(4)}`);
+  debugAppend(`[OpenTopoData] ${locations.length} points, ${totalBatches} batches (max 100/req, 1 req/sec)`);
+
+  for (let i = 0; i < locations.length; i += BATCH_SIZE) {
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const batch = locations.slice(i, i + BATCH_SIZE);
+    const locsParam = batch.map(l => `${l.lat.toFixed(4)},${l.lng.toFixed(4)}`).join('|');
+
+    const url = `https://api.opentopodata.org/v1/srtm90m?locations=${locsParam}`;
+
+    debugAppend(`[OpenTopoData] Batch ${batchNum}/${totalBatches}: ${batch.length} pts, URL len: ${url.length}`);
+    onProgress(batchNum, totalBatches);
+
+    const resp = await fetchWithRetry(url, batchNum, totalBatches, 'OpenTopoData');
+    const bodyText = await resp.text();
+
+    if (!resp.ok) {
+      debugAppend(`[OpenTopoData] HTTP ${resp.status}: ${bodyText.substring(0, 300)}`);
+      throw new Error(`OpenTopoData ${resp.status}: ${bodyText.substring(0, 200)}`);
+    }
+
+    const data = JSON.parse(bodyText);
+
+    if (data.status !== 'OK' || !data.results) {
+      debugAppend(`[OpenTopoData] Bad response: ${JSON.stringify(data).substring(0, 300)}`);
+      throw new Error(`OpenTopoData bad status: ${data.status || 'unknown'}`);
+    }
+
+    const elevations = data.results.map(r => r.elevation ?? 0);
+    results.push(...elevations);
+    debugAppend(`[OpenTopoData] Batch ${batchNum} OK: sample [${elevations.slice(0, 3).join(', ')}...]`);
+
+    // Respect 1 req/sec rate limit
+    if (i + BATCH_SIZE < locations.length) {
+      await sleep(DELAY);
+    }
+  }
+
+  return results;
+}
+
+// --- Open-Meteo provider (fallback) ---
+async function fetchOpenMeteo(locations, onProgress) {
+  const BATCH_SIZE = 200;
+  const DELAY = 600;
+  const results = [];
+  const totalBatches = Math.ceil(locations.length / BATCH_SIZE);
+
+  debugAppend(`[Open-Meteo] ${locations.length} points, ${totalBatches} batches`);
 
   for (let i = 0; i < locations.length; i += BATCH_SIZE) {
     const batchNum = Math.floor(i / BATCH_SIZE) + 1;
@@ -229,21 +240,75 @@ async function fetchElevations(locations) {
 
     const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lngs}`;
 
-    debugAppend(`Batch ${batchNum}/${totalBatches}: ${batch.length} points, URL length: ${url.length}`);
-    loadingText.textContent = `Fetching elevations... batch ${batchNum}/${totalBatches}`;
+    debugAppend(`[Open-Meteo] Batch ${batchNum}/${totalBatches}: ${batch.length} pts, URL len: ${url.length}`);
+    onProgress(batchNum, totalBatches);
 
-    const elevations = await fetchBatchWithRetry(url, batchNum, totalBatches);
-    results.push(...elevations);
-    debugAppend(`Batch ${batchNum} OK: ${elevations.length} elevations, sample: [${elevations.slice(0, 3).join(', ')}...]`);
+    const resp = await fetchWithRetry(url, batchNum, totalBatches, 'Open-Meteo');
+    const bodyText = await resp.text();
 
-    // Delay between batches to stay under rate limit
+    if (!resp.ok) {
+      debugAppend(`[Open-Meteo] HTTP ${resp.status}: ${bodyText.substring(0, 300)}`);
+      throw new Error(`Open-Meteo ${resp.status}: ${bodyText.substring(0, 200)}`);
+    }
+
+    const data = JSON.parse(bodyText);
+
+    if (!data.elevation) {
+      debugAppend(`[Open-Meteo] No elevation key. Keys: ${Object.keys(data).join(', ')}`);
+      throw new Error(`Open-Meteo returned no elevation data`);
+    }
+
+    results.push(...data.elevation);
+    debugAppend(`[Open-Meteo] Batch ${batchNum} OK: sample [${data.elevation.slice(0, 3).join(', ')}...]`);
+
     if (i + BATCH_SIZE < locations.length) {
-      await sleep(DELAY_BETWEEN_BATCHES);
+      await sleep(DELAY);
     }
   }
 
-  debugAppend(`All batches complete. Total elevations: ${results.length}`);
   return results;
+}
+
+// --- Main fetch with fallback ---
+async function fetchElevations(locations) {
+  debugAppend(`Total points: ${locations.length}`);
+  debugAppend(`Lat range: ${locations[0].lat.toFixed(4)} to ${locations[locations.length - 1].lat.toFixed(4)}`);
+  debugAppend(`Lng range: ${locations[0].lng.toFixed(4)} to ${locations[locations.length - 1].lng.toFixed(4)}`);
+
+  const onProgress = (batch, total) => {
+    loadingText.textContent = `Fetching elevations... batch ${batch}/${total}`;
+  };
+
+  const apiChoice = apiSourceSelect.value;
+  const providers = [];
+
+  if (apiChoice === 'opentopodata') {
+    providers.push({ name: 'OpenTopoData', fn: fetchOpenTopoData });
+  } else if (apiChoice === 'openmeteo') {
+    providers.push({ name: 'Open-Meteo', fn: fetchOpenMeteo });
+  } else {
+    // auto: try OpenTopo first, then Open-Meteo
+    providers.push({ name: 'OpenTopoData', fn: fetchOpenTopoData });
+    providers.push({ name: 'Open-Meteo', fn: fetchOpenMeteo });
+  }
+
+  for (let i = 0; i < providers.length; i++) {
+    const { name, fn } = providers[i];
+    try {
+      debugAppend(`Trying ${name}${providers.length > 1 ? ` (${i + 1}/${providers.length})` : ''}...`);
+      const results = await fn(locations, onProgress);
+      debugAppend(`${name} complete. Total: ${results.length}`);
+      return results;
+    } catch (err) {
+      debugAppend(`${name} failed: ${err.message}`);
+      if (i < providers.length - 1) {
+        debugAppend(`Falling back to next provider...`);
+      }
+    }
+  }
+
+  showDebug();
+  throw new Error(`All elevation APIs failed. See debug panel.`);
 }
 
 // Generate grid of lat/lng points
