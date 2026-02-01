@@ -177,6 +177,7 @@ async function fetchWithRetry(url, batchNum, totalBatches, apiName, maxRetries =
 // --- Open Topo Data provider ---
 // Docs: https://www.opentopodata.org/api/
 // Limits: 100 locations/req, 1 req/sec, 1000 req/day
+// Uses POST to avoid CORS issues with long GET URLs
 async function fetchOpenTopoData(locations, onProgress) {
   const BATCH_SIZE = 100;
   const DELAY = 1100; // just over 1s to respect 1 req/sec
@@ -190,12 +191,37 @@ async function fetchOpenTopoData(locations, onProgress) {
     const batch = locations.slice(i, i + BATCH_SIZE);
     const locsParam = batch.map(l => `${l.lat.toFixed(4)},${l.lng.toFixed(4)}`).join('|');
 
-    const url = `https://api.opentopodata.org/v1/srtm90m?locations=${locsParam}`;
+    const url = `https://api.opentopodata.org/v1/srtm90m`;
 
-    debugAppend(`[OpenTopoData] Batch ${batchNum}/${totalBatches}: ${batch.length} pts, URL len: ${url.length}`);
+    debugAppend(`[OpenTopoData] Batch ${batchNum}/${totalBatches}: ${batch.length} pts (POST)`);
     onProgress(batchNum, totalBatches);
 
-    const resp = await fetchWithRetry(url, batchNum, totalBatches, 'OpenTopoData');
+    // Use POST to avoid CORS preflight issues with long query strings
+    let resp;
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      try {
+        resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locations: locsParam }),
+        });
+      } catch (fetchErr) {
+        debugAppend(`[OpenTopoData] FETCH ERROR (batch ${batchNum}, attempt ${attempt + 1}): ${fetchErr.message}`);
+        if (attempt === 3) throw fetchErr;
+        await sleep(2000 * (attempt + 1));
+        continue;
+      }
+      if (resp.status === 429) {
+        const wait = 3000 * (attempt + 1);
+        debugAppend(`[OpenTopoData] 429 (batch ${batchNum}, attempt ${attempt + 1}). Waiting ${wait}ms`);
+        loadingText.textContent = `Rate limited, retrying in ${wait / 1000}s...`;
+        if (attempt === 3) throw new Error('429 after retries');
+        await sleep(wait);
+        continue;
+      }
+      break;
+    }
+
     const bodyText = await resp.text();
 
     if (!resp.ok) {
@@ -224,8 +250,9 @@ async function fetchOpenTopoData(locations, onProgress) {
 }
 
 // --- Open-Meteo provider (fallback) ---
+// API limit: max 100 coordinates per request
 async function fetchOpenMeteo(locations, onProgress) {
-  const BATCH_SIZE = 200;
+  const BATCH_SIZE = 100;
   const DELAY = 600;
   const results = [];
   const totalBatches = Math.ceil(locations.length / BATCH_SIZE);
