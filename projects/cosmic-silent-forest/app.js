@@ -142,39 +142,42 @@ const colorSchemes = {
   }
 };
 
-// Fetch elevation data from Open-Meteo API
-async function fetchElevations(locations) {
-  // Keep batch size small to avoid URL length limits
-  const BATCH_SIZE = 80;
-  const results = [];
-  const totalBatches = Math.ceil(locations.length / BATCH_SIZE);
+// Helper: sleep ms
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  debugAppend(`Total points: ${locations.length}, batches: ${totalBatches}, batch size: ${BATCH_SIZE}`);
-  debugAppend(`Lat range: ${locations[0].lat.toFixed(4)} to ${locations[locations.length - 1].lat.toFixed(4)}`);
-  debugAppend(`Lng range: ${locations[0].lng.toFixed(4)} to ${locations[locations.length - 1].lng.toFixed(4)}`);
-
-  for (let i = 0; i < locations.length; i += BATCH_SIZE) {
-    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-    const batch = locations.slice(i, i + BATCH_SIZE);
-    const lats = batch.map(l => l.lat.toFixed(4)).join(',');
-    const lngs = batch.map(l => l.lng.toFixed(4)).join(',');
-
-    const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lngs}`;
-
-    debugAppend(`Batch ${batchNum}/${totalBatches}: ${batch.length} points, URL length: ${url.length}`);
-
-    loadingText.textContent = `Fetching elevations... batch ${batchNum}/${totalBatches}`;
-
+// Fetch a single batch with retry on 429
+async function fetchBatchWithRetry(url, batchNum, totalBatches, maxRetries = 4) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let resp;
     try {
       resp = await fetch(url);
     } catch (fetchErr) {
-      debugAppend(`FETCH ERROR (batch ${batchNum}): ${fetchErr.message}`);
-      showDebug();
-      throw new Error(`Network error on batch ${batchNum}: ${fetchErr.message}`);
+      debugAppend(`FETCH ERROR (batch ${batchNum}, attempt ${attempt + 1}): ${fetchErr.message}`);
+      if (attempt === maxRetries) {
+        showDebug();
+        throw new Error(`Network error on batch ${batchNum}: ${fetchErr.message}`);
+      }
+      const wait = 2000 * (attempt + 1);
+      debugAppend(`Retrying in ${wait}ms...`);
+      loadingText.textContent = `Rate limited, waiting ${wait / 1000}s...`;
+      await sleep(wait);
+      continue;
     }
 
     const bodyText = await resp.text();
+
+    if (resp.status === 429) {
+      const wait = 3000 * (attempt + 1);
+      debugAppend(`429 rate limited (batch ${batchNum}, attempt ${attempt + 1}). Waiting ${wait}ms...`);
+      loadingText.textContent = `Rate limited, retrying in ${wait / 1000}s... (batch ${batchNum}/${totalBatches})`;
+      if (attempt === maxRetries) {
+        debugAppend(`Response body: ${bodyText.substring(0, 300)}`);
+        showDebug();
+        throw new Error(`Rate limited after ${maxRetries + 1} attempts on batch ${batchNum}. See debug panel.`);
+      }
+      await sleep(wait);
+      continue;
+    }
 
     if (!resp.ok) {
       debugAppend(`HTTP ${resp.status} ${resp.statusText} (batch ${batchNum})`);
@@ -195,14 +198,47 @@ async function fetchElevations(locations) {
     }
 
     if (data.elevation) {
-      results.push(...data.elevation);
-      debugAppend(`Batch ${batchNum} OK: ${data.elevation.length} elevations, sample: [${data.elevation.slice(0, 3).join(', ')}...]`);
+      return data.elevation;
     } else {
       debugAppend(`NO ELEVATION DATA (batch ${batchNum})`);
       debugAppend(`Response keys: ${Object.keys(data).join(', ')}`);
       debugAppend(`Full response: ${bodyText.substring(0, 500)}`);
       showDebug();
       throw new Error(`No elevation data in batch ${batchNum}. See debug panel.`);
+    }
+  }
+}
+
+// Fetch elevation data from Open-Meteo API
+async function fetchElevations(locations) {
+  // Large batches = fewer requests = less chance of rate limiting
+  const BATCH_SIZE = 200;
+  const DELAY_BETWEEN_BATCHES = 500; // ms delay between batches to avoid 429
+  const results = [];
+  const totalBatches = Math.ceil(locations.length / BATCH_SIZE);
+
+  debugAppend(`Total points: ${locations.length}, batches: ${totalBatches}, batch size: ${BATCH_SIZE}`);
+  debugAppend(`Lat range: ${locations[0].lat.toFixed(4)} to ${locations[locations.length - 1].lat.toFixed(4)}`);
+  debugAppend(`Lng range: ${locations[0].lng.toFixed(4)} to ${locations[locations.length - 1].lng.toFixed(4)}`);
+
+  for (let i = 0; i < locations.length; i += BATCH_SIZE) {
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const batch = locations.slice(i, i + BATCH_SIZE);
+    const lats = batch.map(l => l.lat.toFixed(4)).join(',');
+    const lngs = batch.map(l => l.lng.toFixed(4)).join(',');
+
+    const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lngs}`;
+
+    debugAppend(`Batch ${batchNum}/${totalBatches}: ${batch.length} points, URL length: ${url.length}`);
+    loadingText.textContent = `Fetching elevations... batch ${batchNum}/${totalBatches}`;
+
+    const elevations = await fetchBatchWithRetry(url, batchNum, totalBatches);
+    results.push(...elevations);
+    debugAppend(`Batch ${batchNum} OK: ${elevations.length} elevations, sample: [${elevations.slice(0, 3).join(', ')}...]`);
+
+    // Delay between batches to stay under rate limit
+    if (i + BATCH_SIZE < locations.length) {
+      await sleep(DELAY_BETWEEN_BATCHES);
     }
   }
 
