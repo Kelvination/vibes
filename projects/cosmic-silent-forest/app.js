@@ -20,6 +20,45 @@ const rangeVal = document.getElementById('range-val');
 const densityVal = document.getElementById('density-val');
 const exagVal = document.getElementById('exag-val');
 
+const debugPanel = document.getElementById('debug-panel');
+const debugContent = document.getElementById('debug-content');
+const debugCopyBtn = document.getElementById('debug-copy');
+const debugCloseBtn = document.getElementById('debug-close');
+
+// Debug log
+let debugLog = [];
+function debugAppend(msg) {
+  const ts = new Date().toLocaleTimeString();
+  debugLog.push(`[${ts}] ${msg}`);
+  debugContent.textContent = debugLog.join('\n');
+  debugContent.scrollTop = debugContent.scrollHeight;
+}
+
+function showDebug() {
+  debugPanel.classList.remove('hidden');
+}
+
+debugCopyBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(debugLog.join('\n')).then(() => {
+    debugCopyBtn.textContent = 'Copied!';
+    setTimeout(() => debugCopyBtn.textContent = 'Copy', 1500);
+  }).catch(() => {
+    // Fallback for older browsers / no clipboard API
+    const ta = document.createElement('textarea');
+    ta.value = debugLog.join('\n');
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    debugCopyBtn.textContent = 'Copied!';
+    setTimeout(() => debugCopyBtn.textContent = 'Copy', 1500);
+  });
+});
+
+debugCloseBtn.addEventListener('click', () => {
+  debugPanel.classList.add('hidden');
+});
+
 // Sync slider labels
 rangeInput.addEventListener('input', () => rangeVal.textContent = rangeInput.value);
 densityInput.addEventListener('input', () => densityVal.textContent = densityInput.value);
@@ -105,30 +144,69 @@ const colorSchemes = {
 
 // Fetch elevation data from Open-Meteo API
 async function fetchElevations(locations) {
-  // Open-Meteo accepts up to ~300 coordinates per request
-  const BATCH_SIZE = 250;
+  // Keep batch size small to avoid URL length limits
+  const BATCH_SIZE = 80;
   const results = [];
+  const totalBatches = Math.ceil(locations.length / BATCH_SIZE);
+
+  debugAppend(`Total points: ${locations.length}, batches: ${totalBatches}, batch size: ${BATCH_SIZE}`);
+  debugAppend(`Lat range: ${locations[0].lat.toFixed(4)} to ${locations[locations.length - 1].lat.toFixed(4)}`);
+  debugAppend(`Lng range: ${locations[0].lng.toFixed(4)} to ${locations[locations.length - 1].lng.toFixed(4)}`);
 
   for (let i = 0; i < locations.length; i += BATCH_SIZE) {
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
     const batch = locations.slice(i, i + BATCH_SIZE);
-    const lats = batch.map(l => l.lat.toFixed(6)).join(',');
-    const lngs = batch.map(l => l.lng.toFixed(6)).join(',');
+    const lats = batch.map(l => l.lat.toFixed(4)).join(',');
+    const lngs = batch.map(l => l.lng.toFixed(4)).join(',');
 
     const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lngs}`;
 
-    loadingText.textContent = `Fetching elevations... (${Math.min(i + BATCH_SIZE, locations.length)}/${locations.length})`;
+    debugAppend(`Batch ${batchNum}/${totalBatches}: ${batch.length} points, URL length: ${url.length}`);
 
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`API error: ${resp.status} ${resp.statusText}`);
-    const data = await resp.json();
+    loadingText.textContent = `Fetching elevations... batch ${batchNum}/${totalBatches}`;
+
+    let resp;
+    try {
+      resp = await fetch(url);
+    } catch (fetchErr) {
+      debugAppend(`FETCH ERROR (batch ${batchNum}): ${fetchErr.message}`);
+      showDebug();
+      throw new Error(`Network error on batch ${batchNum}: ${fetchErr.message}`);
+    }
+
+    const bodyText = await resp.text();
+
+    if (!resp.ok) {
+      debugAppend(`HTTP ${resp.status} ${resp.statusText} (batch ${batchNum})`);
+      debugAppend(`Response body: ${bodyText.substring(0, 500)}`);
+      debugAppend(`Request URL (first 300 chars): ${url.substring(0, 300)}...`);
+      showDebug();
+      throw new Error(`API returned ${resp.status} on batch ${batchNum}. See debug panel.`);
+    }
+
+    let data;
+    try {
+      data = JSON.parse(bodyText);
+    } catch (parseErr) {
+      debugAppend(`JSON PARSE ERROR (batch ${batchNum}): ${parseErr.message}`);
+      debugAppend(`Raw response: ${bodyText.substring(0, 500)}`);
+      showDebug();
+      throw new Error(`Invalid JSON on batch ${batchNum}. See debug panel.`);
+    }
 
     if (data.elevation) {
       results.push(...data.elevation);
+      debugAppend(`Batch ${batchNum} OK: ${data.elevation.length} elevations, sample: [${data.elevation.slice(0, 3).join(', ')}...]`);
     } else {
-      throw new Error('No elevation data returned');
+      debugAppend(`NO ELEVATION DATA (batch ${batchNum})`);
+      debugAppend(`Response keys: ${Object.keys(data).join(', ')}`);
+      debugAppend(`Full response: ${bodyText.substring(0, 500)}`);
+      showDebug();
+      throw new Error(`No elevation data in batch ${batchNum}. See debug panel.`);
     }
   }
 
+  debugAppend(`All batches complete. Total elevations: ${results.length}`);
   return results;
 }
 
@@ -267,9 +345,14 @@ async function generate() {
   generateBtn.disabled = true;
   statusEl.textContent = '';
 
+  // Reset debug log
+  debugLog = [];
+  debugAppend(`Generate: lat=${lat}, lng=${lng}, range=${rangeKm}km, density=${density}`);
+
   try {
     loadingText.textContent = 'Generating coordinate grid...';
     const locations = generateGrid(lat, lng, rangeKm, density);
+    debugAppend(`Grid generated: ${locations.length} points (${density}x${density})`);
 
     const elevations = await fetchElevations(locations);
 
@@ -277,8 +360,12 @@ async function generate() {
     await new Promise(r => requestAnimationFrame(r));
 
     buildTerrain(elevations, density);
+    debugAppend(`Terrain built successfully.`);
   } catch (err) {
     statusEl.textContent = `Error: ${err.message}`;
+    debugAppend(`FATAL: ${err.message}`);
+    debugAppend(`Stack: ${err.stack}`);
+    showDebug();
     console.error(err);
   } finally {
     loadingEl.classList.add('hidden');
