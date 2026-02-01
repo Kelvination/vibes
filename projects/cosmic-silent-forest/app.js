@@ -540,5 +540,4 @@ function animate() {
 }
 animate();
 
-// Auto-generate on load with default Swiss Alps
-generate();
+// Ready - wait for user to click Generate
