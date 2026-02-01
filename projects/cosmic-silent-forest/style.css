@@ -1,121 +1,230 @@
 * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    -webkit-tap-highlight-color: transparent;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    overflow: hidden;
-    touch-action: none;
-    position: fixed;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+#controls {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 280px;
+  height: 100vh;
+  background: rgba(20, 20, 40, 0.95);
+  padding: 20px;
+  overflow-y: auto;
+  z-index: 10;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#controls h2 {
+  font-size: 18px;
+  margin-bottom: 16px;
+  color: #7ec8e3;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 10px;
+}
+
+.control-group {
+  margin-bottom: 12px;
+}
+
+.control-group label {
+  display: block;
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.control-group.checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: none;
+  font-size: 13px;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.control-group input[type="number"],
+.control-group select {
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.control-group input[type="number"]:focus,
+.control-group select:focus {
+  border-color: #7ec8e3;
+}
+
+.control-group input[type="range"] {
+  width: 100%;
+  accent-color: #7ec8e3;
+}
+
+.control-group span {
+  color: #7ec8e3;
+  font-weight: bold;
+}
+
+#generate {
+  width: 100%;
+  padding: 10px;
+  background: linear-gradient(135deg, #3a7bd5, #7ec8e3);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 4px;
+  transition: opacity 0.2s;
+}
+
+#generate:hover {
+  opacity: 0.9;
+}
+
+#generate:active {
+  transform: scale(0.98);
+}
+
+#status {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #888;
+  min-height: 18px;
+}
+
+#info {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#info p {
+  font-size: 12px;
+  color: #777;
+  margin-bottom: 3px;
+}
+
+#info p strong {
+  color: #999;
+}
+
+#presets {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#presets p {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 8px;
+}
+
+.preset {
+  display: inline-block;
+  padding: 5px 10px;
+  margin: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: #bbb;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.preset:hover {
+  background: rgba(126, 200, 227, 0.2);
+  border-color: #7ec8e3;
+  color: #7ec8e3;
+}
+
+#canvas-container {
+  position: fixed;
+  top: 0;
+  left: 280px;
+  right: 0;
+  bottom: 0;
+}
+
+#loading {
+  position: fixed;
+  top: 0;
+  left: 280px;
+  right: 0;
+  bottom: 0;
+  background: rgba(10, 10, 20, 0.85);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 20;
+}
+
+#loading.hidden {
+  display: none;
+}
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(126, 200, 227, 0.2);
+  border-top: 4px solid #7ec8e3;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+#loading p {
+  font-size: 14px;
+  color: #7ec8e3;
+}
+
+@media (max-width: 700px) {
+  #controls {
     width: 100%;
-    height: 100%;
-}
-
-#game-container {
-    width: 100vw;
-    height: 100vh;
-    position: relative;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-#ui {
-    position: absolute;
-    top: 20px;
-    left: 0;
-    right: 0;
-    display: flex;
-    justify-content: space-around;
-    z-index: 10;
-    pointer-events: none;
-}
-
-#score, #level {
-    background: rgba(255, 255, 255, 0.9);
-    padding: 10px 20px;
-    border-radius: 20px;
-    font-weight: bold;
-    color: #667eea;
-    font-size: 18px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-#gameCanvas {
-    display: block;
-    touch-action: none;
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 20px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-    border: 2px solid rgba(255, 255, 255, 0.3);
-}
-
-.screen {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
+    height: auto;
+    max-height: 50vh;
+    position: fixed;
     bottom: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    background: rgba(0, 0, 0, 0.8);
-    z-index: 100;
-    color: white;
-    padding: 20px;
-    text-align: center;
-}
+    top: auto;
+    border-right: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
 
-.screen.hidden {
-    display: none;
-}
+  #canvas-container {
+    left: 0;
+    bottom: 50vh;
+  }
 
-.screen h1 {
-    font-size: 48px;
-    margin-bottom: 20px;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-}
-
-.screen p {
-    font-size: 20px;
-    margin-bottom: 15px;
-    opacity: 0.9;
-}
-
-button {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    padding: 15px 40px;
-    font-size: 24px;
-    border-radius: 50px;
-    cursor: pointer;
-    margin-top: 20px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    transition: transform 0.2s;
-    font-weight: bold;
-}
-
-button:active {
-    transform: scale(0.95);
-}
-
-@media (max-width: 768px) {
-    .screen h1 {
-        font-size: 36px;
-    }
-
-    .screen p {
-        font-size: 18px;
-    }
-
-    button {
-        font-size: 20px;
-        padding: 12px 30px;
-    }
+  #loading {
+    left: 0;
+    bottom: 50vh;
+  }
 }
