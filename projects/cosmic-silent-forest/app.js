@@ -143,30 +143,43 @@ const colorSchemes = {
   }
 };
 
-// Helper: sleep ms
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Helper: sleep ms, abortable
+const sleep = (ms, signal) => new Promise((resolve, reject) => {
+  const timer = setTimeout(resolve, ms);
+  if (signal) {
+    signal.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    }, { once: true });
+  }
+});
 
-// Fetch with retry on 429/network errors
-async function fetchWithRetry(url, batchNum, totalBatches, apiName, maxRetries = 3) {
+// Active abort controller for cancelling in-flight requests
+let activeAbortController = null;
+
+// Fetch with retry on 429/network errors, supports AbortSignal
+async function fetchWithRetry(url, opts, batchNum, totalBatches, apiName, signal, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    signal?.throwIfAborted();
     let resp;
     try {
-      resp = await fetch(url);
+      resp = await fetch(url, { ...opts, signal });
     } catch (fetchErr) {
+      if (fetchErr.name === 'AbortError') throw fetchErr;
       debugAppend(`[${apiName}] FETCH ERROR (batch ${batchNum}, attempt ${attempt + 1}): ${fetchErr.message}`);
       if (attempt === maxRetries) throw fetchErr;
       const wait = 2000 * (attempt + 1);
       debugAppend(`Retrying in ${wait}ms...`);
-      await sleep(wait);
+      await sleep(wait, signal);
       continue;
     }
 
     if (resp.status === 429) {
-      const wait = 3000 * (attempt + 1);
+      const wait = 5000 * (attempt + 1);
       debugAppend(`[${apiName}] 429 rate limited (batch ${batchNum}, attempt ${attempt + 1}). Waiting ${wait}ms...`);
       loadingText.textContent = `Rate limited, retrying in ${wait / 1000}s...`;
       if (attempt === maxRetries) throw new Error(`429 after ${maxRetries + 1} attempts`);
-      await sleep(wait);
+      await sleep(wait, signal);
       continue;
     }
 
@@ -174,53 +187,86 @@ async function fetchWithRetry(url, batchNum, totalBatches, apiName, maxRetries =
   }
 }
 
-// --- Open Topo Data provider ---
-// Docs: https://www.opentopodata.org/api/
-// Limits: 100 locations/req, 1 req/sec, 1000 req/day
-// Uses POST to avoid CORS issues with long GET URLs
-async function fetchOpenTopoData(locations, onProgress) {
+// --- Open-Meteo provider ---
+// API limit: max 100 coordinates per request, ~10 req/min on free tier
+async function fetchOpenMeteo(locations, onProgress, signal) {
   const BATCH_SIZE = 100;
-  const DELAY = 1100; // just over 1s to respect 1 req/sec
+  const DELAY = 1500; // 1.5s between batches to stay well under rate limit
   const results = [];
   const totalBatches = Math.ceil(locations.length / BATCH_SIZE);
 
-  debugAppend(`[OpenTopoData] ${locations.length} points, ${totalBatches} batches (max 100/req, 1 req/sec)`);
+  debugAppend(`[Open-Meteo] ${locations.length} points, ${totalBatches} batches (100/req, 1.5s delay)`);
 
   for (let i = 0; i < locations.length; i += BATCH_SIZE) {
+    signal?.throwIfAborted();
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const batch = locations.slice(i, i + BATCH_SIZE);
+    const lats = batch.map(l => l.lat.toFixed(4)).join(',');
+    const lngs = batch.map(l => l.lng.toFixed(4)).join(',');
+
+    const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lngs}`;
+
+    debugAppend(`[Open-Meteo] Batch ${batchNum}/${totalBatches}: ${batch.length} pts`);
+    onProgress(batchNum, totalBatches);
+
+    const resp = await fetchWithRetry(url, {}, batchNum, totalBatches, 'Open-Meteo', signal);
+    const bodyText = await resp.text();
+
+    if (!resp.ok) {
+      debugAppend(`[Open-Meteo] HTTP ${resp.status}: ${bodyText.substring(0, 300)}`);
+      throw new Error(`Open-Meteo ${resp.status}: ${bodyText.substring(0, 200)}`);
+    }
+
+    const data = JSON.parse(bodyText);
+
+    if (!data.elevation) {
+      debugAppend(`[Open-Meteo] No elevation key. Keys: ${Object.keys(data).join(', ')}`);
+      throw new Error(`Open-Meteo returned no elevation data`);
+    }
+
+    results.push(...data.elevation);
+    debugAppend(`[Open-Meteo] Batch ${batchNum} OK: sample [${data.elevation.slice(0, 3).join(', ')}...]`);
+
+    if (i + BATCH_SIZE < locations.length) {
+      await sleep(DELAY, signal);
+    }
+  }
+
+  return results;
+}
+
+// --- Open Topo Data provider ---
+// Docs: https://www.opentopodata.org/api/
+// Note: their public API does NOT send CORS headers, so we use form-encoded
+// POST which avoids the preflight OPTIONS request that JSON content-type triggers
+async function fetchOpenTopoData(locations, onProgress, signal) {
+  const BATCH_SIZE = 100;
+  const DELAY = 1100;
+  const results = [];
+  const totalBatches = Math.ceil(locations.length / BATCH_SIZE);
+
+  debugAppend(`[OpenTopoData] ${locations.length} points, ${totalBatches} batches (100/req, 1 req/sec)`);
+
+  for (let i = 0; i < locations.length; i += BATCH_SIZE) {
+    signal?.throwIfAborted();
     const batchNum = Math.floor(i / BATCH_SIZE) + 1;
     const batch = locations.slice(i, i + BATCH_SIZE);
     const locsParam = batch.map(l => `${l.lat.toFixed(4)},${l.lng.toFixed(4)}`).join('|');
 
     const url = `https://api.opentopodata.org/v1/srtm90m`;
 
-    debugAppend(`[OpenTopoData] Batch ${batchNum}/${totalBatches}: ${batch.length} pts (POST)`);
+    debugAppend(`[OpenTopoData] Batch ${batchNum}/${totalBatches}: ${batch.length} pts (POST form-encoded)`);
     onProgress(batchNum, totalBatches);
 
-    // Use POST to avoid CORS preflight issues with long query strings
-    let resp;
-    for (let attempt = 0; attempt <= 3; attempt++) {
-      try {
-        resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ locations: locsParam }),
-        });
-      } catch (fetchErr) {
-        debugAppend(`[OpenTopoData] FETCH ERROR (batch ${batchNum}, attempt ${attempt + 1}): ${fetchErr.message}`);
-        if (attempt === 3) throw fetchErr;
-        await sleep(2000 * (attempt + 1));
-        continue;
-      }
-      if (resp.status === 429) {
-        const wait = 3000 * (attempt + 1);
-        debugAppend(`[OpenTopoData] 429 (batch ${batchNum}, attempt ${attempt + 1}). Waiting ${wait}ms`);
-        loadingText.textContent = `Rate limited, retrying in ${wait / 1000}s...`;
-        if (attempt === 3) throw new Error('429 after retries');
-        await sleep(wait);
-        continue;
-      }
-      break;
-    }
+    // Use form-encoded POST: this is a "simple request" that won't trigger
+    // CORS preflight, unlike JSON content-type which requires OPTIONS
+    const formBody = new URLSearchParams();
+    formBody.set('locations', locsParam);
+
+    const resp = await fetchWithRetry(url, {
+      method: 'POST',
+      body: formBody,
+    }, batchNum, totalBatches, 'OpenTopoData', signal);
 
     const bodyText = await resp.text();
 
@@ -240,56 +286,8 @@ async function fetchOpenTopoData(locations, onProgress) {
     results.push(...elevations);
     debugAppend(`[OpenTopoData] Batch ${batchNum} OK: sample [${elevations.slice(0, 3).join(', ')}...]`);
 
-    // Respect 1 req/sec rate limit
     if (i + BATCH_SIZE < locations.length) {
-      await sleep(DELAY);
-    }
-  }
-
-  return results;
-}
-
-// --- Open-Meteo provider (fallback) ---
-// API limit: max 100 coordinates per request
-async function fetchOpenMeteo(locations, onProgress) {
-  const BATCH_SIZE = 100;
-  const DELAY = 600;
-  const results = [];
-  const totalBatches = Math.ceil(locations.length / BATCH_SIZE);
-
-  debugAppend(`[Open-Meteo] ${locations.length} points, ${totalBatches} batches`);
-
-  for (let i = 0; i < locations.length; i += BATCH_SIZE) {
-    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-    const batch = locations.slice(i, i + BATCH_SIZE);
-    const lats = batch.map(l => l.lat.toFixed(4)).join(',');
-    const lngs = batch.map(l => l.lng.toFixed(4)).join(',');
-
-    const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lngs}`;
-
-    debugAppend(`[Open-Meteo] Batch ${batchNum}/${totalBatches}: ${batch.length} pts, URL len: ${url.length}`);
-    onProgress(batchNum, totalBatches);
-
-    const resp = await fetchWithRetry(url, batchNum, totalBatches, 'Open-Meteo');
-    const bodyText = await resp.text();
-
-    if (!resp.ok) {
-      debugAppend(`[Open-Meteo] HTTP ${resp.status}: ${bodyText.substring(0, 300)}`);
-      throw new Error(`Open-Meteo ${resp.status}: ${bodyText.substring(0, 200)}`);
-    }
-
-    const data = JSON.parse(bodyText);
-
-    if (!data.elevation) {
-      debugAppend(`[Open-Meteo] No elevation key. Keys: ${Object.keys(data).join(', ')}`);
-      throw new Error(`Open-Meteo returned no elevation data`);
-    }
-
-    results.push(...data.elevation);
-    debugAppend(`[Open-Meteo] Batch ${batchNum} OK: sample [${data.elevation.slice(0, 3).join(', ')}...]`);
-
-    if (i + BATCH_SIZE < locations.length) {
-      await sleep(DELAY);
+      await sleep(DELAY, signal);
     }
   }
 
@@ -297,7 +295,7 @@ async function fetchOpenMeteo(locations, onProgress) {
 }
 
 // --- Main fetch with fallback ---
-async function fetchElevations(locations) {
+async function fetchElevations(locations, signal) {
   debugAppend(`Total points: ${locations.length}`);
   debugAppend(`Lat range: ${locations[0].lat.toFixed(4)} to ${locations[locations.length - 1].lat.toFixed(4)}`);
   debugAppend(`Lng range: ${locations[0].lng.toFixed(4)} to ${locations[locations.length - 1].lng.toFixed(4)}`);
@@ -314,19 +312,21 @@ async function fetchElevations(locations) {
   } else if (apiChoice === 'openmeteo') {
     providers.push({ name: 'Open-Meteo', fn: fetchOpenMeteo });
   } else {
-    // auto: try OpenTopo first, then Open-Meteo
-    providers.push({ name: 'OpenTopoData', fn: fetchOpenTopoData });
+    // auto: Open-Meteo first (more reliable from browsers), OpenTopo as fallback
     providers.push({ name: 'Open-Meteo', fn: fetchOpenMeteo });
+    providers.push({ name: 'OpenTopoData', fn: fetchOpenTopoData });
   }
 
   for (let i = 0; i < providers.length; i++) {
+    signal?.throwIfAborted();
     const { name, fn } = providers[i];
     try {
       debugAppend(`Trying ${name}${providers.length > 1 ? ` (${i + 1}/${providers.length})` : ''}...`);
-      const results = await fn(locations, onProgress);
+      const results = await fn(locations, onProgress, signal);
       debugAppend(`${name} complete. Total: ${results.length}`);
       return results;
     } catch (err) {
+      if (err.name === 'AbortError') throw err;
       debugAppend(`${name} failed: ${err.message}`);
       if (i < providers.length - 1) {
         debugAppend(`Falling back to next provider...`);
@@ -469,6 +469,15 @@ async function generate() {
     return;
   }
 
+  // Cancel any previous in-flight generation
+  if (activeAbortController) {
+    activeAbortController.abort();
+    debugAppend('Cancelled previous request.');
+  }
+  const abortController = new AbortController();
+  activeAbortController = abortController;
+  const signal = abortController.signal;
+
   loadingEl.classList.remove('hidden');
   generateBtn.disabled = true;
   statusEl.textContent = '';
@@ -482,7 +491,9 @@ async function generate() {
     const locations = generateGrid(lat, lng, rangeKm, density);
     debugAppend(`Grid generated: ${locations.length} points (${density}x${density})`);
 
-    const elevations = await fetchElevations(locations);
+    const elevations = await fetchElevations(locations, signal);
+
+    signal.throwIfAborted();
 
     loadingText.textContent = 'Building terrain mesh...';
     await new Promise(r => requestAnimationFrame(r));
@@ -490,12 +501,19 @@ async function generate() {
     buildTerrain(elevations, density);
     debugAppend(`Terrain built successfully.`);
   } catch (err) {
+    if (err.name === 'AbortError') {
+      debugAppend('Generation was cancelled.');
+      return;
+    }
     statusEl.textContent = `Error: ${err.message}`;
     debugAppend(`FATAL: ${err.message}`);
     debugAppend(`Stack: ${err.stack}`);
     showDebug();
     console.error(err);
   } finally {
+    if (activeAbortController === abortController) {
+      activeAbortController = null;
+    }
     loadingEl.classList.add('hidden');
     generateBtn.disabled = false;
   }
