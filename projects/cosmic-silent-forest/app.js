@@ -158,7 +158,8 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
 let activeAbortController = null;
 
 // Fetch with retry on 429/network errors, supports AbortSignal
-async function fetchWithRetry(url, opts, batchNum, totalBatches, apiName, signal, maxRetries = 3) {
+// On 429: waits 60s for the rate limit window to reset, retries up to 6 times
+async function fetchWithRetry(url, opts, batchNum, totalBatches, apiName, signal, maxRetries = 6) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     signal?.throwIfAborted();
     let resp;
@@ -169,17 +170,21 @@ async function fetchWithRetry(url, opts, batchNum, totalBatches, apiName, signal
       debugAppend(`[${apiName}] FETCH ERROR (batch ${batchNum}, attempt ${attempt + 1}): ${fetchErr.message}`);
       if (attempt === maxRetries) throw fetchErr;
       const wait = 2000 * (attempt + 1);
-      debugAppend(`Retrying in ${wait}ms...`);
+      debugAppend(`Retrying in ${wait / 1000}s...`);
       await sleep(wait, signal);
       continue;
     }
 
     if (resp.status === 429) {
-      const wait = 5000 * (attempt + 1);
-      debugAppend(`[${apiName}] 429 rate limited (batch ${batchNum}, attempt ${attempt + 1}). Waiting ${wait}ms...`);
-      loadingText.textContent = `Rate limited, retrying in ${wait / 1000}s...`;
       if (attempt === maxRetries) throw new Error(`429 after ${maxRetries + 1} attempts`);
-      await sleep(wait, signal);
+      // Wait for the full rate limit window to reset
+      const wait = 65000; // 65s to be safe
+      debugAppend(`[${apiName}] 429 rate limited (batch ${batchNum}, attempt ${attempt + 1}). Waiting 65s for rate limit reset...`);
+      for (let s = 65; s > 0; s--) {
+        signal?.throwIfAborted();
+        loadingText.textContent = `Rate limited. Resuming in ${s}s... (batch ${batchNum}/${totalBatches})`;
+        await sleep(1000, signal);
+      }
       continue;
     }
 
@@ -188,14 +193,16 @@ async function fetchWithRetry(url, opts, batchNum, totalBatches, apiName, signal
 }
 
 // --- Open-Meteo provider ---
-// API limit: max 100 coordinates per request, ~10 req/min on free tier
+// API limit: max 100 coordinates per request, free tier allows ~8 req/min
+// We use ~4s delay between batches (= ~15 req/min) which sometimes still
+// triggers 429, but the retry logic will wait 65s and resume.
 async function fetchOpenMeteo(locations, onProgress, signal) {
   const BATCH_SIZE = 100;
-  const DELAY = 1500; // 1.5s between batches to stay well under rate limit
+  const DELAY = 4000; // 4s between batches to reduce 429 frequency
   const results = [];
   const totalBatches = Math.ceil(locations.length / BATCH_SIZE);
 
-  debugAppend(`[Open-Meteo] ${locations.length} points, ${totalBatches} batches (100/req, 1.5s delay)`);
+  debugAppend(`[Open-Meteo] ${locations.length} points, ${totalBatches} batches (100/req, ${DELAY / 1000}s delay)`);
 
   for (let i = 0; i < locations.length; i += BATCH_SIZE) {
     signal?.throwIfAborted();
