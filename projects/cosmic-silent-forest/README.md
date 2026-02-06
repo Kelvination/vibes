@@ -1,50 +1,63 @@
-# Slingshot Gravity Game
+# Terrain Studio
 
-A mobile-first responsive browser game featuring physics-based slingshot mechanics.
-
-**Play now:** Automatically deployed to Vercel on every update!
-
-## How to Play
-
-1. **Pull**: Touch and drag down on the golden ball at the bottom of the screen
-2. **Aim**: The elastic bands will stretch, showing your trajectory
-3. **Release**: Let go to launch the ball toward the targets
-4. **Score**: Hit all the colorful targets at the top to complete the level
+A powerful 3D terrain visualization tool that combines real-world elevation data with procedural generation.
 
 ## Features
 
-- **Mobile-First Design**: Optimized for touch controls on smartphones and tablets
-- **Physics Engine**: Realistic gravity, velocity, and collision detection
-- **Progressive Difficulty**: Each level adds more targets
-- **Responsive**: Adapts to any screen size
-- **Visual Feedback**: Trajectory guide when pulling the slingshot
+### Data Sources
+- **Real-World Elevation** - Fetches actual terrain data via Open-Meteo and OpenTopoData APIs
+- **Procedural Generation** - Instant Perlin noise terrain with 5 terrain types (mountains, islands, ridges, plateaus, canyons)
+- **Place Search** - Search for any location by name using OpenStreetMap geocoding
+
+### Visualization
+- 10 color schemes (Natural, Satellite, Ocean, Thermal, Topographic, Arctic, Volcanic, Neon, Sunset, Grayscale)
+- Animated water plane with configurable sea level
+- Gradient sky dome atmosphere
+- Adjustable sun position and height
+- Fog/atmosphere toggle
+- Wireframe and flat shading modes
+- Shadow mapping
+
+### Analysis Tools
+- **Slope Visualization** - Color-coded slope angles
+- **Aspect Map** - Terrain facing direction as hue
+- **Contour Lines** - Adjustable elevation interval
+- **Cross-Section Profile** - Click two points to see elevation profile chart
+- **Live HUD** - Hover to see coordinates, elevation, and slope at cursor
+
+### Export
+- PNG screenshot
+- Heightmap image (grayscale)
+- STL file for 3D printing
+- Raw JSON data
+
+### Camera
+- Orbit controls (rotate, pan, zoom)
+- Preset views (top, side, 3/4 angle)
+- Animated fly-through with adjustable speed
+- Smooth camera transitions
+
+### Keyboard Shortcuts
+| Key | Action |
+|-----|--------|
+| G | Generate terrain |
+| R | Randomize procedural |
+| P | Screenshot |
+| F | Fullscreen |
+| W | Toggle wireframe |
+| C | Cycle color schemes |
+| 1/2/3 | Camera views |
+| Space | Fly through |
+| +/- | Vertical scale |
+| Tab | Toggle sidebar |
+| ? | Help |
 
 ## Technology
+- Three.js (WebGL)
+- Vanilla JavaScript (ES modules)
+- Custom GLSL shaders (water, sky)
+- Perlin noise implementation
+- Binary STL export
 
-- Pure HTML5 Canvas
-- Vanilla JavaScript
-- CSS3 animations
-- Touch and mouse event support
-
-## Game Mechanics
-
-- **Gravity**: Pulls the ball downward
-- **Slingshot**: Pull down to bend the elastic and build power
-- **Collision Detection**: Circle-to-circle physics for target hits
-- **Scoring**: 100 points per target × current level
-- **Level Progression**: Unlimited levels with increasing difficulty
-
-## Controls
-
-- **Mobile**: Touch and drag the ball
-- **Desktop**: Click and drag with mouse
-
-## Local Testing
-
-Open `index.html` in any modern web browser, or run a local server:
-
-```bash
-python -m http.server 8000
-```
-
-Then visit `http://localhost:8000`
+## 12 Location Presets
+Swiss Alps, Grand Canyon, Mt. Everest, Mt. Fuji, Yosemite, Kilimanjaro, Iceland Highlands, Machu Picchu, French Alps, Death Valley, NZ Southern Alps, Big Island Hawaii
