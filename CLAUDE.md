@@ -183,6 +183,16 @@ This repository exists for rapid ideation and deployment. Don't overthink it:
 - Perfect is the enemy of shipped
 - Have fun with it
 
+## Response Format
+
+At the end of every response, provide a link to create a new PR for the current branch. Use this format:
+
+```
+[Create PR](https://github.com/Kelvination/vibes/compare/<branch-name>?expand=1)
+```
+
+Replace `<branch-name>` with the actual branch you're working on.
+
 ---
 
 **Questions?** Check `.github/DEPLOYMENT.md` for detailed deployment info.
