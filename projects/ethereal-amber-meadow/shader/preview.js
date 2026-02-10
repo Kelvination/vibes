@@ -58,6 +58,7 @@ export class ShaderPreview {
       vertexShader: defaultVertexShader(),
       fragmentShader: defaultFragmentShader(),
       uniforms: buildDefaultUniforms(THREE),
+      side: THREE.DoubleSide,
     });
 
     // ── Mesh ────────────────────────────────────────────────────
@@ -114,6 +115,7 @@ export class ShaderPreview {
         vertexShader:   compiled.vertexShader,
         fragmentShader: compiled.fragmentShader,
         uniforms,
+        side: THREE.DoubleSide,
       });
 
       // Dispose old material
@@ -199,6 +201,21 @@ export class ShaderPreview {
       this._externalGeo = false;
       this._createShape();
       return;
+    }
+
+    // Ensure each geometry has normals and UVs (needed by the shader)
+    for (const g of builtGeometries) {
+      if (!g.getAttribute('normal')) g.computeVertexNormals();
+      if (!g.getAttribute('uv')) {
+        // Generate simple planar UVs from position as fallback
+        const pos = g.getAttribute('position');
+        const uvs = new Float32Array(pos.count * 2);
+        for (let i = 0; i < pos.count; i++) {
+          uvs[i * 2] = pos.getX(i) * 0.5 + 0.5;
+          uvs[i * 2 + 1] = pos.getY(i) * 0.5 + 0.5;
+        }
+        g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      }
     }
 
     // Merge multiple geometries into one, or use the single one
@@ -446,12 +463,10 @@ function buildDefaultUniforms(THREE) {
 }
 
 function defaultVertexShader() {
+  // NOTE: modelMatrix, viewMatrix, projectionMatrix, normalMatrix,
+  // position, normal, uv are injected by Three.js ShaderMaterial.
   return /* glsl */ `
     precision highp float;
-    uniform mat4 modelMatrix;
-    uniform mat4 viewMatrix;
-    uniform mat4 projectionMatrix;
-    uniform mat3 normalMatrix;
     varying vec3 vWorldPosition;
     varying vec3 vWorldNormal;
     varying vec2 vUv;
