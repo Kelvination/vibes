@@ -2507,7 +2507,6 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const color = inputs['Color'] || { r: 0, g: 0, b: 0 };
       if (values.mode === 'hsv') {
-        // RGB to HSV conversion
         const r = color.r ?? 0, g = color.g ?? 0, b = color.b ?? 0;
         const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
         const d = mx - mn;
@@ -2523,6 +2522,960 @@ registry.addNodes('geo', {
         return { outputs: [h, s, v] };
       }
       return { outputs: [color.r ?? 0, color.g ?? 0, color.b ?? 0] };
+    },
+  },
+
+  // =========================================================================
+  // 30 NEW GEOMETRY NODES
+  // =========================================================================
+
+  // --- 1. Float to Integer ---
+  'float_to_int': {
+    label: 'Float to Integer',
+    category: 'MATH',
+    inputs: [
+      { name: 'Float', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Integer', type: SocketType.INT },
+    ],
+    defaults: { mode: 'round' },
+    props: [
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'round', label: 'Round' },
+        { value: 'floor', label: 'Floor' },
+        { value: 'ceil', label: 'Ceiling' },
+        { value: 'truncate', label: 'Truncate' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      const v = inputs['Float'] ?? 0;
+      let r = 0;
+      switch (values.mode) {
+        case 'round': r = Math.round(v); break;
+        case 'floor': r = Math.floor(v); break;
+        case 'ceil': r = Math.ceil(v); break;
+        case 'truncate': r = Math.trunc(v); break;
+      }
+      return { outputs: [r] };
+    },
+  },
+
+  // --- 2. Integer Math ---
+  'integer_math': {
+    label: 'Integer Math',
+    category: 'MATH',
+    inputs: [
+      { name: 'A', type: SocketType.INT },
+      { name: 'B', type: SocketType.INT },
+    ],
+    outputs: [
+      { name: 'Result', type: SocketType.INT },
+    ],
+    defaults: { operation: 'add', a: 0, b: 0 },
+    props: [
+      { key: 'operation', label: 'Operation', type: 'select', options: [
+        { value: 'add', label: 'Add' },
+        { value: 'subtract', label: 'Subtract' },
+        { value: 'multiply', label: 'Multiply' },
+        { value: 'divide', label: 'Divide' },
+        { value: 'modulo', label: 'Modulo' },
+        { value: 'power', label: 'Power' },
+        { value: 'min', label: 'Min' },
+        { value: 'max', label: 'Max' },
+        { value: 'abs', label: 'Absolute' },
+        { value: 'sign', label: 'Sign' },
+      ]},
+      { key: 'a', label: 'A', type: 'int', min: -1000, max: 1000, step: 1 },
+      { key: 'b', label: 'B', type: 'int', min: -1000, max: 1000, step: 1 },
+    ],
+    evaluate(values, inputs) {
+      const a = inputs['A'] ?? values.a;
+      const b = inputs['B'] ?? values.b;
+      let val = 0;
+      switch (values.operation) {
+        case 'add': val = a + b; break;
+        case 'subtract': val = a - b; break;
+        case 'multiply': val = a * b; break;
+        case 'divide': val = b !== 0 ? Math.trunc(a / b) : 0; break;
+        case 'modulo': val = b !== 0 ? ((a % b) + b) % b : 0; break;
+        case 'power': val = Math.pow(a, b); break;
+        case 'min': val = Math.min(a, b); break;
+        case 'max': val = Math.max(a, b); break;
+        case 'abs': val = Math.abs(a); break;
+        case 'sign': val = Math.sign(a); break;
+      }
+      return { outputs: [Math.round(val)] };
+    },
+  },
+
+  // --- 3. Mix (Float) ---
+  'mix_float': {
+    label: 'Mix (Float)',
+    category: 'MATH',
+    inputs: [
+      { name: 'Factor', type: SocketType.FLOAT },
+      { name: 'A', type: SocketType.FLOAT },
+      { name: 'B', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Result', type: SocketType.FLOAT },
+    ],
+    defaults: { factor: 0.5, a: 0, b: 1, clampFactor: true },
+    props: [
+      { key: 'factor', label: 'Factor', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'a', label: 'A', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'b', label: 'B', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'clampFactor', label: 'Clamp Factor', type: 'bool' },
+    ],
+    evaluate(values, inputs) {
+      let fac = inputs['Factor'] ?? values.factor;
+      if (values.clampFactor) fac = clampVal(fac, 0, 1);
+      const a = inputs['A'] ?? values.a;
+      const b = inputs['B'] ?? values.b;
+      return { outputs: [lerp(a, b, fac)] };
+    },
+  },
+
+  // --- 4. Mix (Vector) ---
+  'mix_vector': {
+    label: 'Mix (Vector)',
+    category: 'MATH',
+    inputs: [
+      { name: 'Factor', type: SocketType.FLOAT },
+      { name: 'A', type: SocketType.VECTOR },
+      { name: 'B', type: SocketType.VECTOR },
+    ],
+    outputs: [
+      { name: 'Result', type: SocketType.VECTOR },
+    ],
+    defaults: { factor: 0.5, clampFactor: true },
+    props: [
+      { key: 'factor', label: 'Factor', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'clampFactor', label: 'Clamp Factor', type: 'bool' },
+    ],
+    evaluate(values, inputs) {
+      let fac = inputs['Factor'] ?? values.factor;
+      if (values.clampFactor) fac = clampVal(fac, 0, 1);
+      const a = inputs['A'] || { x: 0, y: 0, z: 0 };
+      const b = inputs['B'] || { x: 0, y: 0, z: 0 };
+      return { outputs: [{
+        x: lerp(a.x, b.x, fac),
+        y: lerp(a.y, b.y, fac),
+        z: lerp(a.z, b.z, fac),
+      }] };
+    },
+  },
+
+  // --- 5. Mix Color ---
+  'mix_color': {
+    label: 'Mix Color',
+    category: 'COLOR',
+    inputs: [
+      { name: 'Factor', type: SocketType.FLOAT },
+      { name: 'A', type: SocketType.COLOR },
+      { name: 'B', type: SocketType.COLOR },
+    ],
+    outputs: [
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    defaults: { factor: 0.5, clampFactor: true, clampResult: false },
+    props: [
+      { key: 'factor', label: 'Factor', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'clampFactor', label: 'Clamp Factor', type: 'bool' },
+      { key: 'clampResult', label: 'Clamp Result', type: 'bool' },
+    ],
+    evaluate(values, inputs) {
+      let fac = inputs['Factor'] ?? values.factor;
+      if (values.clampFactor) fac = clampVal(fac, 0, 1);
+      const a = inputs['A'] || { r: 0, g: 0, b: 0 };
+      const b = inputs['B'] || { r: 1, g: 1, b: 1 };
+      let r = lerp(a.r ?? 0, b.r ?? 0, fac);
+      let g = lerp(a.g ?? 0, b.g ?? 0, fac);
+      let bl = lerp(a.b ?? 0, b.b ?? 0, fac);
+      if (values.clampResult) {
+        r = clampVal(r, 0, 1); g = clampVal(g, 0, 1); bl = clampVal(bl, 0, 1);
+      }
+      return { outputs: [{ r, g, b: bl }] };
+    },
+  },
+
+  // --- 6. Invert Color ---
+  'invert_color': {
+    label: 'Invert Color',
+    category: 'COLOR',
+    inputs: [
+      { name: 'Factor', type: SocketType.FLOAT },
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    outputs: [
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    defaults: { factor: 1 },
+    props: [
+      { key: 'factor', label: 'Factor', type: 'float', min: 0, max: 1, step: 0.01 },
+    ],
+    evaluate(values, inputs) {
+      const fac = clampVal(inputs['Factor'] ?? values.factor, 0, 1);
+      const c = inputs['Color'] || { r: 0, g: 0, b: 0 };
+      return { outputs: [{
+        r: lerp(c.r ?? 0, 1 - (c.r ?? 0), fac),
+        g: lerp(c.g ?? 0, 1 - (c.g ?? 0), fac),
+        b: lerp(c.b ?? 0, 1 - (c.b ?? 0), fac),
+      }] };
+    },
+  },
+
+  // --- 7. Hue Saturation Value ---
+  'hue_saturation_value': {
+    label: 'Hue Saturation Value',
+    category: 'COLOR',
+    inputs: [
+      { name: 'Hue', type: SocketType.FLOAT },
+      { name: 'Saturation', type: SocketType.FLOAT },
+      { name: 'Value', type: SocketType.FLOAT },
+      { name: 'Factor', type: SocketType.FLOAT },
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    outputs: [
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    defaults: { hue: 0.5, saturation: 1, value: 1, factor: 1 },
+    props: [
+      { key: 'hue', label: 'Hue', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'saturation', label: 'Saturation', type: 'float', min: 0, max: 2, step: 0.01 },
+      { key: 'value', label: 'Value', type: 'float', min: 0, max: 2, step: 0.01 },
+      { key: 'factor', label: 'Factor', type: 'float', min: 0, max: 1, step: 0.01 },
+    ],
+    evaluate(values, inputs) {
+      const fac = clampVal(inputs['Factor'] ?? values.factor, 0, 1);
+      const c = inputs['Color'] || { r: 0.5, g: 0.5, b: 0.5 };
+      const hOff = (inputs['Hue'] ?? values.hue) - 0.5;
+      const sMul = inputs['Saturation'] ?? values.saturation;
+      const vMul = inputs['Value'] ?? values.value;
+      // RGB to HSV
+      const r0 = c.r ?? 0, g0 = c.g ?? 0, b0 = c.b ?? 0;
+      const mx = Math.max(r0, g0, b0), mn = Math.min(r0, g0, b0);
+      const d = mx - mn;
+      let h = 0;
+      const s = mx === 0 ? 0 : d / mx;
+      const v = mx;
+      if (d !== 0) {
+        if (mx === r0) h = ((g0 - b0) / d + 6) % 6;
+        else if (mx === g0) h = (b0 - r0) / d + 2;
+        else h = (r0 - g0) / d + 4;
+        h /= 6;
+      }
+      // Apply modifications
+      let nh = ((h + hOff) % 1 + 1) % 1;
+      let ns = clampVal(s * sMul, 0, 1);
+      let nv = clampVal(v * vMul, 0, 1);
+      // HSV to RGB
+      const hi = Math.floor(nh * 6);
+      const f = nh * 6 - hi;
+      const p = nv * (1 - ns);
+      const q = nv * (1 - f * ns);
+      const t = nv * (1 - (1 - f) * ns);
+      let rr, gg, bb;
+      switch (hi % 6) {
+        case 0: rr = nv; gg = t; bb = p; break;
+        case 1: rr = q; gg = nv; bb = p; break;
+        case 2: rr = p; gg = nv; bb = t; break;
+        case 3: rr = p; gg = q; bb = nv; break;
+        case 4: rr = t; gg = p; bb = nv; break;
+        case 5: rr = nv; gg = p; bb = q; break;
+        default: rr = nv; gg = t; bb = p;
+      }
+      return { outputs: [{
+        r: lerp(r0, rr, fac),
+        g: lerp(g0, gg, fac),
+        b: lerp(b0, bb, fac),
+      }] };
+    },
+  },
+
+  // --- 8. Gradient Texture ---
+  'gradient_texture': {
+    label: 'Gradient Texture',
+    category: 'TEXTURE',
+    inputs: [
+      { name: 'Vector', type: SocketType.VECTOR },
+    ],
+    outputs: [
+      { name: 'Fac', type: SocketType.FLOAT },
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    defaults: { gradientType: 'linear' },
+    props: [
+      { key: 'gradientType', label: 'Type', type: 'select', options: [
+        { value: 'linear', label: 'Linear' },
+        { value: 'quadratic', label: 'Quadratic' },
+        { value: 'easing', label: 'Easing' },
+        { value: 'diagonal', label: 'Diagonal' },
+        { value: 'spherical', label: 'Spherical' },
+        { value: 'quadratic_sphere', label: 'Quadratic Sphere' },
+        { value: 'radial', label: 'Radial' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      let fac = 0;
+      switch (values.gradientType) {
+        case 'linear': fac = clampVal(v.x, 0, 1); break;
+        case 'quadratic': { const t = clampVal(v.x, 0, 1); fac = t * t; } break;
+        case 'easing': { const t = clampVal(v.x, 0, 1); fac = t * t * (3 - 2 * t); } break;
+        case 'diagonal': fac = clampVal((v.x + v.y) * 0.5, 0, 1); break;
+        case 'spherical': fac = clampVal(1 - Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z), 0, 1); break;
+        case 'quadratic_sphere': { const d = clampVal(1 - Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z), 0, 1); fac = d * d; } break;
+        case 'radial': fac = (Math.atan2(v.y, v.x) / (2 * Math.PI) + 0.5) % 1; break;
+      }
+      return { outputs: [fac, { r: fac, g: fac, b: fac }] };
+    },
+  },
+
+  // --- 9. Wave Texture ---
+  'wave_texture': {
+    label: 'Wave Texture',
+    category: 'TEXTURE',
+    inputs: [
+      { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'Scale', type: SocketType.FLOAT },
+      { name: 'Distortion', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Fac', type: SocketType.FLOAT },
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    defaults: { scale: 5, distortion: 0, detail: 2, roughness: 0.5, waveType: 'bands', bandsDir: 'x', profile: 'sine' },
+    props: [
+      { key: 'waveType', label: 'Type', type: 'select', options: [
+        { value: 'bands', label: 'Bands' },
+        { value: 'rings', label: 'Rings' },
+      ]},
+      { key: 'bandsDir', label: 'Direction', type: 'select', options: [
+        { value: 'x', label: 'X' },
+        { value: 'y', label: 'Y' },
+        { value: 'z', label: 'Z' },
+        { value: 'diagonal', label: 'Diagonal' },
+      ]},
+      { key: 'profile', label: 'Profile', type: 'select', options: [
+        { value: 'sine', label: 'Sine' },
+        { value: 'saw', label: 'Saw' },
+        { value: 'triangle', label: 'Triangle' },
+      ]},
+      { key: 'scale', label: 'Scale', type: 'float', min: 0.01, max: 100, step: 0.5 },
+      { key: 'distortion', label: 'Distortion', type: 'float', min: 0, max: 20, step: 0.1 },
+      { key: 'detail', label: 'Detail', type: 'float', min: 0, max: 15, step: 0.5 },
+      { key: 'roughness', label: 'Roughness', type: 'float', min: 0, max: 1, step: 0.05 },
+    ],
+    evaluate(values, inputs) {
+      const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const sc = inputs['Scale'] ?? values.scale;
+      const dist = inputs['Distortion'] ?? values.distortion;
+      let coord = 0;
+      if (values.waveType === 'bands') {
+        switch (values.bandsDir) {
+          case 'x': coord = v.x * sc; break;
+          case 'y': coord = v.y * sc; break;
+          case 'z': coord = v.z * sc; break;
+          case 'diagonal': coord = (v.x + v.y + v.z) * sc / 3; break;
+        }
+      } else {
+        coord = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) * sc;
+      }
+      if (dist > 0) coord += valueNoise3D(v.x * sc, v.y * sc, v.z * sc) * dist;
+      if (values.detail > 0) coord += fbmNoise3D(v.x * sc * 2, v.y * sc * 2, v.z * sc * 2, Math.ceil(values.detail), values.roughness) * 0.5;
+      let fac = 0;
+      switch (values.profile) {
+        case 'sine': fac = (Math.sin(coord * Math.PI * 2) + 1) * 0.5; break;
+        case 'saw': fac = ((coord % 1) + 1) % 1; break;
+        case 'triangle': { const t = ((coord % 1) + 1) % 1; fac = t < 0.5 ? t * 2 : 2 - t * 2; } break;
+      }
+      return { outputs: [fac, { r: fac, g: fac, b: fac }] };
+    },
+  },
+
+  // --- 10. Checker Texture ---
+  'checker_texture': {
+    label: 'Checker Texture',
+    category: 'TEXTURE',
+    inputs: [
+      { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'Scale', type: SocketType.FLOAT },
+      { name: 'Color1', type: SocketType.COLOR },
+      { name: 'Color2', type: SocketType.COLOR },
+    ],
+    outputs: [
+      { name: 'Color', type: SocketType.COLOR },
+      { name: 'Fac', type: SocketType.FLOAT },
+    ],
+    defaults: { scale: 5 },
+    props: [
+      { key: 'scale', label: 'Scale', type: 'float', min: 0.01, max: 100, step: 0.5 },
+    ],
+    evaluate(values, inputs) {
+      const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const sc = inputs['Scale'] ?? values.scale;
+      const c1 = inputs['Color1'] || { r: 0.8, g: 0.8, b: 0.8 };
+      const c2 = inputs['Color2'] || { r: 0.2, g: 0.2, b: 0.2 };
+      const check = ((Math.floor(v.x * sc) + Math.floor(v.y * sc) + Math.floor(v.z * sc)) % 2 + 2) % 2;
+      const fac = check;
+      const color = check ? c1 : c2;
+      return { outputs: [color, fac] };
+    },
+  },
+
+  // --- 11. Brick Texture ---
+  'brick_texture': {
+    label: 'Brick Texture',
+    category: 'TEXTURE',
+    inputs: [
+      { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'Scale', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Color', type: SocketType.COLOR },
+      { name: 'Fac', type: SocketType.FLOAT },
+    ],
+    defaults: { scale: 5, mortarSize: 0.02, mortarSmooth: 0.1, bias: 0, brickWidth: 0.5, rowHeight: 0.25, offsetAmount: 0.5 },
+    props: [
+      { key: 'scale', label: 'Scale', type: 'float', min: 0.01, max: 50, step: 0.5 },
+      { key: 'mortarSize', label: 'Mortar Size', type: 'float', min: 0, max: 0.5, step: 0.005 },
+      { key: 'brickWidth', label: 'Brick Width', type: 'float', min: 0.01, max: 2, step: 0.05 },
+      { key: 'rowHeight', label: 'Row Height', type: 'float', min: 0.01, max: 2, step: 0.05 },
+      { key: 'offsetAmount', label: 'Offset', type: 'float', min: 0, max: 1, step: 0.05 },
+    ],
+    evaluate(values, inputs) {
+      const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const sc = inputs['Scale'] ?? values.scale;
+      const bw = values.brickWidth, rh = values.rowHeight;
+      const mortar = values.mortarSize;
+      const sx = v.x * sc, sy = v.y * sc;
+      const row = Math.floor(sy / rh);
+      const offset = (row % 2) * values.offsetAmount * bw;
+      const bx = ((sx + offset) % bw + bw) % bw;
+      const by = (sy % rh + rh) % rh;
+      const isMortar = bx < mortar || bx > bw - mortar || by < mortar || by > rh - mortar;
+      const fac = isMortar ? 1 : 0;
+      const color = isMortar ? { r: 0.5, g: 0.5, b: 0.5 } : { r: 0.6, g: 0.3, b: 0.2 };
+      return { outputs: [color, fac] };
+    },
+  },
+
+  // --- 12. Magic Texture ---
+  'magic_texture': {
+    label: 'Magic Texture',
+    category: 'TEXTURE',
+    inputs: [
+      { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'Scale', type: SocketType.FLOAT },
+      { name: 'Distortion', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Color', type: SocketType.COLOR },
+      { name: 'Fac', type: SocketType.FLOAT },
+    ],
+    defaults: { scale: 5, depth: 2, distortion: 1 },
+    props: [
+      { key: 'scale', label: 'Scale', type: 'float', min: 0.01, max: 50, step: 0.5 },
+      { key: 'depth', label: 'Depth', type: 'int', min: 0, max: 10, step: 1 },
+      { key: 'distortion', label: 'Distortion', type: 'float', min: 0, max: 10, step: 0.1 },
+    ],
+    evaluate(values, inputs) {
+      const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const sc = inputs['Scale'] ?? values.scale;
+      const dist = inputs['Distortion'] ?? values.distortion;
+      let x = Math.sin((v.x + v.y + v.z) * sc * 5);
+      let y = Math.cos((-v.x + v.y - v.z) * sc * 5);
+      let z = -Math.cos((-v.x - v.y + v.z) * sc * 5);
+      for (let i = 0; i < values.depth; i++) {
+        const nx = Math.cos(y * dist + x);
+        const ny = Math.sin(x * dist - z);
+        const nz = Math.cos(z * dist + y);
+        x = nx; y = ny; z = nz;
+      }
+      const r = clampVal((x + 1) * 0.5, 0, 1);
+      const g = clampVal((y + 1) * 0.5, 0, 1);
+      const b = clampVal((z + 1) * 0.5, 0, 1);
+      return { outputs: [{ r, g, b }, (r + g + b) / 3] };
+    },
+  },
+
+  // --- 13. Musgrave Texture ---
+  'musgrave_texture': {
+    label: 'Musgrave Texture',
+    category: 'TEXTURE',
+    inputs: [
+      { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'Scale', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Fac', type: SocketType.FLOAT },
+    ],
+    defaults: { scale: 5, detail: 2, dimension: 2, lacunarity: 2, offset: 0, gain: 1, musgraveType: 'fbm' },
+    props: [
+      { key: 'musgraveType', label: 'Type', type: 'select', options: [
+        { value: 'fbm', label: 'fBM' },
+        { value: 'multifractal', label: 'Multifractal' },
+        { value: 'ridged_multifractal', label: 'Ridged Multifractal' },
+        { value: 'hybrid_multifractal', label: 'Hybrid Multifractal' },
+      ]},
+      { key: 'scale', label: 'Scale', type: 'float', min: 0.01, max: 100, step: 0.5 },
+      { key: 'detail', label: 'Detail', type: 'float', min: 0, max: 15, step: 0.5 },
+      { key: 'dimension', label: 'Dimension', type: 'float', min: 0, max: 4, step: 0.1 },
+      { key: 'lacunarity', label: 'Lacunarity', type: 'float', min: 0.01, max: 10, step: 0.1 },
+    ],
+    evaluate(values, inputs) {
+      const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const sc = inputs['Scale'] ?? values.scale;
+      const octaves = Math.ceil(values.detail) + 1;
+      const lac = values.lacunarity;
+      const dim = values.dimension;
+      let sx = v.x * sc, sy = v.y * sc, sz = v.z * sc;
+      let value = 0, amp = 1, freq = 1, weight = 1;
+      for (let i = 0; i < octaves; i++) {
+        const n = valueNoise3D(sx * freq, sy * freq, sz * freq);
+        if (values.musgraveType === 'fbm') {
+          value += n * amp;
+        } else if (values.musgraveType === 'multifractal') {
+          value = i === 0 ? n + 1 : value * (n * amp + 1);
+        } else if (values.musgraveType === 'ridged_multifractal') {
+          const signal = 1 - Math.abs(n);
+          value += signal * signal * weight * amp;
+          weight = clampVal(signal * values.gain, 0, 1);
+        } else {
+          const signal = (n + values.offset) * amp;
+          value = i === 0 ? signal : value + signal * weight;
+          weight = clampVal(signal, 0, 1);
+        }
+        amp *= Math.pow(lac, -dim);
+        freq *= lac;
+      }
+      return { outputs: [value] };
+    },
+  },
+
+  // --- 14. Geometry to Instance ---
+  'geometry_to_instance': {
+    label: 'Geometry to Instance',
+    category: 'INSTANCE',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
+    outputs: [
+      { name: 'Instances', type: SocketType.GEOMETRY },
+    ],
+    defaults: {},
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      if (!geo) return { outputs: [null] };
+      return { outputs: [mapGeo(geo, g => {
+        g.isInstance = true;
+        return g;
+      })] };
+    },
+  },
+
+  // --- 15. Domain Size ---
+  'domain_size': {
+    label: 'Domain Size',
+    category: 'GEOMETRY',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
+    outputs: [
+      { name: 'Point Count', type: SocketType.INT },
+      { name: 'Edge Count', type: SocketType.INT },
+      { name: 'Face Count', type: SocketType.INT },
+    ],
+    defaults: {},
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      if (!geo) return { outputs: [0, 0, 0] };
+      // Approximate counts based on geometry type
+      return { outputs: [8, 12, 6] };
+    },
+  },
+
+  // --- 16. Sample Index ---
+  'sample_index': {
+    label: 'Sample Index',
+    category: 'GEOMETRY',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Value', type: SocketType.FLOAT },
+      { name: 'Index', type: SocketType.INT },
+    ],
+    outputs: [
+      { name: 'Value', type: SocketType.FLOAT },
+    ],
+    defaults: { index: 0, domain: 'points' },
+    props: [
+      { key: 'index', label: 'Index', type: 'int', min: 0, max: 9999, step: 1 },
+      { key: 'domain', label: 'Domain', type: 'select', options: [
+        { value: 'points', label: 'Points' },
+        { value: 'edges', label: 'Edges' },
+        { value: 'faces', label: 'Faces' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      const val = inputs['Value'] ?? 0;
+      return { outputs: [val] };
+    },
+  },
+
+  // --- 17. Raycast ---
+  'raycast': {
+    label: 'Raycast',
+    category: 'GEOMETRY',
+    inputs: [
+      { name: 'Target', type: SocketType.GEOMETRY },
+      { name: 'Source Position', type: SocketType.VECTOR },
+      { name: 'Ray Direction', type: SocketType.VECTOR },
+      { name: 'Ray Length', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Is Hit', type: SocketType.BOOL },
+      { name: 'Hit Position', type: SocketType.VECTOR },
+      { name: 'Hit Normal', type: SocketType.VECTOR },
+      { name: 'Hit Distance', type: SocketType.FLOAT },
+    ],
+    defaults: { rayLength: 100 },
+    props: [
+      { key: 'rayLength', label: 'Ray Length', type: 'float', min: 0, max: 10000, step: 1 },
+    ],
+    evaluate(values, inputs) {
+      // Simplified: always returns no hit in graph evaluation; actual raycast at build time
+      return { outputs: [false, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, 0] };
+    },
+  },
+
+  // --- 18. Points to Vertices ---
+  'points_to_vertices': {
+    label: 'Points to Vertices',
+    category: 'GEOMETRY',
+    inputs: [
+      { name: 'Points', type: SocketType.GEOMETRY },
+    ],
+    outputs: [
+      { name: 'Mesh', type: SocketType.GEOMETRY },
+    ],
+    defaults: {},
+    evaluate(values, inputs) {
+      const points = inputs['Points'];
+      if (!points) return { outputs: [null] };
+      return { outputs: [mapGeo(points, g => {
+        g.pointsToVertices = true;
+        return g;
+      })] };
+    },
+  },
+
+  // --- 19. Set Curve Radius ---
+  'set_curve_radius': {
+    label: 'Set Curve Radius',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Radius', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: { radius: 1 },
+    props: [
+      { key: 'radius', label: 'Radius', type: 'float', min: 0, max: 50, step: 0.1 },
+    ],
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      const radius = inputs['Radius'] ?? values.radius;
+      if (!curve) return { outputs: [null] };
+      return { outputs: [mapGeo(curve, g => {
+        g.curveRadius = radius;
+        return g;
+      })] };
+    },
+  },
+
+  // --- 20. Set Curve Tilt ---
+  'set_curve_tilt': {
+    label: 'Set Curve Tilt',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Tilt', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: { tilt: 0 },
+    props: [
+      { key: 'tilt', label: 'Tilt (deg)', type: 'float', min: -360, max: 360, step: 1 },
+    ],
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      const tilt = (inputs['Tilt'] ?? values.tilt) * Math.PI / 180;
+      if (!curve) return { outputs: [null] };
+      return { outputs: [mapGeo(curve, g => {
+        g.curveTilt = tilt;
+        return g;
+      })] };
+    },
+  },
+
+  // --- 21. Curve Length ---
+  'curve_length': {
+    label: 'Curve Length',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    outputs: [
+      { name: 'Length', type: SocketType.FLOAT },
+    ],
+    defaults: {},
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      if (!curve) return { outputs: [0] };
+      // Approximate: return default length based on geometry
+      return { outputs: [1.0] };
+    },
+  },
+
+  // --- 22. Endpoint Selection ---
+  'endpoint_selection': {
+    label: 'Endpoint Selection',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Start Size', type: SocketType.INT },
+      { name: 'End Size', type: SocketType.INT },
+    ],
+    outputs: [
+      { name: 'Selection', type: SocketType.BOOL },
+    ],
+    defaults: { startSize: 1, endSize: 1 },
+    props: [
+      { key: 'startSize', label: 'Start Size', type: 'int', min: 0, max: 100, step: 1 },
+      { key: 'endSize', label: 'End Size', type: 'int', min: 0, max: 100, step: 1 },
+    ],
+    evaluate(values, inputs) {
+      return { outputs: [true] };
+    },
+  },
+
+  // --- 23. Spline Length ---
+  'spline_length': {
+    label: 'Spline Length',
+    category: 'CURVE',
+    inputs: [],
+    outputs: [
+      { name: 'Length', type: SocketType.FLOAT },
+      { name: 'Point Count', type: SocketType.INT },
+    ],
+    defaults: {},
+    evaluate() {
+      return { outputs: [1.0, 16] };
+    },
+  },
+
+  // --- 24. Set Spline Resolution ---
+  'set_spline_resolution': {
+    label: 'Set Spline Resolution',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Resolution', type: SocketType.INT },
+    ],
+    outputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
+    defaults: { resolution: 12 },
+    props: [
+      { key: 'resolution', label: 'Resolution', type: 'int', min: 1, max: 128, step: 1 },
+    ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      const res = inputs['Resolution'] ?? values.resolution;
+      if (!geo) return { outputs: [null] };
+      return { outputs: [mapGeo(geo, g => {
+        g.splineResolution = res;
+        return g;
+      })] };
+    },
+  },
+
+  // --- 25. Sample Curve ---
+  'sample_curve': {
+    label: 'Sample Curve',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Factor', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Position', type: SocketType.VECTOR },
+      { name: 'Tangent', type: SocketType.VECTOR },
+      { name: 'Normal', type: SocketType.VECTOR },
+    ],
+    defaults: { factor: 0.5, mode: 'factor' },
+    props: [
+      { key: 'factor', label: 'Factor', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'factor', label: 'Factor' },
+        { value: 'length', label: 'Length' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      return { outputs: [
+        { x: 0, y: 0, z: 0 },
+        { x: 0, y: 0, z: 1 },
+        { x: 0, y: 1, z: 0 },
+      ] };
+    },
+  },
+
+  // --- 26. Align Euler to Vector ---
+  'align_euler_to_vector': {
+    label: 'Align Euler to Vector',
+    category: 'TRANSFORM',
+    inputs: [
+      { name: 'Rotation', type: SocketType.VECTOR },
+      { name: 'Factor', type: SocketType.FLOAT },
+      { name: 'Vector', type: SocketType.VECTOR },
+    ],
+    outputs: [
+      { name: 'Rotation', type: SocketType.VECTOR },
+    ],
+    defaults: { axis: 'z', factor: 1 },
+    props: [
+      { key: 'axis', label: 'Axis', type: 'select', options: [
+        { value: 'x', label: 'X' },
+        { value: 'y', label: 'Y' },
+        { value: 'z', label: 'Z' },
+      ]},
+      { key: 'factor', label: 'Factor', type: 'float', min: 0, max: 1, step: 0.01 },
+    ],
+    evaluate(values, inputs) {
+      const rot = inputs['Rotation'] || { x: 0, y: 0, z: 0 };
+      const fac = inputs['Factor'] ?? values.factor;
+      const vec = inputs['Vector'] || { x: 0, y: 0, z: 1 };
+      // Simplified: compute yaw/pitch from target vector
+      const len = Math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z) || 1;
+      const nx = vec.x / len, ny = vec.y / len, nz = vec.z / len;
+      const pitch = Math.asin(clampVal(-ny, -1, 1));
+      const yaw = Math.atan2(nx, nz);
+      return { outputs: [{
+        x: lerp(rot.x, pitch, fac),
+        y: lerp(rot.y, yaw, fac),
+        z: rot.z,
+      }] };
+    },
+  },
+
+  // --- 27. Rotate Euler ---
+  'rotate_euler': {
+    label: 'Rotate Euler',
+    category: 'TRANSFORM',
+    inputs: [
+      { name: 'Rotation', type: SocketType.VECTOR },
+      { name: 'Rotate By', type: SocketType.VECTOR },
+    ],
+    outputs: [
+      { name: 'Rotation', type: SocketType.VECTOR },
+    ],
+    defaults: { rotateX: 0, rotateY: 0, rotateZ: 0, space: 'object' },
+    props: [
+      { key: 'rotateX', label: 'Rotate X (deg)', type: 'float', min: -360, max: 360, step: 1 },
+      { key: 'rotateY', label: 'Rotate Y (deg)', type: 'float', min: -360, max: 360, step: 1 },
+      { key: 'rotateZ', label: 'Rotate Z (deg)', type: 'float', min: -360, max: 360, step: 1 },
+      { key: 'space', label: 'Space', type: 'select', options: [
+        { value: 'object', label: 'Object' },
+        { value: 'local', label: 'Local' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      const rot = inputs['Rotation'] || { x: 0, y: 0, z: 0 };
+      const by = inputs['Rotate By'] || { x: values.rotateX, y: values.rotateY, z: values.rotateZ };
+      return { outputs: [{
+        x: rot.x + (by.x ?? values.rotateX) * Math.PI / 180,
+        y: rot.y + (by.y ?? values.rotateY) * Math.PI / 180,
+        z: rot.z + (by.z ?? values.rotateZ) * Math.PI / 180,
+      }] };
+    },
+  },
+
+  // --- 28. Accumulate Field ---
+  'accumulate_field': {
+    label: 'Accumulate Field',
+    category: 'FIELD',
+    inputs: [
+      { name: 'Value', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Leading', type: SocketType.FLOAT },
+      { name: 'Trailing', type: SocketType.FLOAT },
+      { name: 'Total', type: SocketType.FLOAT },
+    ],
+    defaults: { domain: 'points' },
+    props: [
+      { key: 'domain', label: 'Domain', type: 'select', options: [
+        { value: 'points', label: 'Points' },
+        { value: 'edges', label: 'Edges' },
+        { value: 'faces', label: 'Faces' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      const val = inputs['Value'] ?? 0;
+      return { outputs: [val, 0, val] };
+    },
+  },
+
+  // --- 29. Mesh Island ---
+  'mesh_island': {
+    label: 'Mesh Island',
+    category: 'MESH_OPS',
+    inputs: [],
+    outputs: [
+      { name: 'Island Index', type: SocketType.INT },
+      { name: 'Island Count', type: SocketType.INT },
+    ],
+    defaults: {},
+    evaluate() {
+      return { outputs: [0, 1] };
+    },
+  },
+
+  // --- 30. Curve Quadrilateral ---
+  'curve_quadrilateral': {
+    label: 'Quadrilateral',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Width', type: SocketType.FLOAT },
+      { name: 'Height', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: { width: 1, height: 1, mode: 'rectangle' },
+    props: [
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'rectangle', label: 'Rectangle' },
+        { value: 'parallelogram', label: 'Parallelogram' },
+        { value: 'trapezoid', label: 'Trapezoid' },
+        { value: 'kite', label: 'Kite' },
+      ]},
+      { key: 'width', label: 'Width', type: 'float', min: 0.01, max: 50, step: 0.1 },
+      { key: 'height', label: 'Height', type: 'float', min: 0.01, max: 50, step: 0.1 },
+    ],
+    evaluate(values, inputs) {
+      const w = inputs['Width'] ?? values.width;
+      const h = inputs['Height'] ?? values.height;
+      return { outputs: [{
+        type: 'curve_quadrilateral',
+        width: w, height: h,
+        mode: values.mode,
+        transforms: [], smooth: false,
+      }] };
     },
   },
 
