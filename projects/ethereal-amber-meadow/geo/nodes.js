@@ -24,6 +24,8 @@ registry.addCategory('geo', 'CURVE',     { name: 'Curve',            color: '#82
 registry.addCategory('geo', 'MATH',      { name: 'Math',             color: '#6a1b9a', icon: '\u0192' });
 registry.addCategory('geo', 'UTILITY',   { name: 'Utility',          color: '#4527a0', icon: '\u2699' });
 registry.addCategory('geo', 'TEXTURE',   { name: 'Texture',          color: '#bf360c', icon: '\u25A4' });
+registry.addCategory('geo', 'MATERIAL',  { name: 'Material',         color: '#e91e63', icon: '\u25CD' });
+registry.addCategory('geo', 'COLOR',     { name: 'Color',            color: '#fbc02d', icon: '\u25D0' });
 registry.addCategory('geo', 'OUTPUT',    { name: 'Output',           color: '#e65100', icon: '\u25C9' });
 
 // ── Node types ──────────────────────────────────────────────────────────────
@@ -1832,6 +1834,695 @@ registry.addNodes('geo', {
         z: hash3(Math.floor(v.x * 1000) + 151, Math.floor(v.y * 1000) + 173, Math.floor(v.z * 1000) + 199),
       };
       return { outputs: [val, col] };
+    },
+  },
+
+  // =========================================================================
+  // NEW INPUT NODES
+  // =========================================================================
+  'value_color': {
+    label: 'Color',
+    category: 'INPUT',
+    inputs: [],
+    outputs: [
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    defaults: { r: 0.5, g: 0.5, b: 0.5 },
+    props: [
+      { key: 'r', label: 'R', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'g', label: 'G', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'b', label: 'B', type: 'float', min: 0, max: 1, step: 0.01 },
+    ],
+    evaluate(values) {
+      return {
+        outputs: [{
+          r: clampVal(values.r ?? 0.5, 0, 1),
+          g: clampVal(values.g ?? 0.5, 0, 1),
+          b: clampVal(values.b ?? 0.5, 0, 1),
+        }],
+      };
+    },
+  },
+
+  // =========================================================================
+  // NEW OUTPUT NODES
+  // =========================================================================
+  'viewer': {
+    label: 'Viewer',
+    category: 'OUTPUT',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Value', type: SocketType.FLOAT },
+    ],
+    outputs: [],
+    defaults: {},
+    evaluate(values, inputs) {
+      return { outputs: [], geometry: inputs['Geometry'] || null, viewerValue: inputs['Value'] ?? 0 };
+    },
+  },
+
+  // =========================================================================
+  // NEW MESH PRIMITIVES
+  // =========================================================================
+  'mesh_circle': {
+    label: 'Mesh Circle',
+    category: 'MESH',
+    inputs: [
+      { name: 'Vertices', type: SocketType.INT },
+      { name: 'Radius', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Mesh', type: SocketType.GEOMETRY },
+    ],
+    defaults: { vertices: 32, radius: 1, fillType: 'ngon' },
+    props: [
+      { key: 'vertices', label: 'Vertices', type: 'int', min: 3, max: 128, step: 1 },
+      { key: 'radius', label: 'Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
+      { key: 'fillType', label: 'Fill', type: 'select', options: [
+        { value: 'none', label: 'None' },
+        { value: 'ngon', label: 'Ngon' },
+        { value: 'triangle_fan', label: 'Triangle Fan' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      const verts = inputs['Vertices'] ?? values.vertices;
+      const r = inputs['Radius'] ?? values.radius;
+      return { outputs: [{
+        type: 'mesh_circle',
+        vertices: verts, radius: r,
+        fillType: values.fillType,
+        transforms: [], smooth: false,
+      }] };
+    },
+  },
+
+  // =========================================================================
+  // NEW MESH OPERATIONS
+  // =========================================================================
+  'mesh_to_curve': {
+    label: 'Mesh to Curve',
+    category: 'MESH_OPS',
+    inputs: [
+      { name: 'Mesh', type: SocketType.GEOMETRY },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: {},
+    evaluate(values, inputs) {
+      const mesh = inputs['Mesh'];
+      if (!mesh) return { outputs: [null] };
+      return { outputs: [mapGeo(mesh, g => {
+        g.meshToCurve = true;
+        return g;
+      })] };
+    },
+  },
+
+  'duplicate_elements': {
+    label: 'Duplicate Elements',
+    category: 'GEOMETRY',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Amount', type: SocketType.INT },
+    ],
+    outputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Duplicate Index', type: SocketType.INT },
+    ],
+    defaults: { amount: 1, domain: 'faces' },
+    props: [
+      { key: 'amount', label: 'Amount', type: 'int', min: 0, max: 100, step: 1 },
+      { key: 'domain', label: 'Domain', type: 'select', options: [
+        { value: 'points', label: 'Points' },
+        { value: 'edges', label: 'Edges' },
+        { value: 'faces', label: 'Faces' },
+        { value: 'instances', label: 'Instances' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      const amount = inputs['Amount'] ?? values.amount;
+      if (!geo) return { outputs: [null, 0] };
+      // Create array of duplicated geometry
+      const result = [];
+      for (let i = 0; i <= amount; i++) {
+        result.push(...geoToArray(cloneGeo(geo)));
+      }
+      return { outputs: [result.length > 0 ? result : null, amount] };
+    },
+  },
+
+  // =========================================================================
+  // MESH READ NODES
+  // =========================================================================
+  'edge_angle': {
+    label: 'Edge Angle',
+    category: 'MESH_OPS',
+    inputs: [],
+    outputs: [
+      { name: 'Unsigned Angle', type: SocketType.FLOAT },
+      { name: 'Signed Angle', type: SocketType.FLOAT },
+    ],
+    defaults: {},
+    evaluate() {
+      // Field node: returns default values; actual per-edge evaluation at build time
+      return { outputs: [0, 0] };
+    },
+  },
+
+  'edge_neighbors': {
+    label: 'Edge Neighbors',
+    category: 'MESH_OPS',
+    inputs: [],
+    outputs: [
+      { name: 'Face Count', type: SocketType.INT },
+    ],
+    defaults: {},
+    evaluate() {
+      return { outputs: [2] };
+    },
+  },
+
+  'face_area': {
+    label: 'Face Area',
+    category: 'MESH_OPS',
+    inputs: [],
+    outputs: [
+      { name: 'Area', type: SocketType.FLOAT },
+    ],
+    defaults: {},
+    evaluate() {
+      return { outputs: [1.0] };
+    },
+  },
+
+  'face_neighbors': {
+    label: 'Face Neighbors',
+    category: 'MESH_OPS',
+    inputs: [],
+    outputs: [
+      { name: 'Vertex Count', type: SocketType.INT },
+      { name: 'Face Count', type: SocketType.INT },
+    ],
+    defaults: {},
+    evaluate() {
+      return { outputs: [4, 4] };
+    },
+  },
+
+  'vertex_neighbors': {
+    label: 'Vertex Neighbors',
+    category: 'MESH_OPS',
+    inputs: [],
+    outputs: [
+      { name: 'Vertex Count', type: SocketType.INT },
+      { name: 'Face Count', type: SocketType.INT },
+    ],
+    defaults: {},
+    evaluate() {
+      return { outputs: [4, 4] };
+    },
+  },
+
+  // =========================================================================
+  // MESH WRITE NODES
+  // =========================================================================
+  'set_sharp_edges': {
+    label: 'Set Sharp Edges',
+    category: 'MESH_OPS',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
+      { name: 'Sharp', type: SocketType.BOOL },
+    ],
+    outputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
+    defaults: { sharp: true },
+    props: [
+      { key: 'sharp', label: 'Sharp', type: 'bool' },
+    ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      const sharp = inputs['Sharp'] ?? values.sharp;
+      if (!geo) return { outputs: [null] };
+      return { outputs: [mapGeo(geo, g => {
+        g.sharpEdges = sharp;
+        return g;
+      })] };
+    },
+  },
+
+  'set_sharp_faces': {
+    label: 'Set Sharp Faces',
+    category: 'MESH_OPS',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
+      { name: 'Sharp', type: SocketType.BOOL },
+    ],
+    outputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
+    defaults: { sharp: true },
+    props: [
+      { key: 'sharp', label: 'Sharp', type: 'bool' },
+    ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      const sharp = inputs['Sharp'] ?? values.sharp;
+      if (!geo) return { outputs: [null] };
+      return { outputs: [mapGeo(geo, g => {
+        g.sharpFaces = sharp;
+        g.smooth = !sharp;
+        return g;
+      })] };
+    },
+  },
+
+  // =========================================================================
+  // NEW CURVE PRIMITIVES
+  // =========================================================================
+  'curve_arc': {
+    label: 'Arc',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Resolution', type: SocketType.INT },
+      { name: 'Radius', type: SocketType.FLOAT },
+      { name: 'Start Angle', type: SocketType.FLOAT },
+      { name: 'Sweep Angle', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: { resolution: 16, radius: 1, startAngle: 0, sweepAngle: 315 },
+    props: [
+      { key: 'resolution', label: 'Resolution', type: 'int', min: 2, max: 128, step: 1 },
+      { key: 'radius', label: 'Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
+      { key: 'startAngle', label: 'Start Angle (deg)', type: 'float', min: 0, max: 360, step: 1 },
+      { key: 'sweepAngle', label: 'Sweep Angle (deg)', type: 'float', min: -360, max: 360, step: 1 },
+    ],
+    evaluate(values, inputs) {
+      const resolution = inputs['Resolution'] ?? values.resolution;
+      const radius = inputs['Radius'] ?? values.radius;
+      const startAngle = (inputs['Start Angle'] ?? values.startAngle) * Math.PI / 180;
+      const sweepAngle = (inputs['Sweep Angle'] ?? values.sweepAngle) * Math.PI / 180;
+      return { outputs: [{
+        type: 'curve_arc',
+        resolution, radius, startAngle, sweepAngle,
+        transforms: [], smooth: false,
+      }] };
+    },
+  },
+
+  'curve_star': {
+    label: 'Star',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Points', type: SocketType.INT },
+      { name: 'Inner Radius', type: SocketType.FLOAT },
+      { name: 'Outer Radius', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: { points: 5, innerRadius: 0.5, outerRadius: 1, twist: 0 },
+    props: [
+      { key: 'points', label: 'Points', type: 'int', min: 3, max: 64, step: 1 },
+      { key: 'innerRadius', label: 'Inner Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
+      { key: 'outerRadius', label: 'Outer Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
+      { key: 'twist', label: 'Twist (deg)', type: 'float', min: -360, max: 360, step: 1 },
+    ],
+    evaluate(values, inputs) {
+      const pts = inputs['Points'] ?? values.points;
+      const innerR = inputs['Inner Radius'] ?? values.innerRadius;
+      const outerR = inputs['Outer Radius'] ?? values.outerRadius;
+      return { outputs: [{
+        type: 'curve_star',
+        points: pts, innerRadius: innerR, outerRadius: outerR,
+        twist: (values.twist ?? 0) * Math.PI / 180,
+        transforms: [], smooth: false,
+      }] };
+    },
+  },
+
+  // =========================================================================
+  // NEW CURVE OPERATIONS
+  // =========================================================================
+  'curve_to_points': {
+    label: 'Curve to Points',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Count', type: SocketType.INT },
+    ],
+    outputs: [
+      { name: 'Points', type: SocketType.GEOMETRY },
+      { name: 'Tangent', type: SocketType.VECTOR },
+      { name: 'Normal', type: SocketType.VECTOR },
+    ],
+    defaults: { mode: 'count', count: 16 },
+    props: [
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'count', label: 'Count' },
+        { value: 'evaluated', label: 'Evaluated' },
+      ]},
+      { key: 'count', label: 'Count', type: 'int', min: 2, max: 256, step: 1 },
+    ],
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      const count = inputs['Count'] ?? values.count;
+      if (!curve) return { outputs: [null, { x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 }] };
+      return {
+        outputs: [
+          {
+            type: 'points',
+            source: cloneGeo(curve),
+            mode: 'vertices',
+            density: 1,
+            seed: 0,
+            curveToPoints: { mode: values.mode, count },
+            transforms: [], smooth: false,
+          },
+          { x: 0, y: 0, z: 1 },
+          { x: 0, y: 1, z: 0 },
+        ],
+      };
+    },
+  },
+
+  'fillet_curve': {
+    label: 'Fillet Curve',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Count', type: SocketType.INT },
+      { name: 'Radius', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: { count: 1, radius: 0.25, mode: 'bezier' },
+    props: [
+      { key: 'count', label: 'Count', type: 'int', min: 1, max: 32, step: 1 },
+      { key: 'radius', label: 'Radius', type: 'float', min: 0, max: 10, step: 0.01 },
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'bezier', label: 'Bezier' },
+        { value: 'poly', label: 'Poly' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      const count = inputs['Count'] ?? values.count;
+      const radius = inputs['Radius'] ?? values.radius;
+      if (!curve) return { outputs: [null] };
+      return { outputs: [mapGeo(curve, g => {
+        g.fillet = { count, radius, mode: values.mode };
+        return g;
+      })] };
+    },
+  },
+
+  'trim_curve': {
+    label: 'Trim Curve',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Start', type: SocketType.FLOAT },
+      { name: 'End', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: { start: 0, end: 1, mode: 'factor' },
+    props: [
+      { key: 'start', label: 'Start', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'end', label: 'End', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'factor', label: 'Factor' },
+        { value: 'length', label: 'Length' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      const start = inputs['Start'] ?? values.start;
+      const end = inputs['End'] ?? values.end;
+      if (!curve) return { outputs: [null] };
+      return { outputs: [mapGeo(curve, g => {
+        g.trim = { start, end, mode: values.mode };
+        return g;
+      })] };
+    },
+  },
+
+  'reverse_curve': {
+    label: 'Reverse Curve',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: {},
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      if (!curve) return { outputs: [null] };
+      return { outputs: [mapGeo(curve, g => {
+        g.reverseCurve = true;
+        return g;
+      })] };
+    },
+  },
+
+  // =========================================================================
+  // CURVE READ NODES
+  // =========================================================================
+  'spline_parameter': {
+    label: 'Spline Parameter',
+    category: 'CURVE',
+    inputs: [],
+    outputs: [
+      { name: 'Factor', type: SocketType.FLOAT },
+      { name: 'Length', type: SocketType.FLOAT },
+      { name: 'Index', type: SocketType.INT },
+    ],
+    defaults: {},
+    evaluate() {
+      // Field node: returns defaults; actual per-point values evaluated at build time
+      return { outputs: [0.5, 1.0, 0] };
+    },
+  },
+
+  // =========================================================================
+  // CURVE WRITE NODES
+  // =========================================================================
+  'set_spline_cyclic': {
+    label: 'Set Spline Cyclic',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Cyclic', type: SocketType.BOOL },
+    ],
+    outputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
+    defaults: { cyclic: true },
+    props: [
+      { key: 'cyclic', label: 'Cyclic', type: 'bool' },
+    ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      const cyclic = inputs['Cyclic'] ?? values.cyclic;
+      if (!geo) return { outputs: [null] };
+      return { outputs: [mapGeo(geo, g => {
+        g.cyclic = cyclic;
+        return g;
+      })] };
+    },
+  },
+
+  // =========================================================================
+  // MATERIAL NODES
+  // =========================================================================
+  'set_material': {
+    label: 'Set Material',
+    category: 'MATERIAL',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
+    outputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
+    defaults: { color: '#6688cc', metallic: 0, roughness: 0.5 },
+    props: [
+      { key: 'color', label: 'Color', type: 'color' },
+      { key: 'metallic', label: 'Metallic', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'roughness', label: 'Roughness', type: 'float', min: 0, max: 1, step: 0.01 },
+    ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      if (!geo) return { outputs: [null] };
+      return { outputs: [mapGeo(geo, g => {
+        g.material = {
+          color: values.color,
+          metallic: values.metallic,
+          roughness: values.roughness,
+        };
+        return g;
+      })] };
+    },
+  },
+
+  'material_index': {
+    label: 'Material Index',
+    category: 'MATERIAL',
+    inputs: [],
+    outputs: [
+      { name: 'Material Index', type: SocketType.INT },
+    ],
+    defaults: {},
+    evaluate() {
+      return { outputs: [0] };
+    },
+  },
+
+  // =========================================================================
+  // COLOR NODES
+  // =========================================================================
+  'geo_color_ramp': {
+    label: 'Color Ramp',
+    category: 'COLOR',
+    inputs: [
+      { name: 'Fac', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Color', type: SocketType.COLOR },
+      { name: 'Alpha', type: SocketType.FLOAT },
+    ],
+    defaults: { color1: '#000000', color2: '#ffffff', pos1: 0, pos2: 1 },
+    props: [
+      { key: 'color1', label: 'Color 1', type: 'color' },
+      { key: 'color2', label: 'Color 2', type: 'color' },
+      { key: 'pos1', label: 'Pos 1', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'pos2', label: 'Pos 2', type: 'float', min: 0, max: 1, step: 0.01 },
+    ],
+    evaluate(values, inputs) {
+      const fac = clampVal(inputs['Fac'] ?? 0.5, 0, 1);
+      const h = hex => {
+        const hh = (hex || '#000000').replace('#', '');
+        return {
+          r: parseInt(hh.substring(0, 2), 16) / 255,
+          g: parseInt(hh.substring(2, 4), 16) / 255,
+          b: parseInt(hh.substring(4, 6), 16) / 255,
+        };
+      };
+      const c1 = h(values.color1);
+      const c2 = h(values.color2);
+      const p1 = values.pos1 ?? 0;
+      const p2 = values.pos2 ?? 1;
+      const range = p2 - p1;
+      const t = range > 0 ? clampVal((fac - p1) / range, 0, 1) : (fac >= p1 ? 1 : 0);
+      return {
+        outputs: [
+          {
+            r: c1.r + (c2.r - c1.r) * t,
+            g: c1.g + (c2.g - c1.g) * t,
+            b: c1.b + (c2.b - c1.b) * t,
+          },
+          t,
+        ],
+      };
+    },
+  },
+
+  'geo_combine_color': {
+    label: 'Combine Color',
+    category: 'COLOR',
+    inputs: [
+      { name: 'R', type: SocketType.FLOAT },
+      { name: 'G', type: SocketType.FLOAT },
+      { name: 'B', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    defaults: { r: 0, g: 0, b: 0, mode: 'rgb' },
+    props: [
+      { key: 'r', label: 'R / H', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'g', label: 'G / S', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'b', label: 'B / V', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'rgb', label: 'RGB' },
+        { value: 'hsv', label: 'HSV' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      const c1 = clampVal(inputs['R'] ?? values.r ?? 0, 0, 1);
+      const c2 = clampVal(inputs['G'] ?? values.g ?? 0, 0, 1);
+      const c3 = clampVal(inputs['B'] ?? values.b ?? 0, 0, 1);
+      if (values.mode === 'hsv') {
+        // HSV to RGB conversion
+        const h = c1, s = c2, v = c3;
+        const hi = Math.floor(h * 6);
+        const f = h * 6 - hi;
+        const p = v * (1 - s);
+        const q = v * (1 - f * s);
+        const t = v * (1 - (1 - f) * s);
+        let r, g, b;
+        switch (hi % 6) {
+          case 0: r = v; g = t; b = p; break;
+          case 1: r = q; g = v; b = p; break;
+          case 2: r = p; g = v; b = t; break;
+          case 3: r = p; g = q; b = v; break;
+          case 4: r = t; g = p; b = v; break;
+          case 5: r = v; g = p; b = q; break;
+          default: r = v; g = t; b = p;
+        }
+        return { outputs: [{ r, g, b }] };
+      }
+      return { outputs: [{ r: c1, g: c2, b: c3 }] };
+    },
+  },
+
+  'geo_separate_color': {
+    label: 'Separate Color',
+    category: 'COLOR',
+    inputs: [
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    outputs: [
+      { name: 'R', type: SocketType.FLOAT },
+      { name: 'G', type: SocketType.FLOAT },
+      { name: 'B', type: SocketType.FLOAT },
+    ],
+    defaults: { mode: 'rgb' },
+    props: [
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'rgb', label: 'RGB' },
+        { value: 'hsv', label: 'HSV' },
+      ]},
+    ],
+    evaluate(values, inputs) {
+      const color = inputs['Color'] || { r: 0, g: 0, b: 0 };
+      if (values.mode === 'hsv') {
+        // RGB to HSV conversion
+        const r = color.r ?? 0, g = color.g ?? 0, b = color.b ?? 0;
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        const d = mx - mn;
+        let h = 0;
+        const s = mx === 0 ? 0 : d / mx;
+        const v = mx;
+        if (d !== 0) {
+          if (mx === r) h = ((g - b) / d + 6) % 6;
+          else if (mx === g) h = (b - r) / d + 2;
+          else h = (r - g) / d + 4;
+          h /= 6;
+        }
+        return { outputs: [h, s, v] };
+      }
+      return { outputs: [color.r ?? 0, color.g ?? 0, color.b ?? 0] };
     },
   },
 

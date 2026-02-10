@@ -200,6 +200,62 @@ export function buildGeometry(geoData) {
       break;
     }
 
+    case 'mesh_circle': {
+      const verts = geoData.vertices || 32;
+      const r = geoData.radius || 1;
+      const fill = geoData.fillType || 'ngon';
+      if (fill === 'none') {
+        // Just the edge ring
+        const pts = [];
+        for (let i = 0; i <= verts; i++) {
+          const angle = (i / verts) * Math.PI * 2;
+          pts.push(Math.cos(angle) * r, 0, Math.sin(angle) * r);
+        }
+        geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      } else {
+        geometry = new THREE.CircleGeometry(r, verts);
+        // CircleGeometry is XY, rotate to XZ
+        geometry.rotateX(-Math.PI / 2);
+      }
+      break;
+    }
+
+    case 'curve_arc': {
+      const res = geoData.resolution || 16;
+      const r = geoData.radius || 1;
+      const startA = geoData.startAngle || 0;
+      const sweepA = geoData.sweepAngle || (315 * Math.PI / 180);
+      const pts = [];
+      for (let i = 0; i <= res; i++) {
+        const t = i / res;
+        const angle = startA + t * sweepA;
+        pts.push(Math.cos(angle) * r, 0, Math.sin(angle) * r);
+      }
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      break;
+    }
+
+    case 'curve_star': {
+      const numPts = geoData.points || 5;
+      const innerR = geoData.innerRadius || 0.5;
+      const outerR = geoData.outerRadius || 1;
+      const twist = geoData.twist || 0;
+      const pts = [];
+      const totalVerts = numPts * 2;
+      for (let i = 0; i <= totalVerts; i++) {
+        const angle = (i / totalVerts) * Math.PI * 2;
+        const isOuter = i % 2 === 0;
+        const r = isOuter ? outerR : innerR;
+        const a = isOuter ? angle : angle + twist;
+        pts.push(Math.cos(a) * r, 0, Math.sin(a) * r);
+      }
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      break;
+    }
+
     case 'boolean': {
       // Build mesh A (we can't do true CSG without a library, so show both)
       const a = geoData.meshA;
@@ -312,7 +368,8 @@ export function buildMesh(geoData, wireframeMode = false) {
 
   const isWireframeOnly = geoData.wireframeOnly;
   const isPoints = geoData.type === 'points';
-  const isCurve = geoData.type === 'curve_circle' || geoData.type === 'curve_line' || geoData.type === 'spiral';
+  const isCurve = geoData.type === 'curve_circle' || geoData.type === 'curve_line' || geoData.type === 'spiral' || geoData.type === 'curve_arc' || geoData.type === 'curve_star';
+  const isUnfilledCircle = geoData.type === 'mesh_circle' && geoData.fillType === 'none';
 
   // Apply flipFaces
   if (geoData.flipFaces && geometry.index) {
@@ -334,14 +391,15 @@ export function buildMesh(geoData, wireframeMode = false) {
       sizeAttenuation: true,
     });
     mesh = new THREE.Points(geometry, pointsMaterial);
-  } else if (isCurve) {
+  } else if (isCurve || isUnfilledCircle) {
     const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffab40, linewidth: 2 });
     mesh = new THREE.LineLoop(geometry, lineMaterial);
   } else {
+    const mat = geoData.material;
     const material = new THREE.MeshStandardMaterial({
-      color: isWireframeOnly ? 0x4fc3f7 : 0x6688cc,
-      metalness: 0.1,
-      roughness: 0.6,
+      color: mat?.color || (isWireframeOnly ? 0x4fc3f7 : 0x6688cc),
+      metalness: mat?.metallic ?? 0.1,
+      roughness: mat?.roughness ?? 0.6,
       flatShading: !geoData.smooth,
       wireframe: wireframeMode || isWireframeOnly,
       side: THREE.DoubleSide,

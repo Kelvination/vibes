@@ -29,8 +29,8 @@
 ## Progress Summary
 
 <!-- UPDATE THESE COUNTS AFTER EVERY SESSION -->
-- **Implemented:** 59 / 248
-- **Remaining:** 189
+- **Implemented:** 84 / 248
+- **Remaining:** 164
 - **Last updated:** 2026-02-10
 
 ---
@@ -38,7 +38,7 @@
 ## Output
 
 - [x] Group Output
-- [ ] Viewer
+- [x] Viewer (as `viewer`)
 
 ## Input -- Constant
 
@@ -46,7 +46,7 @@
 - [x] Integer
 - [x] Vector
 - [x] Boolean
-- [ ] Color
+- [x] Color (as `value_color`)
 - [ ] Rotation
 - [ ] String
 - [ ] Material
@@ -102,7 +102,7 @@
 - [x] Bounding Box
 - [x] Merge by Distance
 - [x] Convex Hull
-- [ ] Duplicate Elements
+- [x] Duplicate Elements (as `duplicate_elements`)
 - [ ] Sort Elements
 - [ ] Geometry to Instance
 - [ ] Separate Components
@@ -119,7 +119,7 @@
 - [x] Ico Sphere
 - [x] Torus *(custom addition, not standard Blender node)*
 - [x] Mesh Line
-- [ ] Mesh Circle
+- [x] Mesh Circle (as `mesh_circle`)
 
 ## Mesh -- Operations
 
@@ -133,7 +133,7 @@
 - [x] Flip Faces
 - [x] Split Edges
 - [x] Mesh to Points
-- [ ] Mesh to Curve
+- [x] Mesh to Curve (as `mesh_to_curve`)
 - [ ] Mesh to Volume
 - [ ] Edge Paths to Curves
 - [ ] Edge Paths to Selection
@@ -143,24 +143,24 @@
 ## Mesh -- Read
 
 - [x] Set Shade Smooth
-- [ ] Edge Angle
-- [ ] Edge Neighbors
+- [x] Edge Angle (as `edge_angle`)
+- [x] Edge Neighbors (as `edge_neighbors`)
 - [ ] Edge Vertices
 - [ ] Edges to Face Groups
-- [ ] Face Area
+- [x] Face Area (as `face_area`)
 - [ ] Face Group Boundaries
-- [ ] Face Neighbors
+- [x] Face Neighbors (as `face_neighbors`)
 - [ ] Is Edge Smooth
 - [ ] Is Face Planar
 - [ ] Is Face Smooth
 - [ ] Mesh Island
 - [ ] Shortest Edge Paths
-- [ ] Vertex Neighbors
+- [x] Vertex Neighbors (as `vertex_neighbors`)
 
 ## Mesh -- Write
 
-- [ ] Set Sharp Edges
-- [ ] Set Sharp Faces
+- [x] Set Sharp Edges (as `set_sharp_edges`)
+- [x] Set Sharp Faces (as `set_sharp_faces`)
 
 ## Mesh -- Topology
 
@@ -183,21 +183,21 @@
 - [x] Curve Circle
 - [x] Curve Line
 - [x] Spiral
-- [ ] Arc
+- [x] Arc (as `curve_arc`)
 - [ ] Bezier Segment
 - [ ] Quadratic Bezier
 - [ ] Quadrilateral
-- [ ] Star
+- [x] Star (as `curve_star`)
 
 ## Curve -- Operations
 
 - [x] Curve to Mesh
 - [x] Resample Curve
 - [x] Fill Curve
-- [ ] Curve to Points
-- [ ] Fillet Curve
-- [ ] Trim Curve
-- [ ] Reverse Curve
+- [x] Curve to Points (as `curve_to_points`)
+- [x] Fillet Curve (as `fillet_curve`)
+- [x] Trim Curve (as `trim_curve`)
+- [x] Reverse Curve (as `reverse_curve`)
 - [ ] Sample Curve
 - [ ] Subdivide Curve
 - [ ] Deform Curves on Surface
@@ -213,7 +213,7 @@
 - [ ] Handle Type Selection
 - [ ] Is Spline Cyclic
 - [ ] Spline Length
-- [ ] Spline Parameter
+- [x] Spline Parameter (as `spline_parameter`)
 - [ ] Spline Resolution
 
 ## Curve -- Write
@@ -223,7 +223,7 @@
 - [ ] Set Curve Tilt
 - [ ] Set Handle Positions
 - [ ] Set Handle Type
-- [ ] Set Spline Cyclic
+- [x] Set Spline Cyclic (as `set_spline_cyclic`)
 - [ ] Set Spline Resolution
 - [ ] Set Spline Type
 
@@ -258,8 +258,8 @@
 
 ## Material
 
-- [ ] Set Material
-- [ ] Material Index
+- [x] Set Material (as `set_material`)
+- [x] Material Index (as `material_index`)
 - [ ] Material Selection
 - [ ] Replace Material
 - [ ] Set Material Index
@@ -339,10 +339,10 @@
 
 ## Color
 
-- [ ] Color Ramp
-- [ ] Combine Color
+- [x] Color Ramp (as `geo_color_ramp`)
+- [x] Combine Color (as `geo_combine_color`)
 - [ ] Mix Color
-- [ ] Separate Color
+- [x] Separate Color (as `geo_separate_color`)
 
 ## Texture
 
@@ -407,6 +407,25 @@
 ## Session Log
 
 <!-- Add entries here after each session, newest first -->
+
+### 2026-02-10 -- Batch Implementation (25 nodes)
+- Implemented 25 new geometry nodes, bringing total from 59 to 84
+- **Input (1):** Color
+- **Output (1):** Viewer
+- **Mesh Primitives (1):** Mesh Circle
+- **Mesh Operations (1):** Mesh to Curve
+- **Geometry Operations (1):** Duplicate Elements
+- **Mesh Read (5):** Edge Angle, Edge Neighbors, Face Area, Face Neighbors, Vertex Neighbors
+- **Mesh Write (2):** Set Sharp Edges, Set Sharp Faces
+- **Curve Primitives (2):** Arc, Star
+- **Curve Operations (4):** Curve to Points, Fillet Curve, Trim Curve, Reverse Curve
+- **Curve Read (1):** Spline Parameter
+- **Curve Write (1):** Set Spline Cyclic
+- **Material (2):** Set Material, Material Index
+- **Color (3):** Color Ramp, Combine Color, Separate Color
+- Added new MATERIAL and COLOR categories for geo nodes
+- Added builders for mesh_circle, curve_arc, and curve_star in geo/builders.js
+- Set Material node applies color/metallic/roughness to Three.js material
 
 ### 2026-02-10 -- Initial Audit
 - Created this checklist from full Blender 4.4 node catalog
