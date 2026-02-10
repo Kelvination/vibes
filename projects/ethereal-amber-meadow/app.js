@@ -39,9 +39,12 @@
   let currentPropsNode = null;
 
   // ===== Initialize default scene =====
+  const GRAPH_VERSION = 2; // Bump when node types change
+
   function initDefaultScene() {
+    const savedVersion = localStorage.getItem('geonodes_version');
     const saved = localStorage.getItem('geonodes_graph');
-    if (saved && graph.fromJSON(saved)) {
+    if (saved && parseInt(savedVersion) === GRAPH_VERSION && graph.fromJSON(saved)) {
       statusText.textContent = 'Loaded saved graph';
       return;
     }
@@ -62,6 +65,7 @@
   function saveGraph() {
     try {
       localStorage.setItem('geonodes_graph', graph.toJSON());
+      localStorage.setItem('geonodes_version', GRAPH_VERSION.toString());
     } catch (e) {
       // Storage full, ignore
     }
@@ -319,7 +323,7 @@
     if (result.error) {
       statusText.textContent = 'Error: ' + result.error;
     } else {
-      statusText.textContent = 'Graph evaluated';
+      statusText.textContent = `Evaluated (${result.evalTime || '?'}ms)`;
     }
 
     // Show viewport if not already
