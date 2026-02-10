@@ -6,6 +6,8 @@
  * globally via CDN (window.THREE).
  */
 
+import { buildGeometry } from '../geo/builders.js';
+
 const SHAPES = ['sphere', 'cube', 'plane'];
 const BG_COLOR = 0x1a1a2e;
 const GRID_COLOR = 0x2a2a3e;
@@ -162,14 +164,119 @@ export class ShaderPreview {
     this._camera.updateProjectionMatrix();
   }
 
+  /**
+   * Replace the preview mesh with geometry from the geo graph output.
+   * Falls back to built-in shapes if geoData is null/empty.
+   * @param {Array|null} geometries - Array of geometry descriptors from geo graph evaluation.
+   */
+  setExternalGeometry(geometries) {
+    const THREE = window.THREE;
+    if (!THREE) return;
+
+    if (!geometries || geometries.length === 0) {
+      // No geometry available - fall back to built-in shape
+      this._externalGeo = false;
+      this._createShape();
+      return;
+    }
+
+    // Remove existing mesh
+    if (this._mesh) {
+      this._scene.remove(this._mesh);
+      this._mesh.geometry.dispose();
+      this._mesh = null;
+    }
+
+    // Build geometry from geo graph descriptors
+    const builtGeometries = [];
+    for (const geoData of geometries) {
+      if (!geoData) continue;
+      const geo = buildGeometry(geoData);
+      if (geo) builtGeometries.push(geo);
+    }
+
+    if (builtGeometries.length === 0) {
+      this._externalGeo = false;
+      this._createShape();
+      return;
+    }
+
+    // Merge multiple geometries into one, or use the single one
+    let geometry;
+    if (builtGeometries.length === 1) {
+      geometry = builtGeometries[0];
+    } else {
+      // Merge all geometries
+      const positions = [];
+      const normals = [];
+      const indices = [];
+      let vertOffset = 0;
+
+      for (const g of builtGeometries) {
+        const pos = g.getAttribute('position');
+        const norm = g.getAttribute('normal');
+        const idx = g.index;
+
+        for (let j = 0; j < pos.count; j++) {
+          positions.push(pos.getX(j), pos.getY(j), pos.getZ(j));
+          if (norm) normals.push(norm.getX(j), norm.getY(j), norm.getZ(j));
+        }
+        if (idx) {
+          for (let j = 0; j < idx.count; j++) {
+            indices.push(idx.getX(j) + vertOffset);
+          }
+        }
+        vertOffset += pos.count;
+        g.dispose();
+      }
+
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      if (normals.length > 0) geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+      if (indices.length > 0) geometry.setIndex(indices);
+      if (normals.length === 0) geometry.computeVertexNormals();
+    }
+
+    // Apply transforms from the first geo descriptor
+    this._mesh = new THREE.Mesh(geometry, this._material);
+
+    // Apply transforms from geo descriptors
+    for (const geoData of geometries) {
+      if (!geoData?.transforms) continue;
+      for (const t of geoData.transforms) {
+        if (t.translate) {
+          this._mesh.position.x += t.translate.x || 0;
+          this._mesh.position.y += t.translate.y || 0;
+          this._mesh.position.z += t.translate.z || 0;
+        }
+        if (t.rotate) {
+          this._mesh.rotation.x += t.rotate.x || 0;
+          this._mesh.rotation.y += t.rotate.y || 0;
+          this._mesh.rotation.z += t.rotate.z || 0;
+        }
+        if (t.scale) {
+          this._mesh.scale.x *= t.scale.x || 1;
+          this._mesh.scale.y *= t.scale.y || 1;
+          this._mesh.scale.z *= t.scale.z || 1;
+        }
+      }
+      break; // Only apply first set of transforms
+    }
+
+    this._scene.add(this._mesh);
+    this._externalGeo = true;
+  }
+
   /** Cycle through preview shapes: sphere -> cube -> plane -> sphere ... */
   toggleShape() {
+    this._externalGeo = false;
     this._shapeIdx = (this._shapeIdx + 1) % SHAPES.length;
     this._createShape();
   }
 
   /** Get current shape name. */
   get currentShape() {
+    if (this._externalGeo) return 'geo output';
     return SHAPES[this._shapeIdx];
   }
 

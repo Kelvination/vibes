@@ -464,7 +464,16 @@ import { compileShader } from './shader/compiler.js';
         try {
           const compiled = compileShader(result.shaderResult);
           shaderPreview.updateShader(compiled);
-          shaderPreviewInfo.textContent = 'Shader compiled';
+
+          // Also evaluate the geo graph and use its output as the preview mesh
+          const geoResult = geoGraph.evaluate();
+          if (geoResult.geometries && geoResult.geometries.length > 0) {
+            shaderPreview.setExternalGeometry(geoResult.geometries);
+            shaderPreviewInfo.textContent = 'Shader on geo output';
+          } else {
+            shaderPreview.setExternalGeometry(null);
+            shaderPreviewInfo.textContent = 'Shader compiled (no geo)';
+          }
         } catch (e) {
           shaderPreviewInfo.textContent = 'Compile error: ' + e.message;
         }
