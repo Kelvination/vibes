@@ -45,21 +45,11 @@ export function compileShader(shaderResult) {
   };
 
   // ── Vertex shader ───────────────────────────────────────────────
+  // NOTE: modelMatrix, viewMatrix, projectionMatrix, normalMatrix,
+  // position, normal, uv are all injected by Three.js ShaderMaterial.
   const vertexShader = /* glsl */ `
     precision highp float;
 
-    // Attributes (provided by Three.js)
-    // attribute vec3 position;
-    // attribute vec3 normal;
-    // attribute vec2 uv;
-
-    // Three.js built-in uniforms
-    uniform mat4 modelMatrix;
-    uniform mat4 viewMatrix;
-    uniform mat4 projectionMatrix;
-    uniform mat3 normalMatrix;
-
-    // Varyings passed to fragment shader
     varying vec3 vWorldPosition;
     varying vec3 vWorldNormal;
     varying vec2 vUv;
