@@ -184,6 +184,7 @@ registry.addNodes('geo', {
     category: 'FIELD',
     inputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Position', type: SocketType.VECTOR },
       { name: 'Offset', type: SocketType.VECTOR },
     ],
@@ -199,11 +200,13 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
       if (!geo) return { outputs: [null] };
+      const sel = inputs['Selection'] ?? true;
       const pos = inputs['Position'] || null;
       const offset = inputs['Offset'] || { x: values.offsetX, y: values.offsetY, z: values.offsetZ };
       const clone = cloneGeo(geo);
       return { outputs: [mapGeo(clone, g => {
         g.setPosition = {
+          selection: sel,
           position: pos,
           offset: { x: offset.x || values.offsetX, y: offset.y || values.offsetY, z: offset.z || values.offsetZ },
         };
@@ -289,15 +292,21 @@ registry.addNodes('geo', {
     category: 'MESH',
     inputs: [
       { name: 'Size', type: SocketType.VECTOR },
+      { name: 'Vertices X', type: SocketType.INT },
+      { name: 'Vertices Y', type: SocketType.INT },
+      { name: 'Vertices Z', type: SocketType.INT },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: { sizeX: 1, sizeY: 1, sizeZ: 1 },
+    defaults: { sizeX: 1, sizeY: 1, sizeZ: 1, verticesX: 2, verticesY: 2, verticesZ: 2 },
     props: [
       { key: 'sizeX', label: 'Size X', type: 'float', min: 0.01, max: 50, step: 0.1 },
       { key: 'sizeY', label: 'Size Y', type: 'float', min: 0.01, max: 50, step: 0.1 },
       { key: 'sizeZ', label: 'Size Z', type: 'float', min: 0.01, max: 50, step: 0.1 },
+      { key: 'verticesX', label: 'Vertices X', type: 'int', min: 2, max: 100, step: 1 },
+      { key: 'verticesY', label: 'Vertices Y', type: 'int', min: 2, max: 100, step: 1 },
+      { key: 'verticesZ', label: 'Vertices Z', type: 'int', min: 2, max: 100, step: 1 },
     ],
     evaluate(values, inputs) {
       const size = inputs['Size'] || { x: values.sizeX, y: values.sizeY, z: values.sizeZ };
@@ -306,6 +315,9 @@ registry.addNodes('geo', {
         sizeX: size.x || values.sizeX,
         sizeY: size.y || values.sizeY,
         sizeZ: size.z || values.sizeZ,
+        verticesX: inputs['Vertices X'] ?? values.verticesX,
+        verticesY: inputs['Vertices Y'] ?? values.verticesY,
+        verticesZ: inputs['Vertices Z'] ?? values.verticesZ,
         transforms: [], smooth: false,
       }] };
     },
@@ -315,22 +327,25 @@ registry.addNodes('geo', {
     label: 'UV Sphere',
     category: 'MESH',
     inputs: [
+      { name: 'Segments', type: SocketType.INT },
+      { name: 'Rings', type: SocketType.INT },
       { name: 'Radius', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: { radius: 1, segments: 16, rings: 8 },
+    defaults: { radius: 1, segments: 32, rings: 16 },
     props: [
+      { key: 'segments', label: 'Segments', type: 'int', min: 3, max: 128, step: 1 },
+      { key: 'rings', label: 'Rings', type: 'int', min: 2, max: 64, step: 1 },
       { key: 'radius', label: 'Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
-      { key: 'segments', label: 'Segments', type: 'int', min: 3, max: 64, step: 1 },
-      { key: 'rings', label: 'Rings', type: 'int', min: 2, max: 32, step: 1 },
     ],
     evaluate(values, inputs) {
       const r = inputs['Radius'] ?? values.radius;
       return { outputs: [{
         type: 'sphere', radius: r,
-        segments: values.segments, rings: values.rings,
+        segments: inputs['Segments'] ?? values.segments,
+        rings: inputs['Rings'] ?? values.rings,
         transforms: [], smooth: false,
       }] };
     },
@@ -340,26 +355,42 @@ registry.addNodes('geo', {
     label: 'Cylinder',
     category: 'MESH',
     inputs: [
+      { name: 'Vertices', type: SocketType.INT },
+      { name: 'Side Segments', type: SocketType.INT },
+      { name: 'Fill Segments', type: SocketType.INT },
       { name: 'Radius', type: SocketType.FLOAT },
       { name: 'Depth', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
+      { name: 'Top', type: SocketType.BOOL },
+      { name: 'Side', type: SocketType.BOOL },
+      { name: 'Bottom', type: SocketType.BOOL },
     ],
-    defaults: { radius: 1, depth: 2, vertices: 16 },
+    defaults: { radius: 1, depth: 2, vertices: 32, sideSegments: 1, fillSegments: 1, fillType: 'ngon' },
     props: [
+      { key: 'vertices', label: 'Vertices', type: 'int', min: 3, max: 128, step: 1 },
+      { key: 'sideSegments', label: 'Side Segments', type: 'int', min: 1, max: 64, step: 1 },
+      { key: 'fillSegments', label: 'Fill Segments', type: 'int', min: 1, max: 64, step: 1 },
       { key: 'radius', label: 'Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
       { key: 'depth', label: 'Depth', type: 'float', min: 0.01, max: 50, step: 0.1 },
-      { key: 'vertices', label: 'Vertices', type: 'int', min: 3, max: 64, step: 1 },
+      { key: 'fillType', label: 'Fill Type', type: 'select', options: [
+        { value: 'none', label: 'None' },
+        { value: 'ngon', label: 'Ngon' },
+        { value: 'triangle_fan', label: 'Triangle Fan' },
+      ]},
     ],
     evaluate(values, inputs) {
       const r = inputs['Radius'] ?? values.radius;
       const d = inputs['Depth'] ?? values.depth;
       return { outputs: [{
         type: 'cylinder', radius: r, depth: d,
-        vertices: values.vertices,
+        vertices: inputs['Vertices'] ?? values.vertices,
+        sideSegments: inputs['Side Segments'] ?? values.sideSegments,
+        fillSegments: inputs['Fill Segments'] ?? values.fillSegments,
+        fillType: values.fillType,
         transforms: [], smooth: false,
-      }] };
+      }, true, true, true] };
     },
   },
 
@@ -367,76 +398,110 @@ registry.addNodes('geo', {
     label: 'Cone',
     category: 'MESH',
     inputs: [
-      { name: 'Radius', type: SocketType.FLOAT },
+      { name: 'Vertices', type: SocketType.INT },
+      { name: 'Side Segments', type: SocketType.INT },
+      { name: 'Fill Segments', type: SocketType.INT },
+      { name: 'Radius Top', type: SocketType.FLOAT },
+      { name: 'Radius Bottom', type: SocketType.FLOAT },
       { name: 'Depth', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
+      { name: 'Top', type: SocketType.BOOL },
+      { name: 'Side', type: SocketType.BOOL },
+      { name: 'Bottom', type: SocketType.BOOL },
     ],
-    defaults: { radius1: 1, radius2: 0, depth: 2, vertices: 16 },
+    defaults: { radiusTop: 0, radiusBottom: 1, depth: 2, vertices: 32, sideSegments: 1, fillSegments: 1, fillType: 'ngon' },
     props: [
-      { key: 'radius1', label: 'Bottom Radius', type: 'float', min: 0, max: 50, step: 0.1 },
-      { key: 'radius2', label: 'Top Radius', type: 'float', min: 0, max: 50, step: 0.1 },
+      { key: 'vertices', label: 'Vertices', type: 'int', min: 3, max: 128, step: 1 },
+      { key: 'sideSegments', label: 'Side Segments', type: 'int', min: 1, max: 64, step: 1 },
+      { key: 'fillSegments', label: 'Fill Segments', type: 'int', min: 1, max: 64, step: 1 },
+      { key: 'radiusTop', label: 'Radius Top', type: 'float', min: 0, max: 50, step: 0.1 },
+      { key: 'radiusBottom', label: 'Radius Bottom', type: 'float', min: 0, max: 50, step: 0.1 },
       { key: 'depth', label: 'Depth', type: 'float', min: 0.01, max: 50, step: 0.1 },
-      { key: 'vertices', label: 'Vertices', type: 'int', min: 3, max: 64, step: 1 },
+      { key: 'fillType', label: 'Fill Type', type: 'select', options: [
+        { value: 'none', label: 'None' },
+        { value: 'ngon', label: 'Ngon' },
+        { value: 'triangle_fan', label: 'Triangle Fan' },
+      ]},
     ],
     evaluate(values, inputs) {
       const d = inputs['Depth'] ?? values.depth;
       return { outputs: [{
         type: 'cone',
-        radius1: values.radius1, radius2: values.radius2,
-        depth: d, vertices: values.vertices,
+        radius1: inputs['Radius Bottom'] ?? values.radiusBottom,
+        radius2: inputs['Radius Top'] ?? values.radiusTop,
+        depth: d,
+        vertices: inputs['Vertices'] ?? values.vertices,
+        sideSegments: inputs['Side Segments'] ?? values.sideSegments,
+        fillSegments: inputs['Fill Segments'] ?? values.fillSegments,
+        fillType: values.fillType,
         transforms: [], smooth: false,
-      }] };
+      }, true, true, true] };
     },
   },
 
   'mesh_torus': {
     label: 'Torus',
     category: 'MESH',
-    inputs: [],
+    inputs: [
+      { name: 'Major Segments', type: SocketType.INT },
+      { name: 'Minor Segments', type: SocketType.INT },
+      { name: 'Major Radius', type: SocketType.FLOAT },
+      { name: 'Minor Radius', type: SocketType.FLOAT },
+    ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: { majorRadius: 1, minorRadius: 0.3, majorSegments: 24, minorSegments: 12 },
+    defaults: { majorRadius: 1, minorRadius: 0.25, majorSegments: 48, minorSegments: 12, mode: 'major_minor' },
     props: [
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'major_minor', label: 'Major/Minor' },
+        { value: 'exterior_interior', label: 'Exterior/Interior' },
+      ]},
+      { key: 'majorSegments', label: 'Major Segments', type: 'int', min: 3, max: 128, step: 1 },
+      { key: 'minorSegments', label: 'Minor Segments', type: 'int', min: 3, max: 64, step: 1 },
       { key: 'majorRadius', label: 'Major Radius', type: 'float', min: 0.1, max: 50, step: 0.1 },
       { key: 'minorRadius', label: 'Minor Radius', type: 'float', min: 0.01, max: 20, step: 0.05 },
-      { key: 'majorSegments', label: 'Major Segments', type: 'int', min: 3, max: 64, step: 1 },
-      { key: 'minorSegments', label: 'Minor Segments', type: 'int', min: 3, max: 32, step: 1 },
     ],
-    evaluate(values) {
+    evaluate(values, inputs) {
       return { outputs: [{
         type: 'torus',
-        majorRadius: values.majorRadius, minorRadius: values.minorRadius,
-        majorSegments: values.majorSegments, minorSegments: values.minorSegments,
+        majorRadius: inputs['Major Radius'] ?? values.majorRadius,
+        minorRadius: inputs['Minor Radius'] ?? values.minorRadius,
+        majorSegments: inputs['Major Segments'] ?? values.majorSegments,
+        minorSegments: inputs['Minor Segments'] ?? values.minorSegments,
         transforms: [], smooth: false,
       }] };
     },
   },
 
   'mesh_plane': {
-    label: 'Grid / Plane',
+    label: 'Grid',
     category: 'MESH',
     inputs: [
-      { name: 'Size', type: SocketType.FLOAT },
+      { name: 'Size X', type: SocketType.FLOAT },
+      { name: 'Size Y', type: SocketType.FLOAT },
+      { name: 'Vertices X', type: SocketType.INT },
+      { name: 'Vertices Y', type: SocketType.INT },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: { sizeX: 2, sizeY: 2, subdX: 1, subdY: 1 },
+    defaults: { sizeX: 1, sizeY: 1, verticesX: 3, verticesY: 3 },
     props: [
       { key: 'sizeX', label: 'Size X', type: 'float', min: 0.01, max: 100, step: 0.1 },
       { key: 'sizeY', label: 'Size Y', type: 'float', min: 0.01, max: 100, step: 0.1 },
-      { key: 'subdX', label: 'Subdivisions X', type: 'int', min: 1, max: 100, step: 1 },
-      { key: 'subdY', label: 'Subdivisions Y', type: 'int', min: 1, max: 100, step: 1 },
+      { key: 'verticesX', label: 'Vertices X', type: 'int', min: 2, max: 200, step: 1 },
+      { key: 'verticesY', label: 'Vertices Y', type: 'int', min: 2, max: 200, step: 1 },
     ],
     evaluate(values, inputs) {
-      const sz = inputs['Size'] ?? null;
       return { outputs: [{
         type: 'plane',
-        sizeX: sz ?? values.sizeX, sizeY: sz ?? values.sizeY,
-        subdX: values.subdX, subdY: values.subdY,
+        sizeX: inputs['Size X'] ?? values.sizeX,
+        sizeY: inputs['Size Y'] ?? values.sizeY,
+        subdX: (inputs['Vertices X'] ?? values.verticesX) - 1,
+        subdY: (inputs['Vertices Y'] ?? values.verticesY) - 1,
         transforms: [], smooth: false,
       }] };
     },
@@ -447,19 +512,21 @@ registry.addNodes('geo', {
     category: 'MESH',
     inputs: [
       { name: 'Radius', type: SocketType.FLOAT },
+      { name: 'Subdivisions', type: SocketType.INT },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: { radius: 1, detail: 1 },
+    defaults: { radius: 1, subdivisions: 1 },
     props: [
       { key: 'radius', label: 'Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
-      { key: 'detail', label: 'Detail', type: 'int', min: 0, max: 5, step: 1 },
+      { key: 'subdivisions', label: 'Subdivisions', type: 'int', min: 0, max: 5, step: 1 },
     ],
     evaluate(values, inputs) {
       const r = inputs['Radius'] ?? values.radius;
       return { outputs: [{
-        type: 'icosphere', radius: r, detail: values.detail,
+        type: 'icosphere', radius: r,
+        detail: inputs['Subdivisions'] ?? values.subdivisions,
         transforms: [], smooth: false,
       }] };
     },
@@ -470,26 +537,38 @@ registry.addNodes('geo', {
     category: 'MESH',
     inputs: [
       { name: 'Count', type: SocketType.INT },
+      { name: 'Start Location', type: SocketType.VECTOR },
+      { name: 'Offset', type: SocketType.VECTOR },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: { count: 10, startX: 0, startY: 0, startZ: 0, endX: 0, endY: 0, endZ: 1 },
+    defaults: { count: 10, startX: 0, startY: 0, startZ: 0, offsetX: 0, offsetY: 0, offsetZ: 1, mode: 'offset', countMode: 'count' },
     props: [
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'offset', label: 'Offset' },
+        { value: 'end_points', label: 'End Points' },
+      ]},
+      { key: 'countMode', label: 'Count Mode', type: 'select', options: [
+        { value: 'count', label: 'Count' },
+        { value: 'resolution', label: 'Resolution' },
+      ]},
       { key: 'count', label: 'Count', type: 'int', min: 2, max: 200, step: 1 },
       { key: 'startX', label: 'Start X', type: 'float', min: -50, max: 50, step: 0.1 },
       { key: 'startY', label: 'Start Y', type: 'float', min: -50, max: 50, step: 0.1 },
       { key: 'startZ', label: 'Start Z', type: 'float', min: -50, max: 50, step: 0.1 },
-      { key: 'endX', label: 'End X', type: 'float', min: -50, max: 50, step: 0.1 },
-      { key: 'endY', label: 'End Y', type: 'float', min: -50, max: 50, step: 0.1 },
-      { key: 'endZ', label: 'End Z', type: 'float', min: -50, max: 50, step: 0.1 },
+      { key: 'offsetX', label: 'Offset X', type: 'float', min: -50, max: 50, step: 0.1 },
+      { key: 'offsetY', label: 'Offset Y', type: 'float', min: -50, max: 50, step: 0.1 },
+      { key: 'offsetZ', label: 'Offset Z', type: 'float', min: -50, max: 50, step: 0.1 },
     ],
     evaluate(values, inputs) {
       const count = inputs['Count'] ?? values.count;
+      const start = inputs['Start Location'] || { x: values.startX, y: values.startY, z: values.startZ };
+      const offset = inputs['Offset'] || { x: values.offsetX, y: values.offsetY, z: values.offsetZ };
       return { outputs: [{
         type: 'line', count: count,
-        start: { x: values.startX, y: values.startY, z: values.startZ },
-        end: { x: values.endX, y: values.endY, z: values.endZ },
+        start: { x: start.x ?? values.startX, y: start.y ?? values.startY, z: start.z ?? values.startZ },
+        end: { x: (start.x ?? 0) + (offset.x ?? values.offsetX) * (count - 1), y: (start.y ?? 0) + (offset.y ?? values.offsetY) * (count - 1), z: (start.z ?? 0) + (offset.z ?? values.offsetZ) * (count - 1) },
         transforms: [], smooth: false,
       }] };
     },
@@ -503,29 +582,37 @@ registry.addNodes('geo', {
     category: 'MESH_OPS',
     inputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
-      { name: 'Offset', type: SocketType.FLOAT },
+      { name: 'Selection', type: SocketType.BOOL },
+      { name: 'Offset', type: SocketType.VECTOR },
+      { name: 'Offset Scale', type: SocketType.FLOAT },
+      { name: 'Individual', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
+      { name: 'Top', type: SocketType.BOOL },
+      { name: 'Side', type: SocketType.BOOL },
     ],
-    defaults: { mode: 'faces', offset: 0.5, individual: false },
+    defaults: { mode: 'faces', offsetScale: 1.0, individual: true },
     props: [
       { key: 'mode', label: 'Mode', type: 'select', options: [
         { value: 'faces', label: 'Faces' },
         { value: 'edges', label: 'Edges' },
         { value: 'vertices', label: 'Vertices' },
       ]},
-      { key: 'offset', label: 'Offset', type: 'float', min: -10, max: 10, step: 0.05 },
+      { key: 'offsetScale', label: 'Offset Scale', type: 'float', min: -10, max: 10, step: 0.05 },
       { key: 'individual', label: 'Individual', type: 'bool' },
     ],
     evaluate(values, inputs) {
       const mesh = inputs['Mesh'];
-      const offset = inputs['Offset'] ?? values.offset;
-      if (!mesh) return { outputs: [null] };
+      const offsetScale = inputs['Offset Scale'] ?? values.offsetScale;
+      const sel = inputs['Selection'] ?? true;
+      const offset = inputs['Offset'] || null;
+      const individual = inputs['Individual'] ?? values.individual;
+      if (!mesh) return { outputs: [null, false, false] };
       return { outputs: [mapGeo(mesh, g => {
-        g.extrude = { mode: values.mode, offset, individual: values.individual };
+        g.extrude = { mode: values.mode, offset: offsetScale, offsetVector: offset, individual, selection: sel };
         return g;
-      })] };
+      }), true, true] };
     },
   },
 
@@ -534,16 +621,23 @@ registry.addNodes('geo', {
     category: 'MESH_OPS',
     inputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Scale', type: SocketType.FLOAT },
+      { name: 'Center', type: SocketType.VECTOR },
+      { name: 'Axis', type: SocketType.VECTOR },
     ],
     outputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
     ],
-    defaults: { domain: 'faces', scale: 1.0 },
+    defaults: { domain: 'faces', scaleMode: 'uniform', scale: 1.0 },
     props: [
       { key: 'domain', label: 'Domain', type: 'select', options: [
-        { value: 'faces', label: 'Faces' },
-        { value: 'edges', label: 'Edges' },
+        { value: 'faces', label: 'Face' },
+        { value: 'edges', label: 'Edge' },
+      ]},
+      { key: 'scaleMode', label: 'Scale Mode', type: 'select', options: [
+        { value: 'uniform', label: 'Uniform' },
+        { value: 'single_axis', label: 'Single Axis' },
       ]},
       { key: 'scale', label: 'Scale', type: 'float', min: 0, max: 5, step: 0.05 },
     ],
@@ -552,7 +646,7 @@ registry.addNodes('geo', {
       const scale = inputs['Scale'] ?? values.scale;
       if (!geo) return { outputs: [null] };
       return { outputs: [mapGeo(geo, g => {
-        g.scaleElements = { domain: values.domain, scale };
+        g.scaleElements = { domain: values.domain, scale, scaleMode: values.scaleMode };
         return g;
       })] };
     },
@@ -564,13 +658,15 @@ registry.addNodes('geo', {
     inputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
       { name: 'Level', type: SocketType.INT },
+      { name: 'Edge Crease', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: { level: 1 },
+    defaults: { level: 1, edgeCrease: 0 },
     props: [
       { key: 'level', label: 'Level', type: 'int', min: 0, max: 4, step: 1 },
+      { key: 'edgeCrease', label: 'Edge Crease', type: 'float', min: 0, max: 1, step: 0.01 },
     ],
     evaluate(values, inputs) {
       const mesh = inputs['Mesh'];
@@ -578,6 +674,7 @@ registry.addNodes('geo', {
       if (!mesh) return { outputs: [null] };
       return { outputs: [mapGeo(mesh, g => {
         g.subdivisionSurface = (g.subdivisionSurface || 0) + lvl;
+        g.edgeCrease = inputs['Edge Crease'] ?? values.edgeCrease;
         g.smooth = true;
         return g;
       })] };
@@ -588,13 +685,16 @@ registry.addNodes('geo', {
     label: 'Mesh Boolean',
     category: 'MESH_OPS',
     inputs: [
-      { name: 'Mesh A', type: SocketType.GEOMETRY },
-      { name: 'Mesh B', type: SocketType.GEOMETRY },
+      { name: 'Mesh 1', type: SocketType.GEOMETRY },
+      { name: 'Mesh 2', type: SocketType.GEOMETRY },
+      { name: 'Self Intersection', type: SocketType.BOOL },
+      { name: 'Hole Tolerant', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
+      { name: 'Intersecting Edges', type: SocketType.BOOL },
     ],
-    defaults: { operation: 'difference' },
+    defaults: { operation: 'intersect', selfIntersection: false, holeTolerant: false },
     props: [
       { key: 'operation', label: 'Operation', type: 'select', options: [
         { value: 'intersect', label: 'Intersect' },
@@ -603,9 +703,9 @@ registry.addNodes('geo', {
       ]},
     ],
     evaluate(values, inputs) {
-      const a = inputs['Mesh A'];
-      const b = inputs['Mesh B'];
-      if (!a) return { outputs: [null] };
+      const a = inputs['Mesh 1'];
+      const b = inputs['Mesh 2'];
+      if (!a) return { outputs: [null, false] };
       const geoA = cloneGeo(a);
       return { outputs: [{
         type: 'boolean',
@@ -613,7 +713,7 @@ registry.addNodes('geo', {
         meshA: geoA,
         meshB: b ? cloneGeo(b) : null,
         transforms: [], smooth: false,
-      }] };
+      }, false] };
     },
   },
 
@@ -622,11 +722,27 @@ registry.addNodes('geo', {
     category: 'MESH_OPS',
     inputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
+      { name: 'Minimum Vertices', type: SocketType.INT },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: {},
+    defaults: { minVertices: 4, quadMethod: 'shortest_diagonal', ngonMethod: 'beauty' },
+    props: [
+      { key: 'minVertices', label: 'Minimum Vertices', type: 'int', min: 3, max: 64, step: 1 },
+      { key: 'quadMethod', label: 'Quad Method', type: 'select', options: [
+        { value: 'beauty', label: 'Beauty' },
+        { value: 'fixed', label: 'Fixed' },
+        { value: 'fixed_alternate', label: 'Fixed Alternate' },
+        { value: 'shortest_diagonal', label: 'Shortest Diagonal' },
+        { value: 'longest_diagonal', label: 'Longest Diagonal' },
+      ]},
+      { key: 'ngonMethod', label: 'N-gon Method', type: 'select', options: [
+        { value: 'beauty', label: 'Beauty' },
+        { value: 'clip', label: 'Clip' },
+      ]},
+    ],
     evaluate(values, inputs) {
       const mesh = inputs['Mesh'];
       if (!mesh) return { outputs: [null] };
@@ -642,16 +758,21 @@ registry.addNodes('geo', {
     category: 'MESH_OPS',
     inputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
+      { name: 'Keep Boundaries', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Dual Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: {},
+    defaults: { keepBoundaries: false },
+    props: [
+      { key: 'keepBoundaries', label: 'Keep Boundaries', type: 'bool' },
+    ],
     evaluate(values, inputs) {
       const mesh = inputs['Mesh'];
       if (!mesh) return { outputs: [null] };
       return { outputs: [mapGeo(mesh, g => {
         g.dualMesh = true;
+        g.keepBoundaries = inputs['Keep Boundaries'] ?? values.keepBoundaries;
         return g;
       })] };
     },
@@ -662,6 +783,7 @@ registry.addNodes('geo', {
     category: 'MESH_OPS',
     inputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
@@ -682,6 +804,7 @@ registry.addNodes('geo', {
     category: 'MESH_OPS',
     inputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
@@ -702,14 +825,19 @@ registry.addNodes('geo', {
     category: 'MESH_OPS',
     inputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Distance', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
     ],
-    defaults: { distance: 0.001 },
+    defaults: { distance: 0.001, mode: 'all' },
     props: [
       { key: 'distance', label: 'Distance', type: 'float', min: 0, max: 10, step: 0.001 },
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'all', label: 'All' },
+        { value: 'connected', label: 'Connected' },
+      ]},
     ],
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
@@ -732,20 +860,26 @@ registry.addNodes('geo', {
     outputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
     ],
-    defaults: { domain: 'faces', invert: false },
+    defaults: { domain: 'points', mode: 'all' },
     props: [
       { key: 'domain', label: 'Domain', type: 'select', options: [
-        { value: 'points', label: 'Points' },
-        { value: 'edges', label: 'Edges' },
-        { value: 'faces', label: 'Faces' },
+        { value: 'points', label: 'Point' },
+        { value: 'edges', label: 'Edge' },
+        { value: 'faces', label: 'Face' },
+        { value: 'spline', label: 'Spline' },
+        { value: 'instance', label: 'Instance' },
       ]},
-      { key: 'invert', label: 'Invert', type: 'bool' },
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'all', label: 'All' },
+        { value: 'edge_face', label: 'Edge & Face' },
+        { value: 'only_faces', label: 'Only Faces' },
+      ]},
     ],
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
       const sel = inputs['Selection'] ?? true;
       if (!geo) return { outputs: [null] };
-      if (sel && !values.invert) {
+      if (sel) {
         return { outputs: [null] };
       }
       return { outputs: [cloneGeo(geo)] };
@@ -763,7 +897,16 @@ registry.addNodes('geo', {
       { name: 'Selection', type: SocketType.GEOMETRY },
       { name: 'Inverted', type: SocketType.GEOMETRY },
     ],
-    defaults: {},
+    defaults: { domain: 'points' },
+    props: [
+      { key: 'domain', label: 'Domain', type: 'select', options: [
+        { value: 'points', label: 'Point' },
+        { value: 'edges', label: 'Edge' },
+        { value: 'faces', label: 'Face' },
+        { value: 'spline', label: 'Spline' },
+        { value: 'instance', label: 'Instance' },
+      ]},
+    ],
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
       const sel = inputs['Selection'] ?? true;
@@ -878,18 +1021,23 @@ registry.addNodes('geo', {
     category: 'GEOMETRY',
     inputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
-      { name: 'Smooth', type: SocketType.BOOL },
+      { name: 'Selection', type: SocketType.BOOL },
+      { name: 'Shade Smooth', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
     ],
-    defaults: { smooth: true },
+    defaults: { smooth: true, domain: 'face' },
     props: [
-      { key: 'smooth', label: 'Smooth', type: 'bool' },
+      { key: 'smooth', label: 'Shade Smooth', type: 'bool' },
+      { key: 'domain', label: 'Domain', type: 'select', options: [
+        { value: 'face', label: 'Face' },
+        { value: 'edge', label: 'Edge' },
+      ]},
     ],
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
-      const sm = inputs['Smooth'] ?? values.smooth;
+      const sm = inputs['Shade Smooth'] ?? values.smooth;
       if (!geo) return { outputs: [null] };
       return { outputs: [mapGeo(geo, g => { g.smooth = sm; return g; })] };
     },
@@ -943,15 +1091,23 @@ registry.addNodes('geo', {
     label: 'Geometry Proximity',
     category: 'GEOMETRY',
     inputs: [
-      { name: 'Target', type: SocketType.GEOMETRY },
+      { name: 'Geometry', type: SocketType.GEOMETRY },
       { name: 'Source Position', type: SocketType.VECTOR },
     ],
     outputs: [
+      { name: 'Position', type: SocketType.VECTOR },
       { name: 'Distance', type: SocketType.FLOAT },
     ],
-    defaults: {},
+    defaults: { targetElement: 'faces' },
+    props: [
+      { key: 'targetElement', label: 'Target Element', type: 'select', options: [
+        { value: 'faces', label: 'Faces' },
+        { value: 'edges', label: 'Edges' },
+        { value: 'points', label: 'Points' },
+      ]},
+    ],
     evaluate() {
-      return { outputs: [0] };
+      return { outputs: [{ x: 0, y: 0, z: 0 }, 0] };
     },
   },
 
@@ -960,34 +1116,43 @@ registry.addNodes('geo', {
     category: 'GEOMETRY',
     inputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
-      { name: 'Density', type: SocketType.FLOAT },
+      { name: 'Selection', type: SocketType.BOOL },
+      { name: 'Distance Min', type: SocketType.FLOAT },
+      { name: 'Density Max', type: SocketType.FLOAT },
+      { name: 'Density Factor', type: SocketType.FLOAT },
       { name: 'Seed', type: SocketType.INT },
     ],
     outputs: [
       { name: 'Points', type: SocketType.GEOMETRY },
+      { name: 'Normal', type: SocketType.VECTOR },
+      { name: 'Rotation', type: SocketType.VECTOR },
     ],
-    defaults: { mode: 'random', density: 10, seed: 0 },
+    defaults: { mode: 'random', distanceMin: 0, densityMax: 10, densityFactor: 1, seed: 0 },
     props: [
-      { key: 'mode', label: 'Mode', type: 'select', options: [
+      { key: 'mode', label: 'Distribution', type: 'select', options: [
         { value: 'random', label: 'Random' },
         { value: 'poisson', label: 'Poisson Disk' },
       ]},
-      { key: 'density', label: 'Density', type: 'float', min: 0.1, max: 100, step: 0.5 },
+      { key: 'densityMax', label: 'Density Max', type: 'float', min: 0.1, max: 100, step: 0.5 },
+      { key: 'densityFactor', label: 'Density Factor', type: 'float', min: 0, max: 10, step: 0.1 },
+      { key: 'distanceMin', label: 'Distance Min', type: 'float', min: 0, max: 10, step: 0.01 },
       { key: 'seed', label: 'Seed', type: 'int', min: 0, max: 9999, step: 1 },
     ],
     evaluate(values, inputs) {
       const mesh = inputs['Mesh'];
-      const density = inputs['Density'] ?? values.density;
+      const density = inputs['Density Max'] ?? values.densityMax;
       const seed = inputs['Seed'] ?? values.seed;
-      if (!mesh) return { outputs: [null] };
+      if (!mesh) return { outputs: [null, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 0 }] };
       return { outputs: [{
         type: 'points',
         source: cloneGeo(mesh),
         mode: values.mode,
         density: density,
+        densityFactor: inputs['Density Factor'] ?? values.densityFactor,
+        distanceMin: inputs['Distance Min'] ?? values.distanceMin,
         seed: seed,
         transforms: [], smooth: false,
-      }] };
+      }, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 0 }] };
     },
   },
 
@@ -996,17 +1161,22 @@ registry.addNodes('geo', {
     category: 'GEOMETRY',
     inputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
+      { name: 'Position', type: SocketType.VECTOR },
+      { name: 'Radius', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Points', type: SocketType.GEOMETRY },
     ],
-    defaults: { mode: 'vertices' },
+    defaults: { mode: 'vertices', radius: 0.05 },
     props: [
       { key: 'mode', label: 'Mode', type: 'select', options: [
         { value: 'vertices', label: 'Vertices' },
-        { value: 'faces', label: 'Face Centers' },
-        { value: 'edges', label: 'Edge Centers' },
+        { value: 'faces', label: 'Faces' },
+        { value: 'edges', label: 'Edges' },
+        { value: 'corners', label: 'Corners' },
       ]},
+      { key: 'radius', label: 'Radius', type: 'float', min: 0, max: 10, step: 0.01 },
     ],
     evaluate(values, inputs) {
       const mesh = inputs['Mesh'];
@@ -1017,6 +1187,7 @@ registry.addNodes('geo', {
         mode: values.mode,
         density: 1,
         seed: 0,
+        radius: inputs['Radius'] ?? values.radius,
         transforms: [], smooth: false,
       }] };
     },
@@ -1030,14 +1201,17 @@ registry.addNodes('geo', {
     category: 'INSTANCE',
     inputs: [
       { name: 'Points', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Instance', type: SocketType.GEOMETRY },
-      { name: 'Scale', type: SocketType.VECTOR },
+      { name: 'Pick Instance', type: SocketType.BOOL },
+      { name: 'Instance Index', type: SocketType.INT },
       { name: 'Rotation', type: SocketType.VECTOR },
+      { name: 'Scale', type: SocketType.VECTOR },
     ],
     outputs: [
       { name: 'Instances', type: SocketType.GEOMETRY },
     ],
-    defaults: { scaleX: 1, scaleY: 1, scaleZ: 1 },
+    defaults: { scaleX: 1, scaleY: 1, scaleZ: 1, pickInstance: false, instanceIndex: 0 },
     props: [
       { key: 'scaleX', label: 'Scale X', type: 'float', min: 0.01, max: 10, step: 0.1 },
       { key: 'scaleY', label: 'Scale Y', type: 'float', min: 0.01, max: 10, step: 0.1 },
@@ -1055,6 +1229,8 @@ registry.addNodes('geo', {
         instance: cloneGeo(instance),
         scale: { x: scale.x ?? values.scaleX, y: scale.y ?? values.scaleY, z: scale.z ?? values.scaleZ },
         rotation: rotation,
+        pickInstance: inputs['Pick Instance'] ?? values.pickInstance,
+        instanceIndex: inputs['Instance Index'] ?? values.instanceIndex,
         transforms: [], smooth: false,
       }] };
     },
@@ -1064,14 +1240,19 @@ registry.addNodes('geo', {
     label: 'Realize Instances',
     category: 'INSTANCE',
     inputs: [
-      { name: 'Instances', type: SocketType.GEOMETRY },
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
+      { name: 'Realize All', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
     ],
-    defaults: {},
+    defaults: { realizeAll: true },
+    props: [
+      { key: 'realizeAll', label: 'Realize All', type: 'bool' },
+    ],
     evaluate(values, inputs) {
-      const instances = inputs['Instances'];
+      const instances = inputs['Geometry'];
       if (!instances) return { outputs: [null] };
       return { outputs: [mapGeo(instances, g => { g.realized = true; return g; })] };
     },
@@ -1082,16 +1263,20 @@ registry.addNodes('geo', {
     category: 'INSTANCE',
     inputs: [
       { name: 'Instances', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Rotation', type: SocketType.VECTOR },
+      { name: 'Pivot Point', type: SocketType.VECTOR },
+      { name: 'Local Space', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Instances', type: SocketType.GEOMETRY },
     ],
-    defaults: { rx: 0, ry: 0, rz: 0 },
+    defaults: { rx: 0, ry: 0, rz: 0, localSpace: true },
     props: [
       { key: 'rx', label: 'Rotation X (deg)', type: 'float', min: -360, max: 360, step: 1 },
       { key: 'ry', label: 'Rotation Y (deg)', type: 'float', min: -360, max: 360, step: 1 },
       { key: 'rz', label: 'Rotation Z (deg)', type: 'float', min: -360, max: 360, step: 1 },
+      { key: 'localSpace', label: 'Local Space', type: 'bool' },
     ],
     evaluate(values, inputs) {
       const instances = inputs['Instances'];
@@ -1114,16 +1299,20 @@ registry.addNodes('geo', {
     category: 'INSTANCE',
     inputs: [
       { name: 'Instances', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Scale', type: SocketType.VECTOR },
+      { name: 'Center', type: SocketType.VECTOR },
+      { name: 'Local Space', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Instances', type: SocketType.GEOMETRY },
     ],
-    defaults: { sx: 1, sy: 1, sz: 1 },
+    defaults: { sx: 1, sy: 1, sz: 1, localSpace: true },
     props: [
       { key: 'sx', label: 'Scale X', type: 'float', min: 0.01, max: 100, step: 0.1 },
       { key: 'sy', label: 'Scale Y', type: 'float', min: 0.01, max: 100, step: 0.1 },
       { key: 'sz', label: 'Scale Z', type: 'float', min: 0.01, max: 100, step: 0.1 },
+      { key: 'localSpace', label: 'Local Space', type: 'bool' },
     ],
     evaluate(values, inputs) {
       const instances = inputs['Instances'];
@@ -1146,16 +1335,19 @@ registry.addNodes('geo', {
     category: 'INSTANCE',
     inputs: [
       { name: 'Instances', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Translation', type: SocketType.VECTOR },
+      { name: 'Local Space', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Instances', type: SocketType.GEOMETRY },
     ],
-    defaults: { tx: 0, ty: 0, tz: 0 },
+    defaults: { tx: 0, ty: 0, tz: 0, localSpace: true },
     props: [
       { key: 'tx', label: 'Translation X', type: 'float', min: -100, max: 100, step: 0.1 },
       { key: 'ty', label: 'Translation Y', type: 'float', min: -100, max: 100, step: 0.1 },
       { key: 'tz', label: 'Translation Z', type: 'float', min: -100, max: 100, step: 0.1 },
+      { key: 'localSpace', label: 'Local Space', type: 'bool' },
     ],
     evaluate(values, inputs) {
       const instances = inputs['Instances'];
@@ -1180,23 +1372,30 @@ registry.addNodes('geo', {
     label: 'Curve Circle',
     category: 'CURVE',
     inputs: [
+      { name: 'Resolution', type: SocketType.INT },
       { name: 'Radius', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Center', type: SocketType.VECTOR },
     ],
-    defaults: { radius: 1, resolution: 16 },
+    defaults: { radius: 1, resolution: 32, mode: 'radius' },
     props: [
-      { key: 'radius', label: 'Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'radius', label: 'Radius' },
+        { value: 'points', label: 'Points' },
+      ]},
       { key: 'resolution', label: 'Resolution', type: 'int', min: 3, max: 128, step: 1 },
+      { key: 'radius', label: 'Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
     ],
     evaluate(values, inputs) {
       const r = inputs['Radius'] ?? values.radius;
+      const res = inputs['Resolution'] ?? values.resolution;
       return { outputs: [{
         type: 'curve_circle',
-        radius: r, resolution: values.resolution,
+        radius: r, resolution: res,
         transforms: [], smooth: false,
-      }] };
+      }, { x: 0, y: 0, z: 0 }] };
     },
   },
 
@@ -1236,24 +1435,25 @@ registry.addNodes('geo', {
     category: 'CURVE',
     inputs: [
       { name: 'Curve', type: SocketType.GEOMETRY },
-      { name: 'Profile', type: SocketType.GEOMETRY },
+      { name: 'Profile Curve', type: SocketType.GEOMETRY },
+      { name: 'Fill Caps', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: { fillCaps: true },
+    defaults: { fillCaps: false },
     props: [
       { key: 'fillCaps', label: 'Fill Caps', type: 'bool' },
     ],
     evaluate(values, inputs) {
       const curve = inputs['Curve'];
-      const profile = inputs['Profile'];
+      const profile = inputs['Profile Curve'];
       if (!curve) return { outputs: [null] };
       return { outputs: [{
         type: 'curve_to_mesh',
         curve: cloneGeo(curve),
         profile: profile ? cloneGeo(profile) : null,
-        fillCaps: values.fillCaps,
+        fillCaps: inputs['Fill Caps'] ?? values.fillCaps,
         transforms: [], smooth: true,
       }] };
     },
@@ -1264,25 +1464,30 @@ registry.addNodes('geo', {
     category: 'CURVE',
     inputs: [
       { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Count', type: SocketType.INT },
+      { name: 'Length', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Curve', type: SocketType.GEOMETRY },
     ],
-    defaults: { mode: 'count', count: 16 },
+    defaults: { mode: 'count', count: 16, length: 0.1 },
     props: [
       { key: 'mode', label: 'Mode', type: 'select', options: [
         { value: 'count', label: 'Count' },
         { value: 'length', label: 'Length' },
+        { value: 'evaluated', label: 'Evaluated' },
       ]},
       { key: 'count', label: 'Count', type: 'int', min: 2, max: 256, step: 1 },
+      { key: 'length', label: 'Length', type: 'float', min: 0.001, max: 10, step: 0.01 },
     ],
     evaluate(values, inputs) {
       const curve = inputs['Curve'];
       const count = inputs['Count'] ?? values.count;
+      const length = inputs['Length'] ?? values.length;
       if (!curve) return { outputs: [null] };
       return { outputs: [mapGeo(curve, g => {
-        g.resample = { mode: values.mode, count };
+        g.resample = { mode: values.mode, count, length };
         return g;
       })] };
     },
@@ -1293,17 +1498,26 @@ registry.addNodes('geo', {
     category: 'CURVE',
     inputs: [
       { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Group ID', type: SocketType.INT },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: {},
+    defaults: { mode: 'triangles', groupId: 0 },
+    props: [
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'triangles', label: 'Triangles' },
+        { value: 'ngons', label: 'N-gons' },
+      ]},
+      { key: 'groupId', label: 'Group ID', type: 'int', min: 0, max: 100, step: 1 },
+    ],
     evaluate(values, inputs) {
       const curve = inputs['Curve'];
       if (!curve) return { outputs: [null] };
       return { outputs: [{
         type: 'fill_curve',
         curve: cloneGeo(curve),
+        mode: values.mode,
         transforms: [], smooth: false,
       }] };
     },
@@ -1312,24 +1526,35 @@ registry.addNodes('geo', {
   'curve_spiral': {
     label: 'Spiral',
     category: 'CURVE',
-    inputs: [],
+    inputs: [
+      { name: 'Resolution', type: SocketType.INT },
+      { name: 'Rotations', type: SocketType.FLOAT },
+      { name: 'Start Radius', type: SocketType.FLOAT },
+      { name: 'End Radius', type: SocketType.FLOAT },
+      { name: 'Height', type: SocketType.FLOAT },
+      { name: 'Reverse', type: SocketType.BOOL },
+    ],
     outputs: [
       { name: 'Curve', type: SocketType.GEOMETRY },
     ],
-    defaults: { turns: 4, height: 2, startRadius: 1, endRadius: 1, resolution: 64 },
+    defaults: { rotations: 4, height: 2, startRadius: 1, endRadius: 1, resolution: 64, reverse: false },
     props: [
-      { key: 'turns', label: 'Turns', type: 'float', min: 0.1, max: 20, step: 0.1 },
-      { key: 'height', label: 'Height', type: 'float', min: 0, max: 20, step: 0.1 },
+      { key: 'resolution', label: 'Resolution', type: 'int', min: 8, max: 256, step: 4 },
+      { key: 'rotations', label: 'Rotations', type: 'float', min: 0.1, max: 20, step: 0.1 },
       { key: 'startRadius', label: 'Start Radius', type: 'float', min: 0.01, max: 20, step: 0.1 },
       { key: 'endRadius', label: 'End Radius', type: 'float', min: 0.01, max: 20, step: 0.1 },
-      { key: 'resolution', label: 'Resolution', type: 'int', min: 8, max: 256, step: 4 },
+      { key: 'height', label: 'Height', type: 'float', min: 0, max: 20, step: 0.1 },
+      { key: 'reverse', label: 'Reverse', type: 'bool' },
     ],
-    evaluate(values) {
+    evaluate(values, inputs) {
       return { outputs: [{
         type: 'spiral',
-        turns: values.turns, height: values.height,
-        startRadius: values.startRadius, endRadius: values.endRadius,
-        resolution: values.resolution,
+        turns: inputs['Rotations'] ?? values.rotations,
+        height: inputs['Height'] ?? values.height,
+        startRadius: inputs['Start Radius'] ?? values.startRadius,
+        endRadius: inputs['End Radius'] ?? values.endRadius,
+        resolution: inputs['Resolution'] ?? values.resolution,
+        reverse: inputs['Reverse'] ?? values.reverse,
         transforms: [], smooth: false,
       }] };
     },
@@ -1588,16 +1813,21 @@ registry.addNodes('geo', {
     outputs: [
       { name: 'Result', type: SocketType.FLOAT },
     ],
-    defaults: { value: 0.5, min: 0, max: 1 },
+    defaults: { value: 0.5, min: 0, max: 1, clampType: 'min_max' },
     props: [
+      { key: 'clampType', label: 'Clamp Type', type: 'select', options: [
+        { value: 'min_max', label: 'Min Max' },
+        { value: 'range', label: 'Range' },
+      ]},
       { key: 'value', label: 'Value', type: 'float', min: -1000, max: 1000, step: 0.01 },
       { key: 'min', label: 'Min', type: 'float', min: -1000, max: 1000, step: 0.01 },
       { key: 'max', label: 'Max', type: 'float', min: -1000, max: 1000, step: 0.01 },
     ],
     evaluate(values, inputs) {
       const v = inputs['Value'] ?? values.value;
-      const mn = inputs['Min'] ?? values.min;
-      const mx = inputs['Max'] ?? values.max;
+      let mn = inputs['Min'] ?? values.min;
+      let mx = inputs['Max'] ?? values.max;
+      if (values.clampType === 'range' && mn > mx) { const t = mn; mn = mx; mx = t; }
       return { outputs: [Math.min(Math.max(v, mn), mx)] };
     },
   },
@@ -1607,12 +1837,23 @@ registry.addNodes('geo', {
     category: 'MATH',
     inputs: [
       { name: 'Value', type: SocketType.FLOAT },
+      { name: 'From Min', type: SocketType.FLOAT },
+      { name: 'From Max', type: SocketType.FLOAT },
+      { name: 'To Min', type: SocketType.FLOAT },
+      { name: 'To Max', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Result', type: SocketType.FLOAT },
     ],
-    defaults: { value: 0.5, fromMin: 0, fromMax: 1, toMin: 0, toMax: 10 },
+    defaults: { value: 0.5, fromMin: 0, fromMax: 1, toMin: 0, toMax: 10, interpolation: 'linear', clamp: true },
     props: [
+      { key: 'interpolation', label: 'Interpolation Type', type: 'select', options: [
+        { value: 'linear', label: 'Linear' },
+        { value: 'stepped', label: 'Stepped Linear' },
+        { value: 'smooth', label: 'Smooth Step' },
+        { value: 'smoother', label: 'Smoother Step' },
+      ]},
+      { key: 'clamp', label: 'Clamp', type: 'bool' },
       { key: 'value', label: 'Value', type: 'float', min: -1000, max: 1000, step: 0.01 },
       { key: 'fromMin', label: 'From Min', type: 'float', min: -1000, max: 1000, step: 0.1 },
       { key: 'fromMax', label: 'From Max', type: 'float', min: -1000, max: 1000, step: 0.1 },
@@ -1621,13 +1862,19 @@ registry.addNodes('geo', {
     ],
     evaluate(values, inputs) {
       const v = inputs['Value'] ?? values.value;
-      const fMin = values.fromMin;
-      const fMax = values.fromMax;
-      const tMin = values.toMin;
-      const tMax = values.toMax;
+      const fMin = inputs['From Min'] ?? values.fromMin;
+      const fMax = inputs['From Max'] ?? values.fromMax;
+      const tMin = inputs['To Min'] ?? values.toMin;
+      const tMax = inputs['To Max'] ?? values.toMax;
       const range = fMax - fMin;
-      const mapped = range !== 0 ? tMin + ((v - fMin) / range) * (tMax - tMin) : tMin;
-      return { outputs: [mapped] };
+      let t = range !== 0 ? (v - fMin) / range : 0;
+      if (values.clamp) t = clampVal(t, 0, 1);
+      switch (values.interpolation) {
+        case 'smooth': t = t * t * (3 - 2 * t); break;
+        case 'smoother': t = t * t * t * (t * (t * 6 - 15) + 10); break;
+        case 'stepped': t = Math.floor(t * 4) / 4; break;
+      }
+      return { outputs: [tMin + t * (tMax - tMin)] };
     },
   },
 
@@ -1640,12 +1887,29 @@ registry.addNodes('geo', {
     inputs: [
       { name: 'A', type: SocketType.FLOAT },
       { name: 'B', type: SocketType.FLOAT },
+      { name: 'C', type: SocketType.FLOAT },
+      { name: 'Angle', type: SocketType.FLOAT },
+      { name: 'Epsilon', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Result', type: SocketType.BOOL },
     ],
-    defaults: { operation: 'greater_than', a: 0, b: 0.5, epsilon: 0.001 },
+    defaults: { operation: 'greater_than', a: 0, b: 0.5, epsilon: 0.001, dataType: 'float', mode: 'element' },
     props: [
+      { key: 'dataType', label: 'Data Type', type: 'select', options: [
+        { value: 'float', label: 'Float' },
+        { value: 'int', label: 'Integer' },
+        { value: 'vector', label: 'Vector' },
+        { value: 'color', label: 'Color' },
+        { value: 'string', label: 'String' },
+      ]},
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'element', label: 'Element' },
+        { value: 'length', label: 'Length' },
+        { value: 'average', label: 'Average' },
+        { value: 'dot_product', label: 'Dot Product' },
+        { value: 'direction', label: 'Direction' },
+      ]},
       { key: 'operation', label: 'Operation', type: 'select', options: [
         { value: 'less_than', label: 'Less Than' },
         { value: 'less_equal', label: 'Less or Equal' },
@@ -1754,32 +2018,45 @@ registry.addNodes('geo', {
     category: 'TEXTURE',
     inputs: [
       { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'W', type: SocketType.FLOAT },
       { name: 'Scale', type: SocketType.FLOAT },
+      { name: 'Detail', type: SocketType.FLOAT },
+      { name: 'Roughness', type: SocketType.FLOAT },
+      { name: 'Lacunarity', type: SocketType.FLOAT },
+      { name: 'Distortion', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Fac', type: SocketType.FLOAT },
       { name: 'Color', type: SocketType.VECTOR },
     ],
-    defaults: { scale: 5, detail: 2, roughness: 0.5, distortion: 0 },
+    defaults: { scale: 5, detail: 2, roughness: 0.5, lacunarity: 2, distortion: 0, w: 0, dimensions: '3D' },
     props: [
+      { key: 'dimensions', label: 'Dimensions', type: 'select', options: [
+        { value: '1D', label: '1D' },
+        { value: '2D', label: '2D' },
+        { value: '3D', label: '3D' },
+        { value: '4D', label: '4D' },
+      ]},
       { key: 'scale', label: 'Scale', type: 'float', min: 0.01, max: 100, step: 0.5 },
       { key: 'detail', label: 'Detail', type: 'float', min: 0, max: 15, step: 0.5 },
       { key: 'roughness', label: 'Roughness', type: 'float', min: 0, max: 1, step: 0.05 },
+      { key: 'lacunarity', label: 'Lacunarity', type: 'float', min: 0.01, max: 10, step: 0.1 },
       { key: 'distortion', label: 'Distortion', type: 'float', min: 0, max: 10, step: 0.1 },
     ],
     evaluate(values, inputs) {
       const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
       const sc = inputs['Scale'] ?? values.scale;
-      const detail = values.detail;
-      const rough = values.roughness;
-      const dist = values.distortion;
+      const detail = inputs['Detail'] ?? values.detail;
+      const rough = inputs['Roughness'] ?? values.roughness;
+      const dist = inputs['Distortion'] ?? values.distortion;
+      const lac = inputs['Lacunarity'] ?? values.lacunarity;
       let sx = v.x * sc, sy = v.y * sc, sz = v.z * sc;
       if (dist > 0) {
         sx += valueNoise3D(sx + 100, sy, sz) * dist;
         sy += valueNoise3D(sx, sy + 100, sz) * dist;
         sz += valueNoise3D(sx, sy, sz + 100) * dist;
       }
-      const fac = fbmNoise3D(sx, sy, sz, Math.ceil(detail) + 1, rough);
+      const fac = fbmNoise3D(sx, sy, sz, Math.ceil(detail) + 1, rough, lac);
       return { outputs: [fac, { x: fac, y: fac * 0.8, z: fac * 0.6 }] };
     },
   },
@@ -1789,42 +2066,73 @@ registry.addNodes('geo', {
     category: 'TEXTURE',
     inputs: [
       { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'W', type: SocketType.FLOAT },
       { name: 'Scale', type: SocketType.FLOAT },
+      { name: 'Smoothness', type: SocketType.FLOAT },
+      { name: 'Exponent', type: SocketType.FLOAT },
+      { name: 'Randomness', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Distance', type: SocketType.FLOAT },
       { name: 'Color', type: SocketType.VECTOR },
+      { name: 'Position', type: SocketType.VECTOR },
+      { name: 'W', type: SocketType.FLOAT },
     ],
-    defaults: { scale: 5, feature: 'f1', randomness: 1 },
+    defaults: { scale: 5, feature: 'f1', randomness: 1, smoothness: 1, exponent: 0.5, w: 0, dimensions: '3D', distMetric: 'euclidean' },
     props: [
-      { key: 'scale', label: 'Scale', type: 'float', min: 0.01, max: 100, step: 0.5 },
-      { key: 'feature', label: 'Feature', type: 'select', options: [
-        { value: 'f1', label: 'F1 (Nearest)' },
-        { value: 'f2', label: 'F2 (Second Nearest)' },
-        { value: 'smooth_f1', label: 'Smooth F1' },
+      { key: 'dimensions', label: 'Dimensions', type: 'select', options: [
+        { value: '1D', label: '1D' },
+        { value: '2D', label: '2D' },
+        { value: '3D', label: '3D' },
+        { value: '4D', label: '4D' },
       ]},
+      { key: 'feature', label: 'Feature', type: 'select', options: [
+        { value: 'f1', label: 'F1' },
+        { value: 'f2', label: 'F2' },
+        { value: 'smooth_f1', label: 'Smooth F1' },
+        { value: 'distance_to_edge', label: 'Distance to Edge' },
+        { value: 'n_sphere_radius', label: 'N-Sphere Radius' },
+      ]},
+      { key: 'distMetric', label: 'Distance', type: 'select', options: [
+        { value: 'euclidean', label: 'Euclidean' },
+        { value: 'manhattan', label: 'Manhattan' },
+        { value: 'chebychev', label: 'Chebychev' },
+        { value: 'minkowski', label: 'Minkowski' },
+      ]},
+      { key: 'scale', label: 'Scale', type: 'float', min: 0.01, max: 100, step: 0.5 },
+      { key: 'smoothness', label: 'Smoothness', type: 'float', min: 0, max: 1, step: 0.05 },
       { key: 'randomness', label: 'Randomness', type: 'float', min: 0, max: 1, step: 0.05 },
     ],
     evaluate(values, inputs) {
       const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
       const sc = inputs['Scale'] ?? values.scale;
+      const randomness = inputs['Randomness'] ?? values.randomness;
       const sx = v.x * sc, sy = v.y * sc, sz = v.z * sc;
-      const { dist, col } = voronoi3D(sx, sy, sz, values.randomness, values.feature);
-      return { outputs: [dist, col] };
+      const { dist, col } = voronoi3D(sx, sy, sz, randomness, values.feature);
+      return { outputs: [dist, col, { x: sx, y: sy, z: sz }, 0] };
     },
   },
 
   'white_noise': {
-    label: 'White Noise',
+    label: 'White Noise Texture',
     category: 'TEXTURE',
     inputs: [
       { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'W', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Value', type: SocketType.FLOAT },
       { name: 'Color', type: SocketType.VECTOR },
     ],
-    defaults: {},
+    defaults: { dimensions: '3D', w: 0 },
+    props: [
+      { key: 'dimensions', label: 'Dimensions', type: 'select', options: [
+        { value: '1D', label: '1D' },
+        { value: '2D', label: '2D' },
+        { value: '3D', label: '3D' },
+        { value: '4D', label: '4D' },
+      ]},
+    ],
     evaluate(values, inputs) {
       const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
       const val = hash3(Math.floor(v.x * 1000), Math.floor(v.y * 1000), Math.floor(v.z * 1000));
@@ -1924,6 +2232,7 @@ registry.addNodes('geo', {
     category: 'MESH_OPS',
     inputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Curve', type: SocketType.GEOMETRY },
@@ -1944,6 +2253,7 @@ registry.addNodes('geo', {
     category: 'GEOMETRY',
     inputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Amount', type: SocketType.INT },
     ],
     outputs: [
@@ -2323,6 +2633,7 @@ registry.addNodes('geo', {
     category: 'CURVE',
     inputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Cyclic', type: SocketType.BOOL },
     ],
     outputs: [
@@ -2351,6 +2662,7 @@ registry.addNodes('geo', {
     category: 'MATERIAL',
     inputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
@@ -2841,6 +3153,10 @@ registry.addNodes('geo', {
       { name: 'Vector', type: SocketType.VECTOR },
       { name: 'Scale', type: SocketType.FLOAT },
       { name: 'Distortion', type: SocketType.FLOAT },
+      { name: 'Detail', type: SocketType.FLOAT },
+      { name: 'Detail Scale', type: SocketType.FLOAT },
+      { name: 'Detail Roughness', type: SocketType.FLOAT },
+      { name: 'Phase Offset', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Fac', type: SocketType.FLOAT },
@@ -2931,7 +3247,15 @@ registry.addNodes('geo', {
     category: 'TEXTURE',
     inputs: [
       { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'Color1', type: SocketType.COLOR },
+      { name: 'Color2', type: SocketType.COLOR },
+      { name: 'Mortar', type: SocketType.COLOR },
       { name: 'Scale', type: SocketType.FLOAT },
+      { name: 'Mortar Size', type: SocketType.FLOAT },
+      { name: 'Mortar Smooth', type: SocketType.FLOAT },
+      { name: 'Bias', type: SocketType.FLOAT },
+      { name: 'Brick Width', type: SocketType.FLOAT },
+      { name: 'Row Height', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Color', type: SocketType.COLOR },
@@ -2970,6 +3294,7 @@ registry.addNodes('geo', {
       { name: 'Vector', type: SocketType.VECTOR },
       { name: 'Scale', type: SocketType.FLOAT },
       { name: 'Distortion', type: SocketType.FLOAT },
+      { name: 'Depth', type: SocketType.INT },
     ],
     outputs: [
       { name: 'Color', type: SocketType.COLOR },
@@ -3007,30 +3332,45 @@ registry.addNodes('geo', {
     category: 'TEXTURE',
     inputs: [
       { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'W', type: SocketType.FLOAT },
       { name: 'Scale', type: SocketType.FLOAT },
+      { name: 'Detail', type: SocketType.FLOAT },
+      { name: 'Dimension', type: SocketType.FLOAT },
+      { name: 'Lacunarity', type: SocketType.FLOAT },
+      { name: 'Offset', type: SocketType.FLOAT },
+      { name: 'Gain', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Fac', type: SocketType.FLOAT },
     ],
-    defaults: { scale: 5, detail: 2, dimension: 2, lacunarity: 2, offset: 0, gain: 1, musgraveType: 'fbm' },
+    defaults: { scale: 5, detail: 2, dimension: 2, lacunarity: 2, offset: 0, gain: 1, musgraveType: 'fbm', dimensions: '3D', w: 0 },
     props: [
+      { key: 'dimensions', label: 'Dimensions', type: 'select', options: [
+        { value: '1D', label: '1D' },
+        { value: '2D', label: '2D' },
+        { value: '3D', label: '3D' },
+        { value: '4D', label: '4D' },
+      ]},
       { key: 'musgraveType', label: 'Type', type: 'select', options: [
         { value: 'fbm', label: 'fBM' },
         { value: 'multifractal', label: 'Multifractal' },
         { value: 'ridged_multifractal', label: 'Ridged Multifractal' },
         { value: 'hybrid_multifractal', label: 'Hybrid Multifractal' },
+        { value: 'hetero_terrain', label: 'Hetero Terrain' },
       ]},
       { key: 'scale', label: 'Scale', type: 'float', min: 0.01, max: 100, step: 0.5 },
       { key: 'detail', label: 'Detail', type: 'float', min: 0, max: 15, step: 0.5 },
       { key: 'dimension', label: 'Dimension', type: 'float', min: 0, max: 4, step: 0.1 },
       { key: 'lacunarity', label: 'Lacunarity', type: 'float', min: 0.01, max: 10, step: 0.1 },
+      { key: 'offset', label: 'Offset', type: 'float', min: -10, max: 10, step: 0.1 },
+      { key: 'gain', label: 'Gain', type: 'float', min: 0, max: 10, step: 0.1 },
     ],
     evaluate(values, inputs) {
       const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
       const sc = inputs['Scale'] ?? values.scale;
-      const octaves = Math.ceil(values.detail) + 1;
-      const lac = values.lacunarity;
-      const dim = values.dimension;
+      const octaves = Math.ceil(inputs['Detail'] ?? values.detail) + 1;
+      const lac = inputs['Lacunarity'] ?? values.lacunarity;
+      const dim = inputs['Dimension'] ?? values.dimension;
       let sx = v.x * sc, sy = v.y * sc, sz = v.z * sc;
       let value = 0, amp = 1, freq = 1, weight = 1;
       for (let i = 0; i < octaves; i++) {
@@ -3087,13 +3427,24 @@ registry.addNodes('geo', {
       { name: 'Point Count', type: SocketType.INT },
       { name: 'Edge Count', type: SocketType.INT },
       { name: 'Face Count', type: SocketType.INT },
+      { name: 'Face Corner Count', type: SocketType.INT },
+      { name: 'Spline Count', type: SocketType.INT },
+      { name: 'Instance Count', type: SocketType.INT },
     ],
-    defaults: {},
+    defaults: { component: 'mesh' },
+    props: [
+      { key: 'component', label: 'Component', type: 'select', options: [
+        { value: 'mesh', label: 'Mesh' },
+        { value: 'point_cloud', label: 'Point Cloud' },
+        { value: 'curve', label: 'Curve' },
+        { value: 'instances', label: 'Instances' },
+      ]},
+    ],
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
-      if (!geo) return { outputs: [0, 0, 0] };
+      if (!geo) return { outputs: [0, 0, 0, 0, 0, 0] };
       // Approximate counts based on geometry type
-      return { outputs: [8, 12, 6] };
+      return { outputs: [8, 12, 6, 24, 0, 0] };
     },
   },
 
@@ -3109,14 +3460,25 @@ registry.addNodes('geo', {
     outputs: [
       { name: 'Value', type: SocketType.FLOAT },
     ],
-    defaults: { index: 0, domain: 'points' },
+    defaults: { index: 0, domain: 'points', dataType: 'float', clamp: false },
     props: [
-      { key: 'index', label: 'Index', type: 'int', min: 0, max: 9999, step: 1 },
-      { key: 'domain', label: 'Domain', type: 'select', options: [
-        { value: 'points', label: 'Points' },
-        { value: 'edges', label: 'Edges' },
-        { value: 'faces', label: 'Faces' },
+      { key: 'dataType', label: 'Data Type', type: 'select', options: [
+        { value: 'float', label: 'Float' },
+        { value: 'int', label: 'Integer' },
+        { value: 'vector', label: 'Vector' },
+        { value: 'color', label: 'Color' },
+        { value: 'bool', label: 'Boolean' },
       ]},
+      { key: 'domain', label: 'Domain', type: 'select', options: [
+        { value: 'points', label: 'Point' },
+        { value: 'edges', label: 'Edge' },
+        { value: 'faces', label: 'Face' },
+        { value: 'face_corner', label: 'Face Corner' },
+        { value: 'spline', label: 'Spline' },
+        { value: 'instance', label: 'Instance' },
+      ]},
+      { key: 'clamp', label: 'Clamp', type: 'bool' },
+      { key: 'index', label: 'Index', type: 'int', min: 0, max: 9999, step: 1 },
     ],
     evaluate(values, inputs) {
       const val = inputs['Value'] ?? 0;
@@ -3129,7 +3491,8 @@ registry.addNodes('geo', {
     label: 'Raycast',
     category: 'GEOMETRY',
     inputs: [
-      { name: 'Target', type: SocketType.GEOMETRY },
+      { name: 'Target Geometry', type: SocketType.GEOMETRY },
+      { name: 'Attribute', type: SocketType.FLOAT },
       { name: 'Source Position', type: SocketType.VECTOR },
       { name: 'Ray Direction', type: SocketType.VECTOR },
       { name: 'Ray Length', type: SocketType.FLOAT },
@@ -3139,14 +3502,26 @@ registry.addNodes('geo', {
       { name: 'Hit Position', type: SocketType.VECTOR },
       { name: 'Hit Normal', type: SocketType.VECTOR },
       { name: 'Hit Distance', type: SocketType.FLOAT },
+      { name: 'Attribute', type: SocketType.FLOAT },
     ],
-    defaults: { rayLength: 100 },
+    defaults: { rayLength: 100, dataType: 'float', mapping: 'interpolated' },
     props: [
+      { key: 'dataType', label: 'Data Type', type: 'select', options: [
+        { value: 'float', label: 'Float' },
+        { value: 'int', label: 'Integer' },
+        { value: 'vector', label: 'Vector' },
+        { value: 'color', label: 'Color' },
+        { value: 'bool', label: 'Boolean' },
+      ]},
+      { key: 'mapping', label: 'Mapping', type: 'select', options: [
+        { value: 'interpolated', label: 'Interpolated' },
+        { value: 'nearest', label: 'Nearest' },
+      ]},
       { key: 'rayLength', label: 'Ray Length', type: 'float', min: 0, max: 10000, step: 1 },
     ],
     evaluate(values, inputs) {
       // Simplified: always returns no hit in graph evaluation; actual raycast at build time
-      return { outputs: [false, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, 0] };
+      return { outputs: [false, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, 0, 0] };
     },
   },
 
@@ -3156,6 +3531,7 @@ registry.addNodes('geo', {
     category: 'GEOMETRY',
     inputs: [
       { name: 'Points', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
@@ -3177,6 +3553,7 @@ registry.addNodes('geo', {
     category: 'CURVE',
     inputs: [
       { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Radius', type: SocketType.FLOAT },
     ],
     outputs: [
@@ -3203,6 +3580,7 @@ registry.addNodes('geo', {
     category: 'CURVE',
     inputs: [
       { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Tilt', type: SocketType.FLOAT },
     ],
     outputs: [
@@ -3284,6 +3662,7 @@ registry.addNodes('geo', {
     category: 'CURVE',
     inputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
       { name: 'Resolution', type: SocketType.INT },
     ],
     outputs: [
@@ -3309,24 +3688,31 @@ registry.addNodes('geo', {
     label: 'Sample Curve',
     category: 'CURVE',
     inputs: [
-      { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Curves', type: SocketType.GEOMETRY },
+      { name: 'Value', type: SocketType.FLOAT },
       { name: 'Factor', type: SocketType.FLOAT },
+      { name: 'Length', type: SocketType.FLOAT },
+      { name: 'Curve Index', type: SocketType.INT },
     ],
     outputs: [
+      { name: 'Value', type: SocketType.FLOAT },
       { name: 'Position', type: SocketType.VECTOR },
       { name: 'Tangent', type: SocketType.VECTOR },
       { name: 'Normal', type: SocketType.VECTOR },
     ],
-    defaults: { factor: 0.5, mode: 'factor' },
+    defaults: { factor: 0.5, length: 0, mode: 'factor', dataType: 'float', useAllCurves: false },
     props: [
-      { key: 'factor', label: 'Factor', type: 'float', min: 0, max: 1, step: 0.01 },
       { key: 'mode', label: 'Mode', type: 'select', options: [
         { value: 'factor', label: 'Factor' },
         { value: 'length', label: 'Length' },
       ]},
+      { key: 'useAllCurves', label: 'All Curves', type: 'bool' },
+      { key: 'factor', label: 'Factor', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'length', label: 'Length', type: 'float', min: 0, max: 100, step: 0.1 },
     ],
     evaluate(values, inputs) {
       return { outputs: [
+        0,
         { x: 0, y: 0, z: 0 },
         { x: 0, y: 0, z: 1 },
         { x: 0, y: 1, z: 0 },
@@ -3410,18 +3796,27 @@ registry.addNodes('geo', {
     category: 'FIELD',
     inputs: [
       { name: 'Value', type: SocketType.FLOAT },
+      { name: 'Group Index', type: SocketType.INT },
     ],
     outputs: [
       { name: 'Leading', type: SocketType.FLOAT },
       { name: 'Trailing', type: SocketType.FLOAT },
       { name: 'Total', type: SocketType.FLOAT },
     ],
-    defaults: { domain: 'points' },
+    defaults: { domain: 'points', dataType: 'float' },
     props: [
+      { key: 'dataType', label: 'Data Type', type: 'select', options: [
+        { value: 'float', label: 'Float' },
+        { value: 'int', label: 'Integer' },
+        { value: 'vector', label: 'Vector' },
+      ]},
       { key: 'domain', label: 'Domain', type: 'select', options: [
-        { value: 'points', label: 'Points' },
-        { value: 'edges', label: 'Edges' },
-        { value: 'faces', label: 'Faces' },
+        { value: 'points', label: 'Point' },
+        { value: 'edges', label: 'Edge' },
+        { value: 'faces', label: 'Face' },
+        { value: 'face_corner', label: 'Face Corner' },
+        { value: 'spline', label: 'Spline' },
+        { value: 'instance', label: 'Instance' },
       ]},
     ],
     evaluate(values, inputs) {
