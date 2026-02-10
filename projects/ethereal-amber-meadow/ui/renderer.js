@@ -39,6 +39,7 @@ export class GraphRenderer {
     this.onNodeSelected = null;
     this.onNodeDoubleTap = null;
     this.onConnectionMade = null;
+    this.onConnectionDropped = null;
     this.onStatusUpdate = null;
 
     this._setupEvents();
@@ -293,6 +294,18 @@ export class GraphRenderer {
         }
         const ok = this.graph.addConnection(from.nodeId, from.socketIdx, to.nodeId, to.socketIdx);
         if (ok && this.onConnectionMade) this.onConnectionMade();
+      } else if (!socket && this.onConnectionDropped) {
+        const rect = this.canvas.getBoundingClientRect();
+        this.onConnectionDropped({
+          fromNode: this.connecting.fromNode,
+          fromSocket: this.connecting.fromSocket,
+          isOutput: this.connecting.isOutput,
+          socketType: this.connecting.type,
+          screenX: rect.left + pos.x,
+          screenY: rect.top + pos.y,
+          worldX: world.x,
+          worldY: world.y,
+        });
       }
       this.connecting = null;
     }
@@ -398,6 +411,19 @@ export class GraphRenderer {
         }
         this.graph.addConnection(from.nodeId, from.socketIdx, to.nodeId, to.socketIdx);
         if (this.onConnectionMade) this.onConnectionMade();
+      } else if (!socket && this.onConnectionDropped) {
+        // Dropped into empty space - fire callback for context menu
+        const rect = this.canvas.getBoundingClientRect();
+        this.onConnectionDropped({
+          fromNode: this.connecting.fromNode,
+          fromSocket: this.connecting.fromSocket,
+          isOutput: this.connecting.isOutput,
+          socketType: this.connecting.type,
+          screenX: e.clientX,
+          screenY: e.clientY,
+          worldX: world.x,
+          worldY: world.y,
+        });
       }
       this.connecting = null;
     }

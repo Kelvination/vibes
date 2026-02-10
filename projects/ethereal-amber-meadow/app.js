@@ -67,9 +67,15 @@ import { compileShader } from './shader/compiler.js';
   const graphTabs = document.getElementById('graph-tabs');
   const btnShaderShape = document.getElementById('btn-shader-shape');
 
+  const dropMenu = document.getElementById('drop-menu');
+  const dropMenuSearch = document.getElementById('drop-menu-search');
+  const dropMenuItems = document.getElementById('drop-menu-items');
+  const dropMenuOverlay = document.getElementById('drop-menu-overlay');
+
   let viewportVisible = false;
   let shaderPreviewVisible = false;
   let currentPropsNode = null;
+  let pendingDrop = null; // stores connection drop info for context menu
 
   // ===== Graph Version & Storage =====
   const GRAPH_VERSION = 3;
@@ -235,7 +241,125 @@ import { compileShader } from './shader/compiler.js';
       const def = registry.getNodeDef(activeGraphType, typeId);
       statusText.textContent = `Added ${def?.label || typeId}`;
       saveGraph();
+      autoRun();
     }
+  }
+
+  // ===== Connection Drop Context Menu =====
+  function openDropMenu(info) {
+    pendingDrop = info;
+    const nodeTypes = registry.getNodeTypes(activeGraphType);
+    const categories = registry.getCategories(activeGraphType);
+    const outputTypeId = activeGraphType === 'shader' ? 'shader_output' : 'output';
+
+    // Filter to compatible nodes
+    const compatible = [];
+    for (const [typeId, def] of Object.entries(nodeTypes)) {
+      if (typeId === outputTypeId) continue;
+      if (def.singular) continue;
+
+      if (info.isOutput) {
+        // Dragged from an output: need nodes with a matching INPUT
+        const matchIdx = def.inputs.findIndex(inp => inp.type === info.socketType);
+        if (matchIdx >= 0) compatible.push({ typeId, def, matchIdx, matchIsOutput: false });
+      } else {
+        // Dragged from an input: need nodes with a matching OUTPUT
+        const matchIdx = def.outputs.findIndex(out => out.type === info.socketType);
+        if (matchIdx >= 0) compatible.push({ typeId, def, matchIdx, matchIsOutput: true });
+      }
+    }
+
+    if (compatible.length === 0) return;
+
+    // Position the menu at the cursor
+    const menuW = 240, menuH = 360;
+    let left = info.screenX;
+    let top = info.screenY;
+    if (left + menuW > window.innerWidth) left = window.innerWidth - menuW - 8;
+    if (top + menuH > window.innerHeight) top = window.innerHeight - menuH - 8;
+    if (left < 4) left = 4;
+    if (top < 4) top = 4;
+    dropMenu.style.left = left + 'px';
+    dropMenu.style.top = top + 'px';
+
+    dropMenuSearch.value = '';
+    buildDropMenuList(compatible, categories, '');
+
+    dropMenu.classList.remove('hidden');
+    dropMenuOverlay.classList.remove('hidden');
+    setTimeout(() => dropMenuSearch.focus(), 50);
+
+    // Live search
+    dropMenuSearch.oninput = () => {
+      buildDropMenuList(compatible, categories, dropMenuSearch.value);
+    };
+  }
+
+  function buildDropMenuList(compatible, categories, filter) {
+    dropMenuItems.innerHTML = '';
+    const lf = filter.toLowerCase();
+
+    const grouped = {};
+    for (const item of compatible) {
+      if (lf && !item.def.label.toLowerCase().includes(lf)) continue;
+      const cat = item.def.category;
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(item);
+    }
+
+    for (const [catId, items] of Object.entries(grouped)) {
+      const catDef = categories[catId];
+      if (!catDef) continue;
+
+      const catEl = document.createElement('div');
+      catEl.className = 'drop-menu-cat';
+      catEl.textContent = catDef.name;
+      dropMenuItems.appendChild(catEl);
+
+      for (const item of items) {
+        const el = document.createElement('div');
+        el.className = 'drop-menu-item';
+        el.innerHTML = `<div class="dmi-icon" style="background:${catDef.color}">${catDef.icon}</div>${item.def.label}`;
+        el.addEventListener('click', () => {
+          selectDropMenuItem(item);
+        });
+        dropMenuItems.appendChild(el);
+      }
+    }
+  }
+
+  function selectDropMenuItem(item) {
+    if (!pendingDrop) return;
+    const info = pendingDrop;
+
+    // Create node at the drop world position
+    const x = info.worldX - renderer.nodeWidth / 2;
+    const y = info.worldY - 30;
+    const node = activeGraph.addNode(item.typeId, x, y);
+    if (node) {
+      // Auto-connect
+      if (info.isOutput) {
+        // Source was an output socket, connect to the new node's matching input
+        activeGraph.addConnection(info.fromNode, info.fromSocket, node.id, item.matchIdx);
+      } else {
+        // Source was an input socket, connect from the new node's matching output
+        activeGraph.addConnection(node.id, item.matchIdx, info.fromNode, info.fromSocket);
+      }
+
+      renderer.selectedNode = node.id;
+      statusText.textContent = `Added & connected ${item.def.label}`;
+      saveGraph();
+      autoRun();
+    }
+
+    closeDropMenu();
+  }
+
+  function closeDropMenu() {
+    dropMenu.classList.add('hidden');
+    dropMenuOverlay.classList.add('hidden');
+    pendingDrop = null;
+    dropMenuSearch.oninput = null;
   }
 
   // ===== Properties Panel =====
@@ -294,6 +418,7 @@ import { compileShader } from './shader/compiler.js';
               valDisplay.textContent = formatNum(v, prop.type);
               numInput.value = v;
               saveGraph();
+              autoRun();
             });
 
             numInput.addEventListener('change', () => {
@@ -303,6 +428,7 @@ import { compileShader } from './shader/compiler.js';
               slider.value = v;
               valDisplay.textContent = formatNum(v, prop.type);
               saveGraph();
+              autoRun();
             });
 
             wrap.appendChild(slider);
@@ -329,6 +455,7 @@ import { compileShader } from './shader/compiler.js';
               activeGraph.setNodeValue(node.id, prop.key, cb.checked);
               cbLabel.textContent = cb.checked ? 'On' : 'Off';
               saveGraph();
+              autoRun();
             });
 
             wrap.appendChild(cb);
@@ -350,6 +477,7 @@ import { compileShader } from './shader/compiler.js';
             select.addEventListener('change', () => {
               activeGraph.setNodeValue(node.id, prop.key, select.value);
               saveGraph();
+              autoRun();
             });
             group.appendChild(select);
             break;
@@ -484,6 +612,18 @@ import { compileShader } from './shader/compiler.js';
     setTimeout(() => app.classList.remove('running'), 500);
   }
 
+  // ===== Auto-update: debounced runGraph on any change =====
+  let _autoRunTimer = null;
+  function autoRun() {
+    if (_autoRunTimer) clearTimeout(_autoRunTimer);
+    _autoRunTimer = setTimeout(() => {
+      _autoRunTimer = null;
+      if (viewportVisible || shaderPreviewVisible) {
+        runGraph();
+      }
+    }, 100);
+  }
+
   // ===== Renderer callbacks =====
   function setupRendererCallbacks() {
     renderer.onNodeSelected = (node) => {
@@ -497,6 +637,11 @@ import { compileShader } from './shader/compiler.js';
     renderer.onConnectionMade = () => {
       statusText.textContent = 'Connected';
       saveGraph();
+      autoRun();
+    };
+
+    renderer.onConnectionDropped = (info) => {
+      openDropMenu(info);
     };
   }
 
@@ -509,6 +654,8 @@ import { compileShader } from './shader/compiler.js';
   nodeSearch.addEventListener('input', () => {
     buildNodeList(nodeSearch.value);
   });
+
+  dropMenuOverlay.addEventListener('click', closeDropMenu);
 
   btnCloseProps.addEventListener('click', closeProperties);
   propsOverlay.addEventListener('click', closeProperties);
@@ -525,6 +672,7 @@ import { compileShader } from './shader/compiler.js';
       closeProperties();
       statusText.textContent = 'Node deleted';
       saveGraph();
+      autoRun();
     }
   });
 
@@ -537,6 +685,7 @@ import { compileShader } from './shader/compiler.js';
       renderer.selectedNode = null;
       statusText.textContent = 'Undo';
       saveGraph();
+      autoRun();
     } else {
       statusText.textContent = 'Nothing to undo';
     }
@@ -566,6 +715,11 @@ import { compileShader } from './shader/compiler.js';
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
+    // Allow Escape to close drop menu even from search input
+    if (e.key === 'Escape' && pendingDrop) {
+      closeDropMenu();
+      return;
+    }
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
 
     switch (e.key) {
@@ -584,6 +738,7 @@ import { compileShader } from './shader/compiler.js';
               renderer.selectedNode = null;
               statusText.textContent = 'Node deleted';
               saveGraph();
+              autoRun();
             }
           }
         }
@@ -599,6 +754,7 @@ import { compileShader } from './shader/compiler.js';
             renderer.selectedNode = null;
             statusText.textContent = 'Undo';
             saveGraph();
+            autoRun();
           }
         }
         break;
