@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#1a1a2e" />
-  <meta name="description" content="GeoNodes - A mobile-friendly geometry nodes editor inspired by Blender" />
+  <meta name="description" content="GeoNodes - A mobile-friendly geometry & shader nodes editor inspired by Blender" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>GeoNodes - Geometry Nodes Editor</title>
+  <title>GeoNodes - Geometry & Shader Nodes Editor</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⬡</text></svg>" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -24,6 +24,17 @@
         </button>
         <h1 class="topbar-title">GeoNodes</h1>
       </div>
+
+      <!-- Graph type tabs -->
+      <div id="graph-tabs">
+        <button class="tab-btn active" data-tab="geo">
+          <span class="tab-icon">△</span> Geometry
+        </button>
+        <button class="tab-btn" data-tab="shader">
+          <span class="tab-icon">◉</span> Shader
+        </button>
+      </div>
+
       <div class="topbar-right">
         <button id="btn-run" class="action-btn run-btn">▶ Run</button>
         <button id="btn-toggle-view" class="icon-btn" aria-label="Toggle 3D View">
@@ -57,7 +68,7 @@
     </aside>
     <div id="props-overlay" class="hidden"></div>
 
-    <!-- Main canvas area (split between node graph and 3D view) -->
+    <!-- Main canvas area -->
     <main id="workspace">
       <div id="node-editor">
         <canvas id="graph-canvas"></canvas>
@@ -69,6 +80,13 @@
           <button id="btn-wireframe" class="icon-btn small" title="Wireframe">◇</button>
         </div>
         <div id="viewport-info"></div>
+      </div>
+      <div id="shader-preview" class="hidden">
+        <canvas id="shader-canvas"></canvas>
+        <div id="shader-preview-controls">
+          <button id="btn-shader-shape" class="icon-btn small" title="Toggle Shape">◎</button>
+        </div>
+        <div id="shader-preview-info"></div>
       </div>
     </main>
 
@@ -95,10 +113,6 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="nodes.js"></script>
-  <script src="graph.js"></script>
-  <script src="renderer.js"></script>
-  <script src="viewport.js"></script>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
