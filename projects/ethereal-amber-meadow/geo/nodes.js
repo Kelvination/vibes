@@ -1,44 +1,38 @@
 /**
- * Node type definitions for the geometry nodes editor.
- * Each node type has inputs, outputs, defaults, and an evaluate function.
+ * geo/nodes.js - Registers all geometry node types with the shared registry.
+ *
+ * Side-effect-only module: import it to populate registry with 'geo' nodes.
  */
 
-const SocketType = {
-  GEOMETRY: 'geometry',
-  FLOAT: 'float',
-  INT: 'int',
-  VECTOR: 'vector',
-  BOOL: 'bool',
-};
+import { registry, SocketType } from '../core/registry.js';
+import {
+  seededRandom, hash3, lerp, smoothstep, clampVal,
+  valueNoise3D, fbmNoise3D, voronoi3D,
+  cloneGeo, geoToArray, mapGeo,
+} from '../core/utils.js';
 
-const SocketColors = {
-  geometry: '#69f0ae',
-  float: '#90a4ae',
-  int: '#4fc3f7',
-  vector: '#7c4dff',
-  bool: '#ffab40',
-};
+// ── Categories ──────────────────────────────────────────────────────────────
 
-const NodeCategories = {
-  INPUT: { name: 'Input', color: '#c62828', icon: '→' },
-  FIELD: { name: 'Field', color: '#ad1457', icon: '◎' },
-  MESH: { name: 'Mesh Primitives', color: '#2e7d32', icon: '△' },
-  MESH_OPS: { name: 'Mesh Operations', color: '#1b5e20', icon: '⬡' },
-  TRANSFORM: { name: 'Transform', color: '#1565c0', icon: '↻' },
-  GEOMETRY: { name: 'Geometry', color: '#00838f', icon: '◈' },
-  INSTANCE: { name: 'Instances', color: '#00695c', icon: '⊞' },
-  CURVE: { name: 'Curve', color: '#827717', icon: '∿' },
-  MATH: { name: 'Math', color: '#6a1b9a', icon: 'ƒ' },
-  UTILITY: { name: 'Utility', color: '#4527a0', icon: '⚙' },
-  TEXTURE: { name: 'Texture', color: '#bf360c', icon: '▤' },
-  OUTPUT: { name: 'Output', color: '#e65100', icon: '◉' },
-};
+registry.addCategory('geo', 'INPUT',     { name: 'Input',            color: '#c62828', icon: '\u2192' });
+registry.addCategory('geo', 'FIELD',     { name: 'Field',            color: '#ad1457', icon: '\u25CE' });
+registry.addCategory('geo', 'MESH',      { name: 'Mesh Primitives',  color: '#2e7d32', icon: '\u25B3' });
+registry.addCategory('geo', 'MESH_OPS',  { name: 'Mesh Operations',  color: '#1b5e20', icon: '\u2B21' });
+registry.addCategory('geo', 'TRANSFORM', { name: 'Transform',        color: '#1565c0', icon: '\u21BB' });
+registry.addCategory('geo', 'GEOMETRY',  { name: 'Geometry',         color: '#00838f', icon: '\u25C8' });
+registry.addCategory('geo', 'INSTANCE',  { name: 'Instances',        color: '#00695c', icon: '\u229E' });
+registry.addCategory('geo', 'CURVE',     { name: 'Curve',            color: '#827717', icon: '\u223F' });
+registry.addCategory('geo', 'MATH',      { name: 'Math',             color: '#6a1b9a', icon: '\u0192' });
+registry.addCategory('geo', 'UTILITY',   { name: 'Utility',          color: '#4527a0', icon: '\u2699' });
+registry.addCategory('geo', 'TEXTURE',   { name: 'Texture',          color: '#bf360c', icon: '\u25A4' });
+registry.addCategory('geo', 'OUTPUT',    { name: 'Output',           color: '#e65100', icon: '\u25C9' });
 
-/**
- * Registry of all available node types.
- */
-const NodeTypes = {
-  // ===== Output =====
+// ── Node types ──────────────────────────────────────────────────────────────
+
+registry.addNodes('geo', {
+
+  // =========================================================================
+  // OUTPUT
+  // =========================================================================
   'output': {
     label: 'Group Output',
     category: 'OUTPUT',
@@ -48,11 +42,14 @@ const NodeTypes = {
     outputs: [],
     defaults: {},
     singular: true,
+    evaluate(values, inputs) {
+      return { outputs: [], geometry: inputs['Geometry'] || null };
+    },
   },
 
-  // ===================================================================
+  // =========================================================================
   // INPUT NODES
-  // ===================================================================
+  // =========================================================================
   'value_float': {
     label: 'Value',
     category: 'INPUT',
@@ -64,6 +61,9 @@ const NodeTypes = {
     props: [
       { key: 'value', label: 'Value', type: 'float', min: -100, max: 100, step: 0.1 },
     ],
+    evaluate(values) {
+      return { outputs: [parseFloat(values.value) || 0] };
+    },
   },
 
   'value_int': {
@@ -77,6 +77,9 @@ const NodeTypes = {
     props: [
       { key: 'value', label: 'Value', type: 'int', min: 0, max: 256, step: 1 },
     ],
+    evaluate(values) {
+      return { outputs: [Math.round(values.value)] };
+    },
   },
 
   'value_vector': {
@@ -92,6 +95,9 @@ const NodeTypes = {
       { key: 'y', label: 'Y', type: 'float', min: -100, max: 100, step: 0.1 },
       { key: 'z', label: 'Z', type: 'float', min: -100, max: 100, step: 0.1 },
     ],
+    evaluate(values) {
+      return { outputs: [{ x: values.x, y: values.y, z: values.z }] };
+    },
   },
 
   'value_bool': {
@@ -105,6 +111,9 @@ const NodeTypes = {
     props: [
       { key: 'value', label: 'Value', type: 'bool' },
     ],
+    evaluate(values) {
+      return { outputs: [!!values.value] };
+    },
   },
 
   'random_value': {
@@ -124,6 +133,13 @@ const NodeTypes = {
       { key: 'max', label: 'Max', type: 'float', min: -1000, max: 1000, step: 0.1 },
       { key: 'seed', label: 'Seed', type: 'int', min: 0, max: 9999, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const mn = inputs['Min'] ?? values.min;
+      const mx = inputs['Max'] ?? values.max;
+      const seed = inputs['Seed'] ?? values.seed;
+      const r = seededRandom(seed);
+      return { outputs: [mn + r * (mx - mn)] };
+    },
   },
 
   'scene_time': {
@@ -138,11 +154,16 @@ const NodeTypes = {
     props: [
       { key: 'fps', label: 'FPS', type: 'int', min: 1, max: 120, step: 1 },
     ],
+    evaluate(values) {
+      const now = performance.now() / 1000;
+      const fps = values.fps || 24;
+      return { outputs: [now, Math.floor(now * fps)] };
+    },
   },
 
-  // ===================================================================
-  // FIELD NODES (per-element attribute access)
-  // ===================================================================
+  // =========================================================================
+  // FIELD NODES
+  // =========================================================================
   'position': {
     label: 'Position',
     category: 'FIELD',
@@ -151,6 +172,9 @@ const NodeTypes = {
       { name: 'Position', type: SocketType.VECTOR },
     ],
     defaults: {},
+    evaluate() {
+      return { outputs: [{ x: 0, y: 0, z: 0, _field: 'position' }] };
+    },
   },
 
   'set_position': {
@@ -170,6 +194,20 @@ const NodeTypes = {
       { key: 'offsetY', label: 'Offset Y', type: 'float', min: -100, max: 100, step: 0.1 },
       { key: 'offsetZ', label: 'Offset Z', type: 'float', min: -100, max: 100, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      if (!geo) return { outputs: [null] };
+      const pos = inputs['Position'] || null;
+      const offset = inputs['Offset'] || { x: values.offsetX, y: values.offsetY, z: values.offsetZ };
+      const clone = cloneGeo(geo);
+      return { outputs: [mapGeo(clone, g => {
+        g.setPosition = {
+          position: pos,
+          offset: { x: offset.x || values.offsetX, y: offset.y || values.offsetY, z: offset.z || values.offsetZ },
+        };
+        return g;
+      })] };
+    },
   },
 
   'normal': {
@@ -180,6 +218,9 @@ const NodeTypes = {
       { name: 'Normal', type: SocketType.VECTOR },
     ],
     defaults: {},
+    evaluate() {
+      return { outputs: [{ x: 0, y: 1, z: 0, _field: 'normal' }] };
+    },
   },
 
   'index': {
@@ -190,6 +231,9 @@ const NodeTypes = {
       { name: 'Index', type: SocketType.INT },
     ],
     defaults: {},
+    evaluate() {
+      return { outputs: [0] };
+    },
   },
 
   'separate_xyz': {
@@ -204,6 +248,10 @@ const NodeTypes = {
       { name: 'Z', type: SocketType.FLOAT },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      return { outputs: [v.x || 0, v.y || 0, v.z || 0] };
+    },
   },
 
   'combine_xyz': {
@@ -223,11 +271,17 @@ const NodeTypes = {
       { key: 'y', label: 'Y', type: 'float', min: -1000, max: 1000, step: 0.1 },
       { key: 'z', label: 'Z', type: 'float', min: -1000, max: 1000, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const x = inputs['X'] ?? values.x;
+      const y = inputs['Y'] ?? values.y;
+      const z = inputs['Z'] ?? values.z;
+      return { outputs: [{ x, y, z }] };
+    },
   },
 
-  // ===================================================================
+  // =========================================================================
   // MESH PRIMITIVES
-  // ===================================================================
+  // =========================================================================
   'mesh_cube': {
     label: 'Cube',
     category: 'MESH',
@@ -243,6 +297,16 @@ const NodeTypes = {
       { key: 'sizeY', label: 'Size Y', type: 'float', min: 0.01, max: 50, step: 0.1 },
       { key: 'sizeZ', label: 'Size Z', type: 'float', min: 0.01, max: 50, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const size = inputs['Size'] || { x: values.sizeX, y: values.sizeY, z: values.sizeZ };
+      return { outputs: [{
+        type: 'cube',
+        sizeX: size.x || values.sizeX,
+        sizeY: size.y || values.sizeY,
+        sizeZ: size.z || values.sizeZ,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'mesh_sphere': {
@@ -260,6 +324,14 @@ const NodeTypes = {
       { key: 'segments', label: 'Segments', type: 'int', min: 3, max: 64, step: 1 },
       { key: 'rings', label: 'Rings', type: 'int', min: 2, max: 32, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const r = inputs['Radius'] ?? values.radius;
+      return { outputs: [{
+        type: 'sphere', radius: r,
+        segments: values.segments, rings: values.rings,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'mesh_cylinder': {
@@ -278,6 +350,15 @@ const NodeTypes = {
       { key: 'depth', label: 'Depth', type: 'float', min: 0.01, max: 50, step: 0.1 },
       { key: 'vertices', label: 'Vertices', type: 'int', min: 3, max: 64, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const r = inputs['Radius'] ?? values.radius;
+      const d = inputs['Depth'] ?? values.depth;
+      return { outputs: [{
+        type: 'cylinder', radius: r, depth: d,
+        vertices: values.vertices,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'mesh_cone': {
@@ -297,6 +378,15 @@ const NodeTypes = {
       { key: 'depth', label: 'Depth', type: 'float', min: 0.01, max: 50, step: 0.1 },
       { key: 'vertices', label: 'Vertices', type: 'int', min: 3, max: 64, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const d = inputs['Depth'] ?? values.depth;
+      return { outputs: [{
+        type: 'cone',
+        radius1: values.radius1, radius2: values.radius2,
+        depth: d, vertices: values.vertices,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'mesh_torus': {
@@ -313,6 +403,14 @@ const NodeTypes = {
       { key: 'majorSegments', label: 'Major Segments', type: 'int', min: 3, max: 64, step: 1 },
       { key: 'minorSegments', label: 'Minor Segments', type: 'int', min: 3, max: 32, step: 1 },
     ],
+    evaluate(values) {
+      return { outputs: [{
+        type: 'torus',
+        majorRadius: values.majorRadius, minorRadius: values.minorRadius,
+        majorSegments: values.majorSegments, minorSegments: values.minorSegments,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'mesh_plane': {
@@ -331,6 +429,15 @@ const NodeTypes = {
       { key: 'subdX', label: 'Subdivisions X', type: 'int', min: 1, max: 100, step: 1 },
       { key: 'subdY', label: 'Subdivisions Y', type: 'int', min: 1, max: 100, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const sz = inputs['Size'] ?? null;
+      return { outputs: [{
+        type: 'plane',
+        sizeX: sz ?? values.sizeX, sizeY: sz ?? values.sizeY,
+        subdX: values.subdX, subdY: values.subdY,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'mesh_icosphere': {
@@ -347,6 +454,13 @@ const NodeTypes = {
       { key: 'radius', label: 'Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
       { key: 'detail', label: 'Detail', type: 'int', min: 0, max: 5, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const r = inputs['Radius'] ?? values.radius;
+      return { outputs: [{
+        type: 'icosphere', radius: r, detail: values.detail,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'mesh_line': {
@@ -368,11 +482,20 @@ const NodeTypes = {
       { key: 'endY', label: 'End Y', type: 'float', min: -50, max: 50, step: 0.1 },
       { key: 'endZ', label: 'End Z', type: 'float', min: -50, max: 50, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const count = inputs['Count'] ?? values.count;
+      return { outputs: [{
+        type: 'line', count: count,
+        start: { x: values.startX, y: values.startY, z: values.startZ },
+        end: { x: values.endX, y: values.endY, z: values.endZ },
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
-  // ===================================================================
-  // MESH OPERATIONS (geometry modification)
-  // ===================================================================
+  // =========================================================================
+  // MESH OPERATIONS
+  // =========================================================================
   'extrude_mesh': {
     label: 'Extrude Mesh',
     category: 'MESH_OPS',
@@ -393,6 +516,15 @@ const NodeTypes = {
       { key: 'offset', label: 'Offset', type: 'float', min: -10, max: 10, step: 0.05 },
       { key: 'individual', label: 'Individual', type: 'bool' },
     ],
+    evaluate(values, inputs) {
+      const mesh = inputs['Mesh'];
+      const offset = inputs['Offset'] ?? values.offset;
+      if (!mesh) return { outputs: [null] };
+      return { outputs: [mapGeo(mesh, g => {
+        g.extrude = { mode: values.mode, offset, individual: values.individual };
+        return g;
+      })] };
+    },
   },
 
   'scale_elements': {
@@ -413,6 +545,15 @@ const NodeTypes = {
       ]},
       { key: 'scale', label: 'Scale', type: 'float', min: 0, max: 5, step: 0.05 },
     ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      const scale = inputs['Scale'] ?? values.scale;
+      if (!geo) return { outputs: [null] };
+      return { outputs: [mapGeo(geo, g => {
+        g.scaleElements = { domain: values.domain, scale };
+        return g;
+      })] };
+    },
   },
 
   'subdivision_surface': {
@@ -429,6 +570,16 @@ const NodeTypes = {
     props: [
       { key: 'level', label: 'Level', type: 'int', min: 0, max: 4, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const mesh = inputs['Mesh'];
+      const lvl = inputs['Level'] ?? values.level;
+      if (!mesh) return { outputs: [null] };
+      return { outputs: [mapGeo(mesh, g => {
+        g.subdivisionSurface = (g.subdivisionSurface || 0) + lvl;
+        g.smooth = true;
+        return g;
+      })] };
+    },
   },
 
   'mesh_boolean': {
@@ -449,6 +600,19 @@ const NodeTypes = {
         { value: 'difference', label: 'Difference' },
       ]},
     ],
+    evaluate(values, inputs) {
+      const a = inputs['Mesh A'];
+      const b = inputs['Mesh B'];
+      if (!a) return { outputs: [null] };
+      const geoA = cloneGeo(a);
+      return { outputs: [{
+        type: 'boolean',
+        operation: values.operation,
+        meshA: geoA,
+        meshB: b ? cloneGeo(b) : null,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'triangulate': {
@@ -461,6 +625,14 @@ const NodeTypes = {
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const mesh = inputs['Mesh'];
+      if (!mesh) return { outputs: [null] };
+      return { outputs: [mapGeo(mesh, g => {
+        g.triangulate = true;
+        return g;
+      })] };
+    },
   },
 
   'dual_mesh': {
@@ -473,6 +645,14 @@ const NodeTypes = {
       { name: 'Dual Mesh', type: SocketType.GEOMETRY },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const mesh = inputs['Mesh'];
+      if (!mesh) return { outputs: [null] };
+      return { outputs: [mapGeo(mesh, g => {
+        g.dualMesh = true;
+        return g;
+      })] };
+    },
   },
 
   'flip_faces': {
@@ -485,6 +665,14 @@ const NodeTypes = {
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const mesh = inputs['Mesh'];
+      if (!mesh) return { outputs: [null] };
+      return { outputs: [mapGeo(mesh, g => {
+        g.flipFaces = true;
+        return g;
+      })] };
+    },
   },
 
   'split_edges': {
@@ -497,6 +685,14 @@ const NodeTypes = {
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const mesh = inputs['Mesh'];
+      if (!mesh) return { outputs: [null] };
+      return { outputs: [mapGeo(mesh, g => {
+        g.splitEdges = true;
+        return g;
+      })] };
+    },
   },
 
   'merge_by_distance': {
@@ -513,6 +709,15 @@ const NodeTypes = {
     props: [
       { key: 'distance', label: 'Distance', type: 'float', min: 0, max: 10, step: 0.001 },
     ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      const dist = inputs['Distance'] ?? values.distance;
+      if (!geo) return { outputs: [null] };
+      return { outputs: [mapGeo(geo, g => {
+        g.mergeByDistance = dist;
+        return g;
+      })] };
+    },
   },
 
   'delete_geometry': {
@@ -534,6 +739,15 @@ const NodeTypes = {
       ]},
       { key: 'invert', label: 'Invert', type: 'bool' },
     ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      const sel = inputs['Selection'] ?? true;
+      if (!geo) return { outputs: [null] };
+      if (sel && !values.invert) {
+        return { outputs: [null] };
+      }
+      return { outputs: [cloneGeo(geo)] };
+    },
   },
 
   'separate_geometry': {
@@ -548,11 +762,20 @@ const NodeTypes = {
       { name: 'Inverted', type: SocketType.GEOMETRY },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      const sel = inputs['Selection'] ?? true;
+      if (!geo) return { outputs: [null, null] };
+      if (sel) {
+        return { outputs: [cloneGeo(geo), null] };
+      }
+      return { outputs: [null, cloneGeo(geo)] };
+    },
   },
 
-  // ===================================================================
+  // =========================================================================
   // TRANSFORM
-  // ===================================================================
+  // =========================================================================
   'transform': {
     label: 'Transform Geometry',
     category: 'TRANSFORM',
@@ -581,11 +804,27 @@ const NodeTypes = {
       { key: 'sy', label: 'Scale Y', type: 'float', min: 0.01, max: 100, step: 0.1 },
       { key: 'sz', label: 'Scale Z', type: 'float', min: 0.01, max: 100, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      if (!geo) return { outputs: [null] };
+      const t = inputs['Translation'] || { x: values.tx, y: values.ty, z: values.tz };
+      const r = inputs['Rotation'] || { x: values.rx, y: values.ry, z: values.rz };
+      const s = inputs['Scale'] || { x: values.sx, y: values.sy, z: values.sz };
+      return { outputs: [mapGeo(geo, g => {
+        g.transforms = g.transforms || [];
+        g.transforms.push({
+          translate: { x: t.x ?? values.tx, y: t.y ?? values.ty, z: t.z ?? values.tz },
+          rotate: { x: (r.x ?? values.rx) * Math.PI / 180, y: (r.y ?? values.ry) * Math.PI / 180, z: (r.z ?? values.rz) * Math.PI / 180 },
+          scale: { x: s.x ?? values.sx, y: s.y ?? values.sy, z: s.z ?? values.sz },
+        });
+        return g;
+      })] };
+    },
   },
 
-  // ===================================================================
+  // =========================================================================
   // GEOMETRY OPERATIONS
-  // ===================================================================
+  // =========================================================================
   'join_geometry': {
     label: 'Join Geometry',
     category: 'GEOMETRY',
@@ -597,6 +836,14 @@ const NodeTypes = {
       { name: 'Geometry', type: SocketType.GEOMETRY },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const g1 = inputs['Geometry 1'];
+      const g2 = inputs['Geometry 2'];
+      const combined = [];
+      if (g1) combined.push(...geoToArray(g1));
+      if (g2) combined.push(...geoToArray(g2));
+      return { outputs: [combined.length > 0 ? combined : null] };
+    },
   },
 
   'subdivide': {
@@ -613,6 +860,15 @@ const NodeTypes = {
     props: [
       { key: 'level', label: 'Level', type: 'int', min: 0, max: 4, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const mesh = inputs['Mesh'];
+      const lvl = inputs['Level'] ?? values.level;
+      if (!mesh) return { outputs: [null] };
+      return { outputs: [mapGeo(mesh, g => {
+        g.subdivide = (g.subdivide || 0) + lvl;
+        return g;
+      })] };
+    },
   },
 
   'set_shade_smooth': {
@@ -629,6 +885,12 @@ const NodeTypes = {
     props: [
       { key: 'smooth', label: 'Smooth', type: 'bool' },
     ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      const sm = inputs['Smooth'] ?? values.smooth;
+      if (!geo) return { outputs: [null] };
+      return { outputs: [mapGeo(geo, g => { g.smooth = sm; return g; })] };
+    },
   },
 
   'bounding_box': {
@@ -643,6 +905,16 @@ const NodeTypes = {
       { name: 'Max', type: SocketType.VECTOR },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      if (!geo) return { outputs: [null, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] };
+      const bbGeo = {
+        type: 'cube', sizeX: 2, sizeY: 2, sizeZ: 2,
+        transforms: [], smooth: false,
+        wireframeOnly: true,
+      };
+      return { outputs: [bbGeo, { x: -1, y: -1, z: -1 }, { x: 1, y: 1, z: 1 }] };
+    },
   },
 
   'convex_hull': {
@@ -655,6 +927,14 @@ const NodeTypes = {
       { name: 'Convex Hull', type: SocketType.GEOMETRY },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      if (!geo) return { outputs: [null] };
+      return { outputs: [mapGeo(geo, g => {
+        g.convexHull = true;
+        return g;
+      })] };
+    },
   },
 
   'geometry_proximity': {
@@ -668,6 +948,9 @@ const NodeTypes = {
       { name: 'Distance', type: SocketType.FLOAT },
     ],
     defaults: {},
+    evaluate() {
+      return { outputs: [0] };
+    },
   },
 
   'distribute_points_on_faces': {
@@ -690,6 +973,20 @@ const NodeTypes = {
       { key: 'density', label: 'Density', type: 'float', min: 0.1, max: 100, step: 0.5 },
       { key: 'seed', label: 'Seed', type: 'int', min: 0, max: 9999, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const mesh = inputs['Mesh'];
+      const density = inputs['Density'] ?? values.density;
+      const seed = inputs['Seed'] ?? values.seed;
+      if (!mesh) return { outputs: [null] };
+      return { outputs: [{
+        type: 'points',
+        source: cloneGeo(mesh),
+        mode: values.mode,
+        density: density,
+        seed: seed,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'mesh_to_points': {
@@ -709,11 +1006,23 @@ const NodeTypes = {
         { value: 'edges', label: 'Edge Centers' },
       ]},
     ],
+    evaluate(values, inputs) {
+      const mesh = inputs['Mesh'];
+      if (!mesh) return { outputs: [null] };
+      return { outputs: [{
+        type: 'points',
+        source: cloneGeo(mesh),
+        mode: values.mode,
+        density: 1,
+        seed: 0,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
-  // ===================================================================
+  // =========================================================================
   // INSTANCE NODES
-  // ===================================================================
+  // =========================================================================
   'instance_on_points': {
     label: 'Instance on Points',
     category: 'INSTANCE',
@@ -732,6 +1041,21 @@ const NodeTypes = {
       { key: 'scaleY', label: 'Scale Y', type: 'float', min: 0.01, max: 10, step: 0.1 },
       { key: 'scaleZ', label: 'Scale Z', type: 'float', min: 0.01, max: 10, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const points = inputs['Points'];
+      const instance = inputs['Instance'];
+      const scale = inputs['Scale'] || { x: values.scaleX, y: values.scaleY, z: values.scaleZ };
+      const rotation = inputs['Rotation'] || { x: 0, y: 0, z: 0 };
+      if (!points || !instance) return { outputs: [points || null] };
+      return { outputs: [{
+        type: 'instance_on_points',
+        points: cloneGeo(points),
+        instance: cloneGeo(instance),
+        scale: { x: scale.x ?? values.scaleX, y: scale.y ?? values.scaleY, z: scale.z ?? values.scaleZ },
+        rotation: rotation,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'realize_instances': {
@@ -744,6 +1068,11 @@ const NodeTypes = {
       { name: 'Geometry', type: SocketType.GEOMETRY },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const instances = inputs['Instances'];
+      if (!instances) return { outputs: [null] };
+      return { outputs: [mapGeo(instances, g => { g.realized = true; return g; })] };
+    },
   },
 
   'rotate_instances': {
@@ -762,6 +1091,20 @@ const NodeTypes = {
       { key: 'ry', label: 'Rotation Y (deg)', type: 'float', min: -360, max: 360, step: 1 },
       { key: 'rz', label: 'Rotation Z (deg)', type: 'float', min: -360, max: 360, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const instances = inputs['Instances'];
+      const rot = inputs['Rotation'] || { x: values.rx, y: values.ry, z: values.rz };
+      if (!instances) return { outputs: [null] };
+      return { outputs: [mapGeo(instances, g => {
+        g.transforms = g.transforms || [];
+        g.transforms.push({
+          translate: { x: 0, y: 0, z: 0 },
+          rotate: { x: (rot.x ?? values.rx) * Math.PI / 180, y: (rot.y ?? values.ry) * Math.PI / 180, z: (rot.z ?? values.rz) * Math.PI / 180 },
+          scale: { x: 1, y: 1, z: 1 },
+        });
+        return g;
+      })] };
+    },
   },
 
   'scale_instances': {
@@ -780,6 +1123,20 @@ const NodeTypes = {
       { key: 'sy', label: 'Scale Y', type: 'float', min: 0.01, max: 100, step: 0.1 },
       { key: 'sz', label: 'Scale Z', type: 'float', min: 0.01, max: 100, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const instances = inputs['Instances'];
+      const sc = inputs['Scale'] || { x: values.sx, y: values.sy, z: values.sz };
+      if (!instances) return { outputs: [null] };
+      return { outputs: [mapGeo(instances, g => {
+        g.transforms = g.transforms || [];
+        g.transforms.push({
+          translate: { x: 0, y: 0, z: 0 },
+          rotate: { x: 0, y: 0, z: 0 },
+          scale: { x: sc.x ?? values.sx, y: sc.y ?? values.sy, z: sc.z ?? values.sz },
+        });
+        return g;
+      })] };
+    },
   },
 
   'translate_instances': {
@@ -798,11 +1155,25 @@ const NodeTypes = {
       { key: 'ty', label: 'Translation Y', type: 'float', min: -100, max: 100, step: 0.1 },
       { key: 'tz', label: 'Translation Z', type: 'float', min: -100, max: 100, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const instances = inputs['Instances'];
+      const tr = inputs['Translation'] || { x: values.tx, y: values.ty, z: values.tz };
+      if (!instances) return { outputs: [null] };
+      return { outputs: [mapGeo(instances, g => {
+        g.transforms = g.transforms || [];
+        g.transforms.push({
+          translate: { x: tr.x ?? values.tx, y: tr.y ?? values.ty, z: tr.z ?? values.tz },
+          rotate: { x: 0, y: 0, z: 0 },
+          scale: { x: 1, y: 1, z: 1 },
+        });
+        return g;
+      })] };
+    },
   },
 
-  // ===================================================================
+  // =========================================================================
   // CURVE NODES
-  // ===================================================================
+  // =========================================================================
   'curve_circle': {
     label: 'Curve Circle',
     category: 'CURVE',
@@ -817,6 +1188,14 @@ const NodeTypes = {
       { key: 'radius', label: 'Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
       { key: 'resolution', label: 'Resolution', type: 'int', min: 3, max: 128, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const r = inputs['Radius'] ?? values.radius;
+      return { outputs: [{
+        type: 'curve_circle',
+        radius: r, resolution: values.resolution,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'curve_line': {
@@ -838,6 +1217,16 @@ const NodeTypes = {
       { key: 'endY', label: 'End Y', type: 'float', min: -50, max: 50, step: 0.1 },
       { key: 'endZ', label: 'End Z', type: 'float', min: -50, max: 50, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const start = inputs['Start'] || { x: values.startX, y: values.startY, z: values.startZ };
+      const end = inputs['End'] || { x: values.endX, y: values.endY, z: values.endZ };
+      return { outputs: [{
+        type: 'curve_line',
+        start: { x: start.x ?? values.startX, y: start.y ?? values.startY, z: start.z ?? values.startZ },
+        end: { x: end.x ?? values.endX, y: end.y ?? values.endY, z: end.z ?? values.endZ },
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'curve_to_mesh': {
@@ -854,6 +1243,18 @@ const NodeTypes = {
     props: [
       { key: 'fillCaps', label: 'Fill Caps', type: 'bool' },
     ],
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      const profile = inputs['Profile'];
+      if (!curve) return { outputs: [null] };
+      return { outputs: [{
+        type: 'curve_to_mesh',
+        curve: cloneGeo(curve),
+        profile: profile ? cloneGeo(profile) : null,
+        fillCaps: values.fillCaps,
+        transforms: [], smooth: true,
+      }] };
+    },
   },
 
   'resample_curve': {
@@ -874,6 +1275,15 @@ const NodeTypes = {
       ]},
       { key: 'count', label: 'Count', type: 'int', min: 2, max: 256, step: 1 },
     ],
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      const count = inputs['Count'] ?? values.count;
+      if (!curve) return { outputs: [null] };
+      return { outputs: [mapGeo(curve, g => {
+        g.resample = { mode: values.mode, count };
+        return g;
+      })] };
+    },
   },
 
   'fill_curve': {
@@ -886,6 +1296,15 @@ const NodeTypes = {
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      if (!curve) return { outputs: [null] };
+      return { outputs: [{
+        type: 'fill_curve',
+        curve: cloneGeo(curve),
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
   'curve_spiral': {
@@ -903,11 +1322,20 @@ const NodeTypes = {
       { key: 'endRadius', label: 'End Radius', type: 'float', min: 0.01, max: 20, step: 0.1 },
       { key: 'resolution', label: 'Resolution', type: 'int', min: 8, max: 256, step: 4 },
     ],
+    evaluate(values) {
+      return { outputs: [{
+        type: 'spiral',
+        turns: values.turns, height: values.height,
+        startRadius: values.startRadius, endRadius: values.endRadius,
+        resolution: values.resolution,
+        transforms: [], smooth: false,
+      }] };
+    },
   },
 
-  // ===================================================================
+  // =========================================================================
   // MATH NODES
-  // ===================================================================
+  // =========================================================================
   'math': {
     label: 'Math',
     category: 'MATH',
@@ -953,6 +1381,57 @@ const NodeTypes = {
       { key: 'a', label: 'A', type: 'float', min: -1000, max: 1000, step: 0.1 },
       { key: 'b', label: 'B', type: 'float', min: -1000, max: 1000, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const a = inputs['A'] ?? values.a;
+      const b = inputs['B'] ?? values.b;
+      let val = 0;
+      switch (values.operation) {
+        case 'add': val = a + b; break;
+        case 'subtract': val = a - b; break;
+        case 'multiply': val = a * b; break;
+        case 'divide': val = b !== 0 ? a / b : 0; break;
+        case 'power': val = Math.pow(a, b); break;
+        case 'sqrt': val = Math.sqrt(Math.abs(a)); break;
+        case 'log': val = a > 0 ? Math.log(a) / (b > 0 && b !== 1 ? Math.log(b) : 1) : 0; break;
+        case 'modulo': val = b !== 0 ? ((a % b) + b) % b : 0; break;
+        case 'min': val = Math.min(a, b); break;
+        case 'max': val = Math.max(a, b); break;
+        case 'abs': val = Math.abs(a); break;
+        case 'floor': val = Math.floor(a); break;
+        case 'ceil': val = Math.ceil(a); break;
+        case 'round': val = Math.round(a); break;
+        case 'sin': val = Math.sin(a); break;
+        case 'cos': val = Math.cos(a); break;
+        case 'tan': val = Math.tan(a); break;
+        case 'asin': val = Math.asin(Math.max(-1, Math.min(1, a))); break;
+        case 'acos': val = Math.acos(Math.max(-1, Math.min(1, a))); break;
+        case 'atan': val = Math.atan(a); break;
+        case 'atan2': val = Math.atan2(a, b); break;
+        case 'sign': val = Math.sign(a); break;
+        case 'fract': val = a - Math.floor(a); break;
+        case 'snap': val = b !== 0 ? Math.floor(a / b) * b : a; break;
+        case 'pingpong': val = b !== 0 ? Math.abs(((a % (b * 2)) + b * 2) % (b * 2) - b) : 0; break;
+        case 'wrap': {
+          const range = b - 0;
+          val = range !== 0 ? a - Math.floor(a / range) * range : a;
+          break;
+        }
+        case 'smooth_min': {
+          const k = Math.max(b, 0.0001);
+          const h = Math.max(0, Math.min(1, 0.5 + 0.5 * (b - a) / k));
+          val = lerp(b, a, h) - k * h * (1 - h);
+          break;
+        }
+        case 'smooth_max': {
+          const k = Math.max(b, 0.0001);
+          const h = Math.max(0, Math.min(1, 0.5 + 0.5 * (a - b) / k));
+          val = lerp(b, a, h) + k * h * (1 - h);
+          break;
+        }
+      }
+      if (!isFinite(val)) val = 0;
+      return { outputs: [val] };
+    },
   },
 
   'vector_math': {
@@ -993,6 +1472,66 @@ const NodeTypes = {
         { value: 'tangent', label: 'Tangent' },
       ]},
     ],
+    evaluate(values, inputs) {
+      const a = inputs['A'] || { x: 0, y: 0, z: 0 };
+      const b = inputs['B'] || { x: 0, y: 0, z: 0 };
+      let vec = { x: 0, y: 0, z: 0 };
+      let scalar = 0;
+      switch (values.operation) {
+        case 'add': vec = { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; break;
+        case 'subtract': vec = { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; break;
+        case 'multiply': vec = { x: a.x * b.x, y: a.y * b.y, z: a.z * b.z }; break;
+        case 'divide': vec = {
+          x: b.x !== 0 ? a.x / b.x : 0,
+          y: b.y !== 0 ? a.y / b.y : 0,
+          z: b.z !== 0 ? a.z / b.z : 0,
+        }; break;
+        case 'cross': vec = {
+          x: a.y * b.z - a.z * b.y,
+          y: a.z * b.x - a.x * b.z,
+          z: a.x * b.y - a.y * b.x,
+        }; break;
+        case 'dot': scalar = a.x * b.x + a.y * b.y + a.z * b.z; break;
+        case 'distance': {
+          const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+          scalar = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        } break;
+        case 'normalize': {
+          const len = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z) || 1;
+          vec = { x: a.x / len, y: a.y / len, z: a.z / len };
+        } break;
+        case 'length': scalar = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z); break;
+        case 'scale': vec = { x: a.x * b.x, y: a.y * b.x, z: a.z * b.x }; break;
+        case 'reflect': {
+          const d = 2 * (a.x * b.x + a.y * b.y + a.z * b.z);
+          vec = { x: a.x - d * b.x, y: a.y - d * b.y, z: a.z - d * b.z };
+        } break;
+        case 'project': {
+          const d = (a.x * b.x + a.y * b.y + a.z * b.z);
+          const bl = b.x * b.x + b.y * b.y + b.z * b.z;
+          const f = bl !== 0 ? d / bl : 0;
+          vec = { x: b.x * f, y: b.y * f, z: b.z * f };
+        } break;
+        case 'faceforward': {
+          const d = a.x * b.x + a.y * b.y + a.z * b.z;
+          vec = d < 0 ? { x: a.x, y: a.y, z: a.z } : { x: -a.x, y: -a.y, z: -a.z };
+        } break;
+        case 'snap': vec = {
+          x: b.x !== 0 ? Math.floor(a.x / b.x) * b.x : a.x,
+          y: b.y !== 0 ? Math.floor(a.y / b.y) * b.y : a.y,
+          z: b.z !== 0 ? Math.floor(a.z / b.z) * b.z : a.z,
+        }; break;
+        case 'floor': vec = { x: Math.floor(a.x), y: Math.floor(a.y), z: Math.floor(a.z) }; break;
+        case 'ceil': vec = { x: Math.ceil(a.x), y: Math.ceil(a.y), z: Math.ceil(a.z) }; break;
+        case 'abs': vec = { x: Math.abs(a.x), y: Math.abs(a.y), z: Math.abs(a.z) }; break;
+        case 'min': vec = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), z: Math.min(a.z, b.z) }; break;
+        case 'max': vec = { x: Math.max(a.x, b.x), y: Math.max(a.y, b.y), z: Math.max(a.z, b.z) }; break;
+        case 'sine': vec = { x: Math.sin(a.x), y: Math.sin(a.y), z: Math.sin(a.z) }; break;
+        case 'cosine': vec = { x: Math.cos(a.x), y: Math.cos(a.y), z: Math.cos(a.z) }; break;
+        case 'tangent': vec = { x: Math.tan(a.x), y: Math.tan(a.y), z: Math.tan(a.z) }; break;
+      }
+      return { outputs: [vec, scalar] };
+    },
   },
 
   'boolean_math': {
@@ -1019,6 +1558,21 @@ const NodeTypes = {
       { key: 'a', label: 'A', type: 'bool' },
       { key: 'b', label: 'B', type: 'bool' },
     ],
+    evaluate(values, inputs) {
+      const a = inputs['A'] ?? values.a;
+      const b = inputs['B'] ?? values.b;
+      let val = false;
+      switch (values.operation) {
+        case 'and': val = a && b; break;
+        case 'or': val = a || b; break;
+        case 'not': val = !a; break;
+        case 'nand': val = !(a && b); break;
+        case 'nor': val = !(a || b); break;
+        case 'xor': val = (a || b) && !(a && b); break;
+        case 'xnor': val = !((a || b) && !(a && b)); break;
+      }
+      return { outputs: [!!val] };
+    },
   },
 
   'clamp': {
@@ -1038,6 +1592,12 @@ const NodeTypes = {
       { key: 'min', label: 'Min', type: 'float', min: -1000, max: 1000, step: 0.01 },
       { key: 'max', label: 'Max', type: 'float', min: -1000, max: 1000, step: 0.01 },
     ],
+    evaluate(values, inputs) {
+      const v = inputs['Value'] ?? values.value;
+      const mn = inputs['Min'] ?? values.min;
+      const mx = inputs['Max'] ?? values.max;
+      return { outputs: [Math.min(Math.max(v, mn), mx)] };
+    },
   },
 
   'map_range': {
@@ -1057,11 +1617,21 @@ const NodeTypes = {
       { key: 'toMin', label: 'To Min', type: 'float', min: -1000, max: 1000, step: 0.1 },
       { key: 'toMax', label: 'To Max', type: 'float', min: -1000, max: 1000, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const v = inputs['Value'] ?? values.value;
+      const fMin = values.fromMin;
+      const fMax = values.fromMax;
+      const tMin = values.toMin;
+      const tMax = values.toMax;
+      const range = fMax - fMin;
+      const mapped = range !== 0 ? tMin + ((v - fMin) / range) * (tMax - tMin) : tMin;
+      return { outputs: [mapped] };
+    },
   },
 
-  // ===================================================================
+  // =========================================================================
   // UTILITY NODES
-  // ===================================================================
+  // =========================================================================
   'compare': {
     label: 'Compare',
     category: 'UTILITY',
@@ -1086,6 +1656,21 @@ const NodeTypes = {
       { key: 'b', label: 'B', type: 'float', min: -1000, max: 1000, step: 0.1 },
       { key: 'epsilon', label: 'Epsilon', type: 'float', min: 0, max: 1, step: 0.001 },
     ],
+    evaluate(values, inputs) {
+      const a = inputs['A'] ?? values.a;
+      const b = inputs['B'] ?? values.b;
+      const eps = values.epsilon;
+      let val = false;
+      switch (values.operation) {
+        case 'less_than': val = a < b; break;
+        case 'less_equal': val = a <= b; break;
+        case 'greater_than': val = a > b; break;
+        case 'greater_equal': val = a >= b; break;
+        case 'equal': val = Math.abs(a - b) <= eps; break;
+        case 'not_equal': val = Math.abs(a - b) > eps; break;
+      }
+      return { outputs: [val] };
+    },
   },
 
   'switch': {
@@ -1103,6 +1688,12 @@ const NodeTypes = {
     props: [
       { key: 'switch_val', label: 'Switch', type: 'bool' },
     ],
+    evaluate(values, inputs) {
+      const sw = inputs['Switch'] ?? values.switch_val;
+      const falseVal = inputs['False'] || null;
+      const trueVal = inputs['True'] || null;
+      return { outputs: [sw ? trueVal : falseVal] };
+    },
   },
 
   'switch_float': {
@@ -1122,6 +1713,12 @@ const NodeTypes = {
       { key: 'falseVal', label: 'False', type: 'float', min: -1000, max: 1000, step: 0.1 },
       { key: 'trueVal', label: 'True', type: 'float', min: -1000, max: 1000, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const sw = inputs['Switch'] ?? values.switch_val;
+      const falseVal = inputs['False'] ?? values.falseVal;
+      const trueVal = inputs['True'] ?? values.trueVal;
+      return { outputs: [sw ? trueVal : falseVal] };
+    },
   },
 
   'switch_vector': {
@@ -1139,11 +1736,17 @@ const NodeTypes = {
     props: [
       { key: 'switch_val', label: 'Switch', type: 'bool' },
     ],
+    evaluate(values, inputs) {
+      const sw = inputs['Switch'] ?? values.switch_val;
+      const falseVal = inputs['False'] || { x: 0, y: 0, z: 0 };
+      const trueVal = inputs['True'] || { x: 0, y: 0, z: 0 };
+      return { outputs: [sw ? trueVal : falseVal] };
+    },
   },
 
-  // ===================================================================
+  // =========================================================================
   // TEXTURE NODES
-  // ===================================================================
+  // =========================================================================
   'noise_texture': {
     label: 'Noise Texture',
     category: 'TEXTURE',
@@ -1162,6 +1765,21 @@ const NodeTypes = {
       { key: 'roughness', label: 'Roughness', type: 'float', min: 0, max: 1, step: 0.05 },
       { key: 'distortion', label: 'Distortion', type: 'float', min: 0, max: 10, step: 0.1 },
     ],
+    evaluate(values, inputs) {
+      const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const sc = inputs['Scale'] ?? values.scale;
+      const detail = values.detail;
+      const rough = values.roughness;
+      const dist = values.distortion;
+      let sx = v.x * sc, sy = v.y * sc, sz = v.z * sc;
+      if (dist > 0) {
+        sx += valueNoise3D(sx + 100, sy, sz) * dist;
+        sy += valueNoise3D(sx, sy + 100, sz) * dist;
+        sz += valueNoise3D(sx, sy, sz + 100) * dist;
+      }
+      const fac = fbmNoise3D(sx, sy, sz, Math.ceil(detail) + 1, rough);
+      return { outputs: [fac, { x: fac, y: fac * 0.8, z: fac * 0.6 }] };
+    },
   },
 
   'voronoi_texture': {
@@ -1185,6 +1803,13 @@ const NodeTypes = {
       ]},
       { key: 'randomness', label: 'Randomness', type: 'float', min: 0, max: 1, step: 0.05 },
     ],
+    evaluate(values, inputs) {
+      const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const sc = inputs['Scale'] ?? values.scale;
+      const sx = v.x * sc, sy = v.y * sc, sz = v.z * sc;
+      const { dist, col } = voronoi3D(sx, sy, sz, values.randomness, values.feature);
+      return { outputs: [dist, col] };
+    },
   },
 
   'white_noise': {
@@ -1198,5 +1823,16 @@ const NodeTypes = {
       { name: 'Color', type: SocketType.VECTOR },
     ],
     defaults: {},
+    evaluate(values, inputs) {
+      const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const val = hash3(Math.floor(v.x * 1000), Math.floor(v.y * 1000), Math.floor(v.z * 1000));
+      const col = {
+        x: hash3(Math.floor(v.x * 1000) + 17, Math.floor(v.y * 1000) + 31, Math.floor(v.z * 1000) + 59),
+        y: hash3(Math.floor(v.x * 1000) + 73, Math.floor(v.y * 1000) + 97, Math.floor(v.z * 1000) + 113),
+        z: hash3(Math.floor(v.x * 1000) + 151, Math.floor(v.y * 1000) + 173, Math.floor(v.z * 1000) + 199),
+      };
+      return { outputs: [val, col] };
+    },
   },
-};
+
+});

@@ -1,7 +1,10 @@
 /**
- * Canvas-based node graph renderer with touch support.
+ * ui/renderer.js - Canvas-based node graph renderer with touch support.
+ * Refactored as ES module using the shared registry.
  */
-class GraphRenderer {
+import { registry, SocketColors } from '../core/registry.js';
+
+export class GraphRenderer {
   constructor(canvas, graph) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
@@ -20,9 +23,9 @@ class GraphRenderer {
     this.nodePadding = 8;
 
     // Interaction state
-    this.dragging = null;      // { nodeId, offsetX, offsetY }
+    this.dragging = null;
     this.panning = false;
-    this.connecting = null;    // { fromNode, fromSocket, isOutput, x, y }
+    this.connecting = null;
     this.selectedNode = null;
     this.hoveredSocket = null;
     this.pinchDist = null;
@@ -32,6 +35,7 @@ class GraphRenderer {
     this.touchStartTime = 0;
     this.lastTapTime = 0;
 
+    // Callbacks
     this.onNodeSelected = null;
     this.onNodeDoubleTap = null;
     this.onConnectionMade = null;
@@ -40,7 +44,6 @@ class GraphRenderer {
     this._setupEvents();
     this._resize();
 
-    // Start render loop
     this._raf = null;
     this._startLoop();
   }
@@ -100,7 +103,6 @@ class GraphRenderer {
   }
 
   hitTestNode(wx, wy) {
-    // Iterate in reverse (top-most first)
     for (let i = this.graph.nodes.length - 1; i >= 0; i--) {
       const node = this.graph.nodes[i];
       const h = this.getNodeHeight(node);
@@ -137,17 +139,14 @@ class GraphRenderer {
 
   // ===== Event handling =====
   _setupEvents() {
-    // Resize
     this._resizeHandler = () => this._resize();
     window.addEventListener('resize', this._resizeHandler);
 
-    // Touch events
     this.canvas.addEventListener('touchstart', (e) => this._onTouchStart(e), { passive: false });
     this.canvas.addEventListener('touchmove', (e) => this._onTouchMove(e), { passive: false });
     this.canvas.addEventListener('touchend', (e) => this._onTouchEnd(e), { passive: false });
     this.canvas.addEventListener('touchcancel', (e) => this._onTouchEnd(e), { passive: false });
 
-    // Mouse events (for desktop)
     this.canvas.addEventListener('mousedown', (e) => this._onMouseDown(e));
     this.canvas.addEventListener('mousemove', (e) => this._onMouseMove(e));
     this.canvas.addEventListener('mouseup', (e) => this._onMouseUp(e));
@@ -164,7 +163,6 @@ class GraphRenderer {
     e.preventDefault();
 
     if (e.touches.length === 2) {
-      // Pinch zoom
       const t1 = this._getTouchPos(e.touches[0]);
       const t2 = this._getTouchPos(e.touches[1]);
       this.pinchDist = Math.hypot(t2.x - t1.x, t2.y - t1.y);
@@ -177,7 +175,6 @@ class GraphRenderer {
     const pos = this._getTouchPos(e.touches[0]);
     const world = this.screenToWorld(pos.x, pos.y);
 
-    // Check socket hit
     const socket = this.hitTestSocket(world.x, world.y);
     if (socket) {
       this.connecting = {
@@ -191,10 +188,8 @@ class GraphRenderer {
       return;
     }
 
-    // Check node hit
     const node = this.hitTestNode(world.x, world.y);
     if (node) {
-      // Double-tap detection
       const now = Date.now();
       if (now - this.lastTapTime < 350 && this.selectedNode === node.id) {
         if (this.onNodeDoubleTap) this.onNodeDoubleTap(node);
@@ -206,7 +201,6 @@ class GraphRenderer {
       this.selectedNode = node.id;
       if (this.onNodeSelected) this.onNodeSelected(node);
 
-      // Bring to front
       const idx = this.graph.nodes.indexOf(node);
       if (idx >= 0) {
         this.graph.nodes.splice(idx, 1);
@@ -223,7 +217,6 @@ class GraphRenderer {
       };
       this.touchStartTime = Date.now();
     } else {
-      // Pan
       this.panning = true;
       this.lastTouchPos = pos;
       this.selectedNode = null;
@@ -243,13 +236,11 @@ class GraphRenderer {
       const scale = newDist / this.pinchDist;
       const newZoom = Math.min(3, Math.max(0.2, this.zoom * scale));
 
-      // Zoom around pinch center
       this.panX = center.x - (center.x - this.panX) * (newZoom / this.zoom);
       this.panY = center.y - (center.y - this.panY) * (newZoom / this.zoom);
       this.zoom = newZoom;
       this.pinchDist = newDist;
 
-      // Also pan
       if (this.pinchCenter) {
         this.panX += center.x - this.pinchCenter.x;
         this.panY += center.y - this.pinchCenter.y;
@@ -307,9 +298,6 @@ class GraphRenderer {
     }
 
     if (this.dragging) {
-      if (this.dragging.moved) {
-        // Save undo for the move
-      }
       this.dragging = null;
     }
 
@@ -388,7 +376,6 @@ class GraphRenderer {
       this.lastTouchPos = pos;
     }
 
-    // Update hovered socket
     const world = this.screenToWorld(pos.x, pos.y);
     this.hoveredSocket = this.hitTestSocket(world.x, world.y);
   }
@@ -471,26 +458,21 @@ class GraphRenderer {
     const w = this.viewWidth;
     const h = this.viewHeight;
 
-    // Clear
     ctx.fillStyle = '#1a1a2e';
     ctx.fillRect(0, 0, w, h);
 
-    // Draw grid
     this._drawGrid(ctx, w, h);
 
     ctx.save();
     ctx.translate(this.panX, this.panY);
     ctx.scale(this.zoom, this.zoom);
 
-    // Draw connections
     this._drawConnections(ctx);
 
-    // Draw active connection line
     if (this.connecting) {
       this._drawActiveConnection(ctx);
     }
 
-    // Draw nodes
     for (const node of this.graph.nodes) {
       this._drawNode(ctx, node);
     }
@@ -516,7 +498,6 @@ class GraphRenderer {
     }
     ctx.stroke();
 
-    // Major grid
     const majorSize = gridSize * 5;
     const majorOffX = this.panX % majorSize;
     const majorOffY = this.panY % majorSize;
@@ -587,7 +568,9 @@ class GraphRenderer {
     const w = this.nodeWidth;
     const h = this.getNodeHeight(node);
     const r = 8;
-    const cat = NodeCategories[def.category] || {};
+    const graphType = this.graph.graphType;
+    const categories = registry.getCategories(graphType);
+    const cat = categories[def.category] || {};
     const isSelected = this.selectedNode === node.id;
 
     // Shadow
@@ -634,7 +617,6 @@ class GraphRenderer {
     for (let i = 0; i < maxRows; i++) {
       const rowY = y + this.nodeHeaderH + i * this.socketRowH;
 
-      // Subtle row separator
       if (i > 0) {
         ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 1;
@@ -651,7 +633,6 @@ class GraphRenderer {
         const sy = rowY + this.socketRowH / 2;
         const color = SocketColors[inp.type] || '#90a4ae';
 
-        // Check if connected
         const connected = this.graph.getInputConnection(node.id, i);
 
         ctx.fillStyle = connected ? color : '#232b3e';

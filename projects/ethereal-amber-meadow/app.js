@@ -1,15 +1,43 @@
 /**
- * Main application - ties together the graph, renderer, viewport, and UI.
+ * app.js - Main application controller (ES module).
+ * Ties together the graph, renderer, viewport, shader preview, and UI.
+ * Supports both geometry and shader graph types via tabs.
  */
+import { registry } from './core/registry.js';
+import { NodeGraph } from './core/graph.js';
+
+// Import node registrations (side-effect modules)
+import './geo/nodes.js';
+import './shader/nodes.js';
+
+import { GraphRenderer } from './ui/renderer.js';
+import { Viewport3D } from './ui/viewport.js';
+import { ShaderPreview } from './shader/preview.js';
+import { compileShader } from './shader/compiler.js';
+
 (function () {
   'use strict';
 
-  // ===== Core instances =====
-  const graph = new NodeGraph();
+  // ===== Dual graph instances =====
+  const geoGraph = new NodeGraph('geo');
+  const shaderGraph = new NodeGraph('shader');
+  let activeGraphType = 'geo';
+  let activeGraph = geoGraph;
+
+  // ===== Core UI instances =====
   const graphCanvas = document.getElementById('graph-canvas');
-  const renderer = new GraphRenderer(graphCanvas, graph);
+  let renderer = new GraphRenderer(graphCanvas, activeGraph);
+
   const threeCanvas = document.getElementById('three-canvas');
   const viewport = new Viewport3D(threeCanvas);
+
+  const shaderCanvas = document.getElementById('shader-canvas');
+  let shaderPreview = null;
+  try {
+    shaderPreview = new ShaderPreview(shaderCanvas);
+  } catch (e) {
+    console.warn('Shader preview init failed:', e);
+  }
 
   // ===== UI Elements =====
   const btnMenu = document.getElementById('btn-menu');
@@ -30,45 +58,104 @@
   const propsContent = document.getElementById('props-content');
   const btnDeleteNode = document.getElementById('btn-delete-node');
   const viewport3d = document.getElementById('viewport-3d');
+  const shaderPreviewEl = document.getElementById('shader-preview');
   const btnResetCam = document.getElementById('btn-reset-cam');
   const btnWireframe = document.getElementById('btn-wireframe');
   const viewportInfo = document.getElementById('viewport-info');
+  const shaderPreviewInfo = document.getElementById('shader-preview-info');
   const statusText = document.getElementById('status-text');
+  const graphTabs = document.getElementById('graph-tabs');
+  const btnShaderShape = document.getElementById('btn-shader-shape');
 
   let viewportVisible = false;
+  let shaderPreviewVisible = false;
   let currentPropsNode = null;
 
-  // ===== Initialize default scene =====
-  const GRAPH_VERSION = 2; // Bump when node types change
+  // ===== Graph Version & Storage =====
+  const GRAPH_VERSION = 3;
 
-  function initDefaultScene() {
+  function getStorageKey(graphType) {
+    return graphType === 'shader' ? 'geonodes_shader_graph' : 'geonodes_graph';
+  }
+
+  function initDefaultScene(graph) {
     const savedVersion = localStorage.getItem('geonodes_version');
-    const saved = localStorage.getItem('geonodes_graph');
+    const saved = localStorage.getItem(getStorageKey(graph.graphType));
     if (saved && parseInt(savedVersion) === GRAPH_VERSION && graph.fromJSON(saved)) {
-      statusText.textContent = 'Loaded saved graph';
+      statusText.textContent = `Loaded saved ${graph.graphType} graph`;
       return;
     }
 
-    // Create a default setup: Cube -> Transform -> Output
-    const cubeNode = graph.addNode('mesh_cube', 50, 100);
-    const transformNode = graph.addNode('transform', 300, 80);
-    const outputNode = graph.addNode('output', 550, 120);
-
-    if (cubeNode && transformNode && outputNode) {
-      graph.addConnection(cubeNode.id, 0, transformNode.id, 0);
-      graph.addConnection(transformNode.id, 0, outputNode.id, 0);
+    if (graph.graphType === 'geo') {
+      const cubeNode = graph.addNode('mesh_cube', 50, 100);
+      const transformNode = graph.addNode('transform', 300, 80);
+      const outputNode = graph.addNode('output', 550, 120);
+      if (cubeNode && transformNode && outputNode) {
+        graph.addConnection(cubeNode.id, 0, transformNode.id, 0);
+        graph.addConnection(transformNode.id, 0, outputNode.id, 0);
+      }
+      statusText.textContent = 'Default geometry scene loaded';
+    } else if (graph.graphType === 'shader') {
+      const colorNode = graph.addNode('color_value', 50, 80);
+      const bsdfNode = graph.addNode('principled_bsdf', 300, 60);
+      const outputNode = graph.addNode('shader_output', 550, 100);
+      if (colorNode && bsdfNode && outputNode) {
+        graph.addConnection(colorNode.id, 0, bsdfNode.id, 0);
+        graph.addConnection(bsdfNode.id, 0, outputNode.id, 0);
+      }
+      statusText.textContent = 'Default shader scene loaded';
     }
-
-    statusText.textContent = 'Default scene loaded';
   }
 
   function saveGraph() {
     try {
-      localStorage.setItem('geonodes_graph', graph.toJSON());
+      localStorage.setItem(getStorageKey(activeGraph.graphType), activeGraph.toJSON());
       localStorage.setItem('geonodes_version', GRAPH_VERSION.toString());
+      localStorage.setItem('geonodes_active_tab', activeGraphType);
     } catch (e) {
-      // Storage full, ignore
+      // Storage full
     }
+  }
+
+  // ===== Tab Switching =====
+  function switchTab(graphType) {
+    if (graphType === activeGraphType) return;
+
+    // Save current state
+    saveGraph();
+    closeProperties();
+
+    activeGraphType = graphType;
+    activeGraph = graphType === 'shader' ? shaderGraph : geoGraph;
+
+    // Update renderer to use new graph
+    renderer.destroy();
+    renderer = new GraphRenderer(graphCanvas, activeGraph);
+    setupRendererCallbacks();
+    renderer.zoomToFit();
+
+    // Update tab UI
+    graphTabs.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === graphType);
+    });
+
+    // Toggle viewport vs shader preview
+    if (graphType === 'shader') {
+      if (viewportVisible) {
+        viewport3d.classList.add('hidden');
+        viewport.stop();
+        viewportVisible = false;
+      }
+    } else {
+      if (shaderPreviewVisible) {
+        shaderPreviewEl.classList.add('hidden');
+        if (shaderPreview) shaderPreview.stop();
+        shaderPreviewVisible = false;
+      }
+    }
+
+    statusText.textContent = `Switched to ${graphType === 'shader' ? 'Shader' : 'Geometry'} graph`;
+    setTimeout(() => renderer._resize(), 50);
   }
 
   // ===== Side Menu (Add Node) =====
@@ -94,10 +181,14 @@
   function buildNodeList(filter) {
     nodeCategories.innerHTML = '';
     const lowerFilter = filter.toLowerCase();
+    const nodeTypes = registry.getNodeTypes(activeGraphType);
+    const categories = registry.getCategories(activeGraphType);
+
+    const outputTypeId = activeGraphType === 'shader' ? 'shader_output' : 'output';
 
     const grouped = {};
-    for (const [typeId, def] of Object.entries(NodeTypes)) {
-      if (typeId === 'output') continue; // Don't show output in menu
+    for (const [typeId, def] of Object.entries(nodeTypes)) {
+      if (typeId === outputTypeId) continue;
       if (lowerFilter && !def.label.toLowerCase().includes(lowerFilter)) continue;
 
       const cat = def.category;
@@ -106,7 +197,7 @@
     }
 
     for (const [catId, items] of Object.entries(grouped)) {
-      const catDef = NodeCategories[catId];
+      const catDef = categories[catId];
       if (!catDef) continue;
 
       const section = document.createElement('div');
@@ -136,13 +227,13 @@
 
   function addNodeToCenter(typeId) {
     const center = renderer.screenToWorld(renderer.viewWidth / 2, renderer.viewHeight / 2);
-    // Offset slightly randomly to avoid stacking
     const x = center.x - renderer.nodeWidth / 2 + (Math.random() - 0.5) * 40;
     const y = center.y - 40 + (Math.random() - 0.5) * 40;
-    const node = graph.addNode(typeId, x, y);
+    const node = activeGraph.addNode(typeId, x, y);
     if (node) {
       renderer.selectedNode = node.id;
-      statusText.textContent = `Added ${NodeTypes[typeId]?.label || typeId}`;
+      const def = registry.getNodeDef(activeGraphType, typeId);
+      statusText.textContent = `Added ${def?.label || typeId}`;
       saveGraph();
     }
   }
@@ -151,7 +242,7 @@
   function openProperties(node) {
     if (!node) return;
     currentPropsNode = node;
-    const def = graph.getNodeDef(node);
+    const def = activeGraph.getNodeDef(node);
     if (!def) return;
 
     propsTitle.textContent = def.label;
@@ -199,7 +290,7 @@
 
             slider.addEventListener('input', () => {
               let v = prop.type === 'int' ? parseInt(slider.value) : parseFloat(slider.value);
-              graph.setNodeValue(node.id, prop.key, v);
+              activeGraph.setNodeValue(node.id, prop.key, v);
               valDisplay.textContent = formatNum(v, prop.type);
               numInput.value = v;
               saveGraph();
@@ -208,7 +299,7 @@
             numInput.addEventListener('change', () => {
               let v = prop.type === 'int' ? parseInt(numInput.value) : parseFloat(numInput.value);
               if (isNaN(v)) v = 0;
-              graph.setNodeValue(node.id, prop.key, v);
+              activeGraph.setNodeValue(node.id, prop.key, v);
               slider.value = v;
               valDisplay.textContent = formatNum(v, prop.type);
               saveGraph();
@@ -235,7 +326,7 @@
             cbLabel.style.fontSize = '13px';
 
             cb.addEventListener('change', () => {
-              graph.setNodeValue(node.id, prop.key, cb.checked);
+              activeGraph.setNodeValue(node.id, prop.key, cb.checked);
               cbLabel.textContent = cb.checked ? 'On' : 'Off';
               saveGraph();
             });
@@ -257,7 +348,7 @@
               select.appendChild(option);
             }
             select.addEventListener('change', () => {
-              graph.setNodeValue(node.id, prop.key, select.value);
+              activeGraph.setNodeValue(node.id, prop.key, select.value);
               saveGraph();
             });
             group.appendChild(select);
@@ -269,10 +360,10 @@
       }
     }
 
-    // Show connections info
+    // Connections info
     const connInfo = document.createElement('div');
     connInfo.style.cssText = 'margin-top:16px;padding-top:12px;border-top:1px solid var(--border);';
-    const conns = graph.connections.filter(c => c.fromNode === node.id || c.toNode === node.id);
+    const conns = activeGraph.connections.filter(c => c.fromNode === node.id || c.toNode === node.id);
     connInfo.innerHTML = `<div class="prop-label">Connections: ${conns.length}</div>
       <div style="font-size:12px;color:var(--text-dim);">Node ID: ${node.id}</div>`;
     propsContent.appendChild(connInfo);
@@ -298,8 +389,12 @@
     return parseFloat(v).toFixed(2);
   }
 
-  // ===== 3D Viewport =====
+  // ===== 3D Viewport (Geo) =====
   function toggleViewport() {
+    if (activeGraphType === 'shader') {
+      toggleShaderPreview();
+      return;
+    }
     viewportVisible = !viewportVisible;
     if (viewportVisible) {
       viewport3d.classList.remove('hidden');
@@ -310,7 +405,22 @@
       viewport3d.classList.add('hidden');
       viewport.stop();
     }
-    // Re-resize graph canvas
+    setTimeout(() => renderer._resize(), 50);
+  }
+
+  function toggleShaderPreview() {
+    shaderPreviewVisible = !shaderPreviewVisible;
+    if (shaderPreviewVisible) {
+      shaderPreviewEl.classList.remove('hidden');
+      if (shaderPreview) {
+        shaderPreview.start();
+        shaderPreview.resize();
+      }
+      runGraph();
+    } else {
+      shaderPreviewEl.classList.add('hidden');
+      if (shaderPreview) shaderPreview.stop();
+    }
     setTimeout(() => renderer._resize(), 50);
   }
 
@@ -318,7 +428,7 @@
     const app = document.getElementById('app');
     app.classList.add('running');
 
-    const result = graph.evaluate();
+    const result = activeGraph.evaluate();
 
     if (result.error) {
       statusText.textContent = 'Error: ' + result.error;
@@ -326,21 +436,59 @@
       statusText.textContent = `Evaluated (${result.evalTime || '?'}ms)`;
     }
 
-    // Show viewport if not already
-    if (!viewportVisible) {
-      viewportVisible = true;
-      viewport3d.classList.remove('hidden');
-      viewport.start();
-      viewport.resize();
-      setTimeout(() => renderer._resize(), 50);
+    if (activeGraphType === 'geo') {
+      // Show geo viewport
+      if (!viewportVisible) {
+        viewportVisible = true;
+        viewport3d.classList.remove('hidden');
+        viewport.start();
+        viewport.resize();
+        setTimeout(() => renderer._resize(), 50);
+      }
+
+      const stats = viewport.updateGeometry(result.geometries);
+      viewportInfo.textContent = `Verts: ${stats.verts} | Faces: ${stats.faces}`;
+    } else if (activeGraphType === 'shader') {
+      // Show shader preview
+      if (!shaderPreviewVisible) {
+        shaderPreviewVisible = true;
+        shaderPreviewEl.classList.remove('hidden');
+        if (shaderPreview) {
+          shaderPreview.start();
+          shaderPreview.resize();
+        }
+        setTimeout(() => renderer._resize(), 50);
+      }
+
+      if (result.shaderResult && shaderPreview) {
+        try {
+          const compiled = compileShader(result.shaderResult);
+          shaderPreview.updateShader(compiled);
+          shaderPreviewInfo.textContent = 'Shader compiled';
+        } catch (e) {
+          shaderPreviewInfo.textContent = 'Compile error: ' + e.message;
+        }
+      }
     }
 
-    const stats = viewport.updateGeometry(result.geometries);
-    viewportInfo.textContent = `Verts: ${stats.verts} | Faces: ${stats.faces}`;
-
     saveGraph();
-
     setTimeout(() => app.classList.remove('running'), 500);
+  }
+
+  // ===== Renderer callbacks =====
+  function setupRendererCallbacks() {
+    renderer.onNodeSelected = (node) => {
+      if (!node) return;
+    };
+
+    renderer.onNodeDoubleTap = (node) => {
+      openProperties(node);
+    };
+
+    renderer.onConnectionMade = () => {
+      statusText.textContent = 'Connected';
+      saveGraph();
+    };
   }
 
   // ===== Event Bindings =====
@@ -358,13 +506,12 @@
 
   btnDeleteNode.addEventListener('click', () => {
     if (currentPropsNode) {
-      const def = graph.getNodeDef(currentPropsNode);
-      // Don't delete the output node
+      const def = activeGraph.getNodeDef(currentPropsNode);
       if (def?.singular) {
         statusText.textContent = 'Cannot delete output node';
         return;
       }
-      graph.removeNode(currentPropsNode.id);
+      activeGraph.removeNode(currentPropsNode.id);
       renderer.selectedNode = null;
       closeProperties();
       statusText.textContent = 'Node deleted';
@@ -377,7 +524,7 @@
   btnZoomFit.addEventListener('click', () => renderer.zoomToFit());
 
   btnUndo.addEventListener('click', () => {
-    if (graph.undo()) {
+    if (activeGraph.undo()) {
       renderer.selectedNode = null;
       statusText.textContent = 'Undo';
       saveGraph();
@@ -392,22 +539,23 @@
     statusText.textContent = wf ? 'Wireframe on' : 'Wireframe off';
   });
 
-  // Renderer callbacks
-  renderer.onNodeSelected = (node) => {
-    if (!node) return;
-    // Don't auto-open properties; wait for double-tap
-  };
+  if (btnShaderShape) {
+    btnShaderShape.addEventListener('click', () => {
+      if (shaderPreview) {
+        const shape = shaderPreview.toggleShape();
+        statusText.textContent = `Preview: ${shape}`;
+      }
+    });
+  }
 
-  renderer.onNodeDoubleTap = (node) => {
-    openProperties(node);
-  };
+  // Tab switching
+  graphTabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    switchTab(btn.dataset.tab);
+  });
 
-  renderer.onConnectionMade = () => {
-    statusText.textContent = 'Connected';
-    saveGraph();
-  };
-
-  // ===== Keyboard shortcuts (desktop) =====
+  // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
 
@@ -419,11 +567,11 @@
       case 'Delete':
       case 'Backspace':
         if (renderer.selectedNode) {
-          const node = graph.nodes.find(n => n.id === renderer.selectedNode);
+          const node = activeGraph.nodes.find(n => n.id === renderer.selectedNode);
           if (node) {
-            const def = graph.getNodeDef(node);
+            const def = activeGraph.getNodeDef(node);
             if (!def?.singular) {
-              graph.removeNode(node.id);
+              activeGraph.removeNode(node.id);
               renderer.selectedNode = null;
               statusText.textContent = 'Node deleted';
               saveGraph();
@@ -438,7 +586,7 @@
       case 'z':
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
-          if (graph.undo()) {
+          if (activeGraph.undo()) {
             renderer.selectedNode = null;
             statusText.textContent = 'Undo';
             saveGraph();
@@ -449,16 +597,35 @@
         e.preventDefault();
         runGraph();
         break;
+      case '1':
+        switchTab('geo');
+        break;
+      case '2':
+        switchTab('shader');
+        break;
     }
   });
 
   // ===== Init =====
-  initDefaultScene();
+  setupRendererCallbacks();
+
+  // Load saved tab preference
+  const savedTab = localStorage.getItem('geonodes_active_tab');
+
+  // Initialize both graphs
+  initDefaultScene(geoGraph);
+  initDefaultScene(shaderGraph);
+
+  // Switch to saved tab if needed
+  if (savedTab === 'shader') {
+    switchTab('shader');
+  }
+
   renderer.zoomToFit();
 
   // Auto-save periodically
   setInterval(saveGraph, 10000);
 
   // Expose for debugging
-  window._geoNodes = { graph, renderer, viewport };
+  window._geoNodes = { geoGraph, shaderGraph, renderer, viewport, shaderPreview, registry };
 })();
