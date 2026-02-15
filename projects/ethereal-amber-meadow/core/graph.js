@@ -8,6 +8,20 @@
 import { registry } from './registry.js';
 
 export class NodeGraph {
+  // Allow implicit coercion between compatible numeric/bool types
+  static typesCompatible(fromType, toType) {
+    if (fromType === toType) return true;
+    const coercions = {
+      'float:bool': true,   // float > 0.5 → true
+      'int:bool': true,     // int !== 0 → true
+      'float:int': true,    // float → round to int
+      'int:float': true,    // int → float
+      'bool:float': true,   // true → 1.0, false → 0.0
+      'bool:int': true,     // true → 1, false → 0
+    };
+    return !!coercions[`${fromType}:${toType}`];
+  }
+
   constructor(graphType) {
     this.graphType = graphType; // 'geo' or 'shader'
     this.nodes = [];
@@ -84,7 +98,8 @@ export class NodeGraph {
 
     const fromType = fromDef.outputs[fromSocket]?.type;
     const toType = toDef.inputs[toSocket]?.type;
-    if (!fromType || !toType || fromType !== toType) return false;
+    if (!fromType || !toType) return false;
+    if (fromType !== toType && !NodeGraph.typesCompatible(fromType, toType)) return false;
     if (fromNode === toNode) return false;
 
     this.saveUndo();

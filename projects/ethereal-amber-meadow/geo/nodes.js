@@ -124,22 +124,39 @@ registry.addNodes('geo', {
     inputs: [
       { name: 'Min', type: SocketType.FLOAT },
       { name: 'Max', type: SocketType.FLOAT },
+      { name: 'Probability', type: SocketType.FLOAT },
       { name: 'Seed', type: SocketType.INT },
     ],
     outputs: [
       { name: 'Value', type: SocketType.FLOAT },
     ],
-    defaults: { min: 0, max: 1, seed: 0 },
+    defaults: { min: 0, max: 1, probability: 0.5, seed: 0, data_type: 'FLOAT' },
     props: [
+      { key: 'data_type', label: 'Data Type', type: 'select', options: [
+        { value: 'FLOAT', label: 'Float' },
+        { value: 'INT', label: 'Integer' },
+        { value: 'BOOLEAN', label: 'Boolean' },
+      ]},
       { key: 'min', label: 'Min', type: 'float', min: -1000, max: 1000, step: 0.1 },
       { key: 'max', label: 'Max', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'probability', label: 'Probability', type: 'float', min: 0, max: 1, step: 0.01 },
       { key: 'seed', label: 'Seed', type: 'int', min: 0, max: 9999, step: 1 },
     ],
     evaluate(values, inputs) {
-      const mn = inputs['Min'] ?? values.min;
-      const mx = inputs['Max'] ?? values.max;
       const seed = inputs['Seed'] ?? values.seed;
       const r = seededRandom(seed);
+      const dataType = values.data_type || 'FLOAT';
+
+      if (dataType === 'BOOLEAN') {
+        const prob = inputs['Probability'] ?? values.probability;
+        return { outputs: [r < prob] };
+      }
+
+      const mn = inputs['Min'] ?? values.min;
+      const mx = inputs['Max'] ?? values.max;
+      if (dataType === 'INT') {
+        return { outputs: [Math.round(mn + r * (mx - mn))] };
+      }
       return { outputs: [mn + r * (mx - mn)] };
     },
   },
