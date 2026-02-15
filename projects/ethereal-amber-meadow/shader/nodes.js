@@ -218,23 +218,43 @@ registry.addNodes('shader', {
       { name: 'Base Color', type: SocketType.COLOR },
       { name: 'Metallic',   type: SocketType.FLOAT },
       { name: 'Roughness',  type: SocketType.FLOAT },
+      { name: 'IOR',        type: SocketType.FLOAT },
+      { name: 'Alpha',      type: SocketType.FLOAT },
       { name: 'Normal',     type: SocketType.VECTOR },
+      { name: 'Subsurface Weight',  type: SocketType.FLOAT },
+      { name: 'Subsurface Radius',  type: SocketType.VECTOR },
+      { name: 'Specular IOR Level', type: SocketType.FLOAT },
+      { name: 'Specular Tint',      type: SocketType.COLOR },
+      { name: 'Anisotropic',          type: SocketType.FLOAT },
+      { name: 'Anisotropic Rotation', type: SocketType.FLOAT },
+      { name: 'Transmission Weight',  type: SocketType.FLOAT },
+      { name: 'Coat Weight',    type: SocketType.FLOAT },
+      { name: 'Coat Roughness', type: SocketType.FLOAT },
+      { name: 'Coat Normal',    type: SocketType.VECTOR },
+      { name: 'Sheen Weight',    type: SocketType.FLOAT },
+      { name: 'Sheen Roughness', type: SocketType.FLOAT },
+      { name: 'Emission Color',    type: SocketType.COLOR },
+      { name: 'Emission Strength', type: SocketType.FLOAT },
     ],
     outputs: [
-      { name: 'Shader', type: SocketType.SHADER },
+      { name: 'BSDF', type: SocketType.SHADER },
     ],
-    defaults: { baseColor: '#6688cc', metallic: 0.0, roughness: 0.5 },
+    defaults: { baseColor: '#6688cc', metallic: 0.0, roughness: 0.5, ior: 1.5, alpha: 1.0 },
     props: [
       { key: 'baseColor', label: 'Base Color', type: 'color' },
       { key: 'metallic',  label: 'Metallic',  type: 'float', min: 0, max: 1, step: 0.01 },
       { key: 'roughness', label: 'Roughness', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'ior',       label: 'IOR',       type: 'float', min: 0, max: 4, step: 0.01 },
+      { key: 'alpha',     label: 'Alpha',     type: 'float', min: 0, max: 1, step: 0.01 },
     ],
     evaluate(values, inputs) {
       const defaultColor = hexToRgb(values.baseColor || '#6688cc');
       const baseColor = inputs['Base Color'] || defaultColor;
       const metallic  = inputs['Metallic']  ?? values.metallic ?? 0.0;
       const roughness = inputs['Roughness'] ?? values.roughness ?? 0.5;
-      const normal    = inputs['Normal'] || null;
+      const normal    = inputs['Normal'] || inputs['Coat Normal'] || null;
+      const emissionColor = inputs['Emission Color'] || null;
+      const emissionStrength = inputs['Emission Strength'] ?? 0;
       return {
         outputs: [{
           type: 'principled',
@@ -242,8 +262,10 @@ registry.addNodes('shader', {
           metallic,
           roughness,
           normal,
-          emission: null,
-          emissionStrength: 0,
+          emission: emissionColor,
+          emissionStrength,
+          alpha: inputs['Alpha'] ?? values.alpha ?? 1.0,
+          ior: inputs['IOR'] ?? values.ior ?? 1.5,
         }],
       };
     },
@@ -414,18 +436,26 @@ registry.addNodes('shader', {
     category: 'SHADER_VECTOR',
     inputs: [],
     outputs: [
-      { name: 'UV',     type: SocketType.VECTOR },
-      { name: 'Object', type: SocketType.VECTOR },
-      { name: 'Normal', type: SocketType.VECTOR },
+      { name: 'Generated',  type: SocketType.VECTOR },
+      { name: 'Normal',     type: SocketType.VECTOR },
+      { name: 'UV',         type: SocketType.VECTOR },
+      { name: 'Object',     type: SocketType.VECTOR },
+      { name: 'Camera',     type: SocketType.VECTOR },
+      { name: 'Window',     type: SocketType.VECTOR },
+      { name: 'Reflection', type: SocketType.VECTOR },
     ],
     defaults: {},
     evaluate() {
       // These are symbolic placeholders; the compiler resolves them to GLSL varyings
       return {
         outputs: [
+          { x: 0, y: 0, z: 0, _source: 'generated' },
+          { x: 0, y: 0, z: 0, _source: 'normal' },
           { x: 0, y: 0, z: 0, _source: 'uv' },
           { x: 0, y: 0, z: 0, _source: 'object' },
-          { x: 0, y: 0, z: 0, _source: 'normal' },
+          { x: 0, y: 0, z: 0, _source: 'camera' },
+          { x: 0, y: 0, z: 0, _source: 'window' },
+          { x: 0, y: 0, z: 0, _source: 'reflection' },
         ],
       };
     },
@@ -435,7 +465,10 @@ registry.addNodes('shader', {
     label: 'Mapping',
     category: 'SHADER_VECTOR',
     inputs: [
-      { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'Vector',   type: SocketType.VECTOR },
+      { name: 'Location', type: SocketType.VECTOR },
+      { name: 'Rotation', type: SocketType.VECTOR },
+      { name: 'Scale',    type: SocketType.VECTOR },
     ],
     outputs: [
       { name: 'Vector', type: SocketType.VECTOR },
@@ -444,29 +477,39 @@ registry.addNodes('shader', {
       tx: 0, ty: 0, tz: 0,
       rx: 0, ry: 0, rz: 0,
       sx: 1, sy: 1, sz: 1,
+      mappingType: 'point',
     },
     props: [
-      { key: 'tx', label: 'Translate X', type: 'float', min: -100, max: 100, step: 0.1 },
-      { key: 'ty', label: 'Translate Y', type: 'float', min: -100, max: 100, step: 0.1 },
-      { key: 'tz', label: 'Translate Z', type: 'float', min: -100, max: 100, step: 0.1 },
-      { key: 'rx', label: 'Rotate X (deg)', type: 'float', min: -360, max: 360, step: 1 },
-      { key: 'ry', label: 'Rotate Y (deg)', type: 'float', min: -360, max: 360, step: 1 },
-      { key: 'rz', label: 'Rotate Z (deg)', type: 'float', min: -360, max: 360, step: 1 },
+      { key: 'mappingType', label: 'Type', type: 'select', options: [
+        { value: 'point', label: 'Point' },
+        { value: 'texture', label: 'Texture' },
+        { value: 'vector', label: 'Vector' },
+        { value: 'normal', label: 'Normal' },
+      ]},
+      { key: 'tx', label: 'Location X', type: 'float', min: -100, max: 100, step: 0.1 },
+      { key: 'ty', label: 'Location Y', type: 'float', min: -100, max: 100, step: 0.1 },
+      { key: 'tz', label: 'Location Z', type: 'float', min: -100, max: 100, step: 0.1 },
+      { key: 'rx', label: 'Rotation X (deg)', type: 'float', min: -360, max: 360, step: 1 },
+      { key: 'ry', label: 'Rotation Y (deg)', type: 'float', min: -360, max: 360, step: 1 },
+      { key: 'rz', label: 'Rotation Z (deg)', type: 'float', min: -360, max: 360, step: 1 },
       { key: 'sx', label: 'Scale X', type: 'float', min: 0.01, max: 100, step: 0.1 },
       { key: 'sy', label: 'Scale Y', type: 'float', min: 0.01, max: 100, step: 0.1 },
       { key: 'sz', label: 'Scale Z', type: 'float', min: 0.01, max: 100, step: 0.1 },
     ],
     evaluate(values, inputs) {
       const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const loc = inputs['Location'] || { x: values.tx ?? 0, y: values.ty ?? 0, z: values.tz ?? 0 };
+      const rot = inputs['Rotation'] || { x: values.rx ?? 0, y: values.ry ?? 0, z: values.rz ?? 0 };
+      const sc = inputs['Scale'] || { x: values.sx ?? 1, y: values.sy ?? 1, z: values.sz ?? 1 };
       // Apply scale
-      let x = (v.x ?? 0) * (values.sx ?? 1);
-      let y = (v.y ?? 0) * (values.sy ?? 1);
-      let z = (v.z ?? 0) * (values.sz ?? 1);
+      let x = (v.x ?? 0) * (sc.x ?? values.sx ?? 1);
+      let y = (v.y ?? 0) * (sc.y ?? values.sy ?? 1);
+      let z = (v.z ?? 0) * (sc.z ?? values.sz ?? 1);
       // Apply rotation (simple Euler, degrees to radians)
       const toRad = Math.PI / 180;
-      const rxr = (values.rx ?? 0) * toRad;
-      const ryr = (values.ry ?? 0) * toRad;
-      const rzr = (values.rz ?? 0) * toRad;
+      const rxr = (rot.x ?? values.rx ?? 0) * toRad;
+      const ryr = (rot.y ?? values.ry ?? 0) * toRad;
+      const rzr = (rot.z ?? values.rz ?? 0) * toRad;
       // Rotate Z
       let x1 = x * Math.cos(rzr) - y * Math.sin(rzr);
       let y1 = x * Math.sin(rzr) + y * Math.cos(rzr);
@@ -480,9 +523,9 @@ registry.addNodes('shader', {
       let z3 = y * Math.sin(rxr) + z * Math.cos(rxr);
       y = y3; z = z3;
       // Apply translation
-      x += values.tx ?? 0;
-      y += values.ty ?? 0;
-      z += values.tz ?? 0;
+      x += loc.x ?? values.tx ?? 0;
+      y += loc.y ?? values.ty ?? 0;
+      z += loc.z ?? values.tz ?? 0;
       return { outputs: [{ x, y, z }] };
     },
   },
@@ -492,17 +535,29 @@ registry.addNodes('shader', {
     label: 'Noise Texture',
     category: 'SHADER_TEXTURE',
     inputs: [
-      { name: 'Vector', type: SocketType.VECTOR },
-      { name: 'Scale',  type: SocketType.FLOAT },
+      { name: 'Vector',     type: SocketType.VECTOR },
+      { name: 'W',          type: SocketType.FLOAT },
+      { name: 'Scale',      type: SocketType.FLOAT },
+      { name: 'Detail',     type: SocketType.FLOAT },
+      { name: 'Roughness',  type: SocketType.FLOAT },
+      { name: 'Lacunarity', type: SocketType.FLOAT },
+      { name: 'Distortion', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Fac',   type: SocketType.FLOAT },
       { name: 'Color', type: SocketType.COLOR },
     ],
-    defaults: { scale: 5, detail: 2 },
+    defaults: { scale: 5, detail: 2, roughness: 0.5, lacunarity: 2, distortion: 0, dimensions: '3D' },
     props: [
+      { key: 'dimensions', label: 'Dimensions', type: 'select', options: [
+        { value: '1D', label: '1D' }, { value: '2D', label: '2D' },
+        { value: '3D', label: '3D' }, { value: '4D', label: '4D' },
+      ]},
       { key: 'scale',  label: 'Scale',  type: 'float', min: 0.01, max: 100, step: 0.5 },
       { key: 'detail', label: 'Detail', type: 'float', min: 0, max: 15, step: 0.5 },
+      { key: 'roughness', label: 'Roughness', type: 'float', min: 0, max: 1, step: 0.05 },
+      { key: 'lacunarity', label: 'Lacunarity', type: 'float', min: 0, max: 10, step: 0.1 },
+      { key: 'distortion', label: 'Distortion', type: 'float', min: 0, max: 10, step: 0.1 },
     ],
     evaluate(values, inputs) {
       // Simple procedural evaluation for preview; the compiler generates GLSL
@@ -533,16 +588,37 @@ registry.addNodes('shader', {
     label: 'Voronoi Texture',
     category: 'SHADER_TEXTURE',
     inputs: [
-      { name: 'Vector', type: SocketType.VECTOR },
-      { name: 'Scale',  type: SocketType.FLOAT },
+      { name: 'Vector',     type: SocketType.VECTOR },
+      { name: 'W',          type: SocketType.FLOAT },
+      { name: 'Scale',      type: SocketType.FLOAT },
+      { name: 'Smoothness', type: SocketType.FLOAT },
+      { name: 'Exponent',   type: SocketType.FLOAT },
+      { name: 'Randomness', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Distance', type: SocketType.FLOAT },
       { name: 'Color',    type: SocketType.COLOR },
+      { name: 'Position', type: SocketType.VECTOR },
+      { name: 'W',        type: SocketType.FLOAT },
     ],
-    defaults: { scale: 5 },
+    defaults: { scale: 5, feature: 'f1', randomness: 1, dimensions: '3D', distMetric: 'euclidean' },
     props: [
+      { key: 'dimensions', label: 'Dimensions', type: 'select', options: [
+        { value: '1D', label: '1D' }, { value: '2D', label: '2D' },
+        { value: '3D', label: '3D' }, { value: '4D', label: '4D' },
+      ]},
+      { key: 'feature', label: 'Feature', type: 'select', options: [
+        { value: 'f1', label: 'F1' }, { value: 'f2', label: 'F2' },
+        { value: 'smooth_f1', label: 'Smooth F1' },
+        { value: 'distance_to_edge', label: 'Distance to Edge' },
+        { value: 'n_sphere_radius', label: 'N-Sphere Radius' },
+      ]},
+      { key: 'distMetric', label: 'Distance', type: 'select', options: [
+        { value: 'euclidean', label: 'Euclidean' }, { value: 'manhattan', label: 'Manhattan' },
+        { value: 'chebychev', label: 'Chebychev' }, { value: 'minkowski', label: 'Minkowski' },
+      ]},
       { key: 'scale', label: 'Scale', type: 'float', min: 0.01, max: 100, step: 0.5 },
+      { key: 'randomness', label: 'Randomness', type: 'float', min: 0, max: 1, step: 0.05 },
     ],
     evaluate(values, inputs) {
       const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
@@ -575,6 +651,8 @@ registry.addNodes('shader', {
         outputs: [
           dist,
           { r: dist, g: 1 - dist, b: dist * 0.5 },
+          { x: sx, y: sy, z: sz },
+          0,
         ],
       };
     },
@@ -618,13 +696,27 @@ registry.addNodes('shader', {
       { name: 'Color', type: SocketType.COLOR },
     ],
     outputs: [
-      { name: 'R', type: SocketType.FLOAT },
-      { name: 'G', type: SocketType.FLOAT },
-      { name: 'B', type: SocketType.FLOAT },
+      { name: 'Red',   type: SocketType.FLOAT },
+      { name: 'Green', type: SocketType.FLOAT },
+      { name: 'Blue',  type: SocketType.FLOAT },
     ],
-    defaults: {},
+    defaults: { mode: 'rgb' },
+    props: [
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'rgb', label: 'RGB' },
+        { value: 'hsv', label: 'HSV' },
+        { value: 'hsl', label: 'HSL' },
+      ]},
+    ],
     evaluate(values, inputs) {
       const c = inputs['Color'] || { r: 0, g: 0, b: 0 };
+      if (values.mode === 'hsv') {
+        const r = c.r ?? 0, g = c.g ?? 0, b = c.b ?? 0;
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+        let h = 0; const s = mx === 0 ? 0 : d / mx; const v = mx;
+        if (d !== 0) { if (mx === r) h = ((g - b) / d + 6) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h /= 6; }
+        return { outputs: [h, s, v] };
+      }
       return { outputs: [c.r ?? 0, c.g ?? 0, c.b ?? 0] };
     },
   },
@@ -633,27 +725,42 @@ registry.addNodes('shader', {
     label: 'Combine Color',
     category: 'SHADER_COLOR',
     inputs: [
-      { name: 'R', type: SocketType.FLOAT },
-      { name: 'G', type: SocketType.FLOAT },
-      { name: 'B', type: SocketType.FLOAT },
+      { name: 'Red',   type: SocketType.FLOAT },
+      { name: 'Green', type: SocketType.FLOAT },
+      { name: 'Blue',  type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Color', type: SocketType.COLOR },
     ],
-    defaults: { r: 0, g: 0, b: 0 },
+    defaults: { r: 0, g: 0, b: 0, mode: 'rgb' },
     props: [
-      { key: 'r', label: 'R', type: 'float', min: 0, max: 1, step: 0.01 },
-      { key: 'g', label: 'G', type: 'float', min: 0, max: 1, step: 0.01 },
-      { key: 'b', label: 'B', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'rgb', label: 'RGB' },
+        { value: 'hsv', label: 'HSV' },
+        { value: 'hsl', label: 'HSL' },
+      ]},
+      { key: 'r', label: 'Red / H',   type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'g', label: 'Green / S', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'b', label: 'Blue / V',  type: 'float', min: 0, max: 1, step: 0.01 },
     ],
     evaluate(values, inputs) {
-      return {
-        outputs: [{
-          r: clamp01(inputs['R'] ?? values.r ?? 0),
-          g: clamp01(inputs['G'] ?? values.g ?? 0),
-          b: clamp01(inputs['B'] ?? values.b ?? 0),
-        }],
-      };
+      const c1 = clamp01(inputs['Red'] ?? values.r ?? 0);
+      const c2 = clamp01(inputs['Green'] ?? values.g ?? 0);
+      const c3 = clamp01(inputs['Blue'] ?? values.b ?? 0);
+      if (values.mode === 'hsv') {
+        const h = c1, s = c2, v = c3;
+        const hi = Math.floor(h * 6), f = h * 6 - hi;
+        const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+        let r, g, b;
+        switch (hi % 6) {
+          case 0: r = v; g = t; b = p; break; case 1: r = q; g = v; b = p; break;
+          case 2: r = p; g = v; b = t; break; case 3: r = p; g = q; b = v; break;
+          case 4: r = t; g = p; b = v; break; case 5: r = v; g = p; b = q; break;
+          default: r = v; g = t; b = p;
+        }
+        return { outputs: [{ r, g, b }] };
+      }
+      return { outputs: [{ r: c1, g: c2, b: c3 }] };
     },
   },
 
@@ -804,10 +911,16 @@ registry.addNodes('shader', {
       { name: 'Normal',    type: SocketType.VECTOR },
     ],
     outputs: [
-      { name: 'Shader', type: SocketType.SHADER },
+      { name: 'BSDF', type: SocketType.SHADER },
     ],
-    defaults: { color: '#ffffff', roughness: 0.2 },
+    defaults: { color: '#ffffff', roughness: 0.2, distribution: 'ggx' },
     props: [
+      { key: 'distribution', label: 'Distribution', type: 'select', options: [
+        { value: 'ggx', label: 'GGX' },
+        { value: 'beckmann', label: 'Beckmann' },
+        { value: 'ashikhmin_shirley', label: 'Ashikhmin-Shirley' },
+        { value: 'multi_ggx', label: 'Multiscatter GGX' },
+      ]},
       { key: 'color',     label: 'Color',     type: 'color' },
       { key: 'roughness', label: 'Roughness', type: 'float', min: 0, max: 1, step: 0.01 },
     ],
@@ -840,10 +953,15 @@ registry.addNodes('shader', {
       { name: 'Normal',    type: SocketType.VECTOR },
     ],
     outputs: [
-      { name: 'Shader', type: SocketType.SHADER },
+      { name: 'BSDF', type: SocketType.SHADER },
     ],
-    defaults: { color: '#ffffff', roughness: 0.0, ior: 1.45 },
+    defaults: { color: '#ffffff', roughness: 0.0, ior: 1.45, distribution: 'ggx' },
     props: [
+      { key: 'distribution', label: 'Distribution', type: 'select', options: [
+        { value: 'ggx', label: 'GGX' },
+        { value: 'beckmann', label: 'Beckmann' },
+        { value: 'multi_ggx', label: 'Multiscatter GGX' },
+      ]},
       { key: 'color',     label: 'Color',     type: 'color' },
       { key: 'roughness', label: 'Roughness', type: 'float', min: 0, max: 1, step: 0.01 },
       { key: 'ior',       label: 'IOR',       type: 'float', min: 1.0, max: 3.0, step: 0.01 },
@@ -1226,8 +1344,16 @@ registry.addNodes('shader', {
     label: 'Brick Texture',
     category: 'SHADER_TEXTURE',
     inputs: [
-      { name: 'Vector', type: SocketType.VECTOR },
-      { name: 'Scale',  type: SocketType.FLOAT },
+      { name: 'Vector',       type: SocketType.VECTOR },
+      { name: 'Color1',       type: SocketType.COLOR },
+      { name: 'Color2',       type: SocketType.COLOR },
+      { name: 'Mortar',       type: SocketType.COLOR },
+      { name: 'Scale',        type: SocketType.FLOAT },
+      { name: 'Mortar Size',  type: SocketType.FLOAT },
+      { name: 'Mortar Smooth', type: SocketType.FLOAT },
+      { name: 'Bias',         type: SocketType.FLOAT },
+      { name: 'Brick Width',  type: SocketType.FLOAT },
+      { name: 'Row Height',   type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Color', type: SocketType.COLOR },
@@ -1270,8 +1396,13 @@ registry.addNodes('shader', {
     label: 'Wave Texture',
     category: 'SHADER_TEXTURE',
     inputs: [
-      { name: 'Vector', type: SocketType.VECTOR },
-      { name: 'Scale',  type: SocketType.FLOAT },
+      { name: 'Vector',          type: SocketType.VECTOR },
+      { name: 'Scale',           type: SocketType.FLOAT },
+      { name: 'Distortion',      type: SocketType.FLOAT },
+      { name: 'Detail',          type: SocketType.FLOAT },
+      { name: 'Detail Scale',    type: SocketType.FLOAT },
+      { name: 'Detail Roughness', type: SocketType.FLOAT },
+      { name: 'Phase Offset',    type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Color', type: SocketType.COLOR },
@@ -1339,8 +1470,9 @@ registry.addNodes('shader', {
     label: 'Magic Texture',
     category: 'SHADER_TEXTURE',
     inputs: [
-      { name: 'Vector', type: SocketType.VECTOR },
-      { name: 'Scale',  type: SocketType.FLOAT },
+      { name: 'Vector',     type: SocketType.VECTOR },
+      { name: 'Scale',      type: SocketType.FLOAT },
+      { name: 'Distortion', type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Color', type: SocketType.COLOR },
@@ -1378,12 +1510,19 @@ registry.addNodes('shader', {
     category: 'SHADER_TEXTURE',
     inputs: [
       { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'W',      type: SocketType.FLOAT },
     ],
     outputs: [
       { name: 'Value', type: SocketType.FLOAT },
       { name: 'Color', type: SocketType.COLOR },
     ],
-    defaults: {},
+    defaults: { dimensions: '3D' },
+    props: [
+      { key: 'dimensions', label: 'Dimensions', type: 'select', options: [
+        { value: '1D', label: '1D' }, { value: '2D', label: '2D' },
+        { value: '3D', label: '3D' }, { value: '4D', label: '4D' },
+      ]},
+    ],
     evaluate(values, inputs) {
       const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
       const hash = (a, b, c) => {
@@ -1653,6 +1792,211 @@ registry.addNodes('shader', {
           z: inputs['Z'] ?? values.z ?? 0,
         }],
       };
+    },
+  },
+
+  shader_separate_xyz: {
+    label: 'Separate XYZ',
+    category: 'SHADER_CONVERTER',
+    inputs: [
+      { name: 'Vector', type: SocketType.VECTOR },
+    ],
+    outputs: [
+      { name: 'X', type: SocketType.FLOAT },
+      { name: 'Y', type: SocketType.FLOAT },
+      { name: 'Z', type: SocketType.FLOAT },
+    ],
+    defaults: {},
+    evaluate(values, inputs) {
+      const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      return { outputs: [v.x ?? 0, v.y ?? 0, v.z ?? 0] };
+    },
+  },
+
+  shader_map_range: {
+    label: 'Map Range',
+    category: 'SHADER_CONVERTER',
+    inputs: [
+      { name: 'Value',    type: SocketType.FLOAT },
+      { name: 'From Min', type: SocketType.FLOAT },
+      { name: 'From Max', type: SocketType.FLOAT },
+      { name: 'To Min',   type: SocketType.FLOAT },
+      { name: 'To Max',   type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Result', type: SocketType.FLOAT },
+    ],
+    defaults: { value: 0.5, fromMin: 0, fromMax: 1, toMin: 0, toMax: 1, interpolation: 'linear', clamp: true },
+    props: [
+      { key: 'interpolation', label: 'Interpolation', type: 'select', options: [
+        { value: 'linear', label: 'Linear' },
+        { value: 'stepped', label: 'Stepped Linear' },
+        { value: 'smooth', label: 'Smooth Step' },
+        { value: 'smoother', label: 'Smoother Step' },
+      ]},
+      { key: 'clamp', label: 'Clamp', type: 'bool' },
+      { key: 'value', label: 'Value', type: 'float', min: -1000, max: 1000, step: 0.01 },
+      { key: 'fromMin', label: 'From Min', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'fromMax', label: 'From Max', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'toMin', label: 'To Min', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'toMax', label: 'To Max', type: 'float', min: -1000, max: 1000, step: 0.1 },
+    ],
+    evaluate(values, inputs) {
+      const v = inputs['Value'] ?? values.value;
+      const fMin = inputs['From Min'] ?? values.fromMin;
+      const fMax = inputs['From Max'] ?? values.fromMax;
+      const tMin = inputs['To Min'] ?? values.toMin;
+      const tMax = inputs['To Max'] ?? values.toMax;
+      const range = fMax - fMin;
+      let t = range !== 0 ? (v - fMin) / range : 0;
+      if (values.clamp) t = clamp01(t);
+      switch (values.interpolation) {
+        case 'smooth': t = t * t * (3 - 2 * t); break;
+        case 'smoother': t = t * t * t * (t * (t * 6 - 15) + 10); break;
+        case 'stepped': t = Math.floor(t * 4) / 4; break;
+      }
+      return { outputs: [tMin + t * (tMax - tMin)] };
+    },
+  },
+
+  shader_clamp: {
+    label: 'Clamp',
+    category: 'SHADER_CONVERTER',
+    inputs: [
+      { name: 'Value', type: SocketType.FLOAT },
+      { name: 'Min',   type: SocketType.FLOAT },
+      { name: 'Max',   type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Result', type: SocketType.FLOAT },
+    ],
+    defaults: { value: 1, min: 0, max: 1, clampType: 'min_max' },
+    props: [
+      { key: 'clampType', label: 'Clamp Type', type: 'select', options: [
+        { value: 'min_max', label: 'Min Max' },
+        { value: 'range', label: 'Range' },
+      ]},
+      { key: 'value', label: 'Value', type: 'float', min: -1000, max: 1000, step: 0.01 },
+      { key: 'min', label: 'Min', type: 'float', min: -1000, max: 1000, step: 0.01 },
+      { key: 'max', label: 'Max', type: 'float', min: -1000, max: 1000, step: 0.01 },
+    ],
+    evaluate(values, inputs) {
+      const v = inputs['Value'] ?? values.value;
+      let mn = inputs['Min'] ?? values.min;
+      let mx = inputs['Max'] ?? values.max;
+      if (values.clampType === 'range' && mn > mx) { const t = mn; mn = mx; mx = t; }
+      return { outputs: [Math.min(Math.max(v, mn), mx)] };
+    },
+  },
+
+  shader_rgb_curves: {
+    label: 'RGB Curves',
+    category: 'SHADER_COLOR',
+    inputs: [
+      { name: 'Fac',   type: SocketType.FLOAT },
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    outputs: [
+      { name: 'Color', type: SocketType.COLOR },
+    ],
+    defaults: { fac: 1 },
+    props: [
+      { key: 'fac', label: 'Factor', type: 'float', min: 0, max: 1, step: 0.01 },
+    ],
+    evaluate(values, inputs) {
+      const color = inputs['Color'] || { r: 0.5, g: 0.5, b: 0.5 };
+      // Passthrough - curves not implemented in simplified editor
+      return { outputs: [color] };
+    },
+  },
+
+  object_info: {
+    label: 'Object Info',
+    category: 'SHADER_INPUT',
+    inputs: [],
+    outputs: [
+      { name: 'Location', type: SocketType.VECTOR },
+      { name: 'Color',    type: SocketType.COLOR },
+      { name: 'Alpha',    type: SocketType.FLOAT },
+      { name: 'Object Index', type: SocketType.FLOAT },
+      { name: 'Random',   type: SocketType.FLOAT },
+    ],
+    defaults: {},
+    evaluate() {
+      return {
+        outputs: [
+          { x: 0, y: 0, z: 0 },
+          { r: 1, g: 1, b: 1 },
+          1,
+          0,
+          0.5,
+        ],
+      };
+    },
+  },
+
+  uv_map: {
+    label: 'UV Map',
+    category: 'SHADER_INPUT',
+    inputs: [],
+    outputs: [
+      { name: 'UV', type: SocketType.VECTOR },
+    ],
+    defaults: {},
+    evaluate() {
+      return { outputs: [{ x: 0, y: 0, z: 0, _source: 'uv' }] };
+    },
+  },
+
+  ambient_occlusion: {
+    label: 'Ambient Occlusion',
+    category: 'SHADER_INPUT',
+    inputs: [
+      { name: 'Color',    type: SocketType.COLOR },
+      { name: 'Distance', type: SocketType.FLOAT },
+      { name: 'Normal',   type: SocketType.VECTOR },
+    ],
+    outputs: [
+      { name: 'Color', type: SocketType.COLOR },
+      { name: 'AO',    type: SocketType.FLOAT },
+    ],
+    defaults: { distance: 1, samples: 16, insideOnly: false },
+    props: [
+      { key: 'samples', label: 'Samples', type: 'int', min: 1, max: 128, step: 1 },
+      { key: 'insideOnly', label: 'Inside', type: 'bool' },
+      { key: 'distance', label: 'Distance', type: 'float', min: 0, max: 100, step: 0.1 },
+    ],
+    evaluate(values, inputs) {
+      const color = inputs['Color'] || { r: 1, g: 1, b: 1 };
+      return { outputs: [color, 1.0] };
+    },
+  },
+
+  vector_displacement: {
+    label: 'Displacement',
+    category: 'SHADER_VECTOR',
+    inputs: [
+      { name: 'Height', type: SocketType.FLOAT },
+      { name: 'Midlevel', type: SocketType.FLOAT },
+      { name: 'Scale',  type: SocketType.FLOAT },
+      { name: 'Normal', type: SocketType.VECTOR },
+    ],
+    outputs: [
+      { name: 'Displacement', type: SocketType.VECTOR },
+    ],
+    defaults: { height: 0, midlevel: 0.5, scale: 1 },
+    props: [
+      { key: 'height',   label: 'Height',   type: 'float', min: -10, max: 10, step: 0.01 },
+      { key: 'midlevel', label: 'Midlevel', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'scale',    label: 'Scale',    type: 'float', min: 0, max: 100, step: 0.1 },
+    ],
+    evaluate(values, inputs) {
+      const h = inputs['Height'] ?? values.height ?? 0;
+      const mid = inputs['Midlevel'] ?? values.midlevel ?? 0.5;
+      const sc = inputs['Scale'] ?? values.scale ?? 1;
+      const n = inputs['Normal'] || { x: 0, y: 1, z: 0 };
+      const d = (h - mid) * sc;
+      return { outputs: [{ x: n.x * d, y: n.y * d, z: n.z * d }] };
     },
   },
 });
