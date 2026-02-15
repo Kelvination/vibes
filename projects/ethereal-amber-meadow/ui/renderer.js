@@ -236,7 +236,7 @@ export class GraphRenderer {
       const center = { x: (t1.x + t2.x) / 2, y: (t1.y + t2.y) / 2 };
 
       const scale = newDist / this.pinchDist;
-      const newZoom = Math.min(3, Math.max(0.2, this.zoom * scale));
+      const newZoom = Math.min(10, Math.max(0.05, this.zoom * scale));
 
       this.panX = center.x - (center.x - this.panX) * (newZoom / this.zoom);
       this.panY = center.y - (center.y - this.panY) * (newZoom / this.zoom);
@@ -442,7 +442,7 @@ export class GraphRenderer {
     e.preventDefault();
     const pos = { x: e.offsetX, y: e.offsetY };
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newZoom = Math.min(3, Math.max(0.2, this.zoom * delta));
+    const newZoom = Math.min(10, Math.max(0.05, this.zoom * delta));
 
     this.panX = pos.x - (pos.x - this.panX) * (newZoom / this.zoom);
     this.panY = pos.y - (pos.y - this.panY) * (newZoom / this.zoom);
