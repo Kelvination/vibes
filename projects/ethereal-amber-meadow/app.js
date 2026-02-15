@@ -260,11 +260,13 @@ import { compileShader } from './shader/compiler.js';
 
       if (info.isOutput) {
         // Dragged from an output: need nodes with a matching INPUT
-        const matchIdx = def.inputs.findIndex(inp => inp.type === info.socketType);
+        const matchIdx = def.inputs.findIndex(inp =>
+          inp.type === info.socketType || NodeGraph.typesCompatible(info.socketType, inp.type));
         if (matchIdx >= 0) compatible.push({ typeId, def, matchIdx, matchIsOutput: false });
       } else {
         // Dragged from an input: need nodes with a matching OUTPUT
-        const matchIdx = def.outputs.findIndex(out => out.type === info.socketType);
+        const matchIdx = def.outputs.findIndex(out =>
+          out.type === info.socketType || NodeGraph.typesCompatible(out.type, info.socketType));
         if (matchIdx >= 0) compatible.push({ typeId, def, matchIdx, matchIsOutput: true });
       }
     }
@@ -375,7 +377,150 @@ import { compileShader } from './shader/compiler.js';
     if (!def.props || def.props.length === 0) {
       propsContent.innerHTML = '<p style="color:var(--text-dim);font-size:13px;padding:8px 0;">No editable properties</p>';
     } else {
-      for (const prop of def.props) {
+      // Detect XYZ triplets for uniform link toggle
+      const xyzGroups = new Set();
+      const xyzGroupMap = {};
+      for (let i = 0; i < def.props.length - 2; i++) {
+        const p = def.props[i], q = def.props[i+1], r = def.props[i+2];
+        if ((p.type === 'float' || p.type === 'int') && p.type === q.type && q.type === r.type) {
+          const lp = p.label, lq = q.label, lr = r.label;
+          if (lp.endsWith('X') && lq.endsWith('Y') && lr.endsWith('Z') &&
+              lp.slice(0, -1).trim() === lq.slice(0, -1).trim() &&
+              lq.slice(0, -1).trim() === lr.slice(0, -1).trim()) {
+            const groupKey = lp.slice(0, -1).trim() || 'XYZ';
+            xyzGroups.add(i);
+            xyzGroupMap[i] = { keys: [p.key, q.key, r.key], label: groupKey, props: [p, q, r] };
+          }
+        }
+      }
+
+      const rendered = new Set();
+      for (let pi = 0; pi < def.props.length; pi++) {
+        if (rendered.has(pi)) continue;
+        const prop = def.props[pi];
+
+        // XYZ group rendering
+        if (xyzGroups.has(pi)) {
+          const grp = xyzGroupMap[pi];
+          rendered.add(pi); rendered.add(pi+1); rendered.add(pi+2);
+
+          const group = document.createElement('div');
+          group.className = 'prop-group';
+
+          const headerRow = document.createElement('div');
+          headerRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
+
+          const label = document.createElement('div');
+          label.className = 'prop-label';
+          label.style.margin = '0';
+          label.textContent = grp.label;
+          headerRow.appendChild(label);
+
+          const linkBtn = document.createElement('button');
+          const linkKey = `_link_${grp.keys[0]}`;
+          let linked = !!node.values[linkKey];
+          linkBtn.className = 'prop-link-btn';
+          linkBtn.textContent = linked ? '\u{1F517}' : '\u{26D3}\uFE0F';
+          linkBtn.title = linked ? 'Uniform (linked)' : 'Independent';
+          linkBtn.style.cssText = `background:none;border:1px solid var(--border);border-radius:4px;
+            cursor:pointer;font-size:14px;padding:2px 6px;opacity:${linked ? '1' : '0.5'};`;
+          linkBtn.addEventListener('click', () => {
+            linked = !linked;
+            activeGraph.setNodeValue(node.id, linkKey, linked);
+            linkBtn.textContent = linked ? '\u{1F517}' : '\u{26D3}\uFE0F';
+            linkBtn.title = linked ? 'Uniform (linked)' : 'Independent';
+            linkBtn.style.opacity = linked ? '1' : '0.5';
+            if (linked) {
+              // Set Y and Z to match X
+              const xVal = node.values[grp.keys[0]];
+              activeGraph.setNodeValue(node.id, grp.keys[1], xVal);
+              activeGraph.setNodeValue(node.id, grp.keys[2], xVal);
+              openProperties(node); // Refresh UI
+              saveGraph();
+              autoRun();
+            }
+          });
+          headerRow.appendChild(linkBtn);
+          group.appendChild(headerRow);
+
+          // Create sliders for each axis
+          const axisControls = [];
+          grp.props.forEach((ap, ai) => {
+            const axisLabel = ['X', 'Y', 'Z'][ai];
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:4px;';
+
+            const axTag = document.createElement('span');
+            axTag.textContent = axisLabel;
+            axTag.style.cssText = `font-size:11px;font-weight:600;color:${['#e06060','#60c060','#6080e0'][ai]};width:14px;text-align:center;flex-shrink:0;`;
+            row.appendChild(axTag);
+
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.className = 'prop-slider';
+            slider.style.flex = '1';
+            slider.min = ap.min ?? 0;
+            slider.max = ap.max ?? 10;
+            slider.step = ap.step ?? 0.1;
+            slider.value = node.values[ap.key] ?? 0;
+
+            const numInput = document.createElement('input');
+            numInput.type = 'number';
+            numInput.className = 'prop-input';
+            numInput.style.cssText = 'width:60px;flex:none;';
+            numInput.min = ap.min ?? '';
+            numInput.max = ap.max ?? '';
+            numInput.step = ap.step ?? '';
+            numInput.value = node.values[ap.key] ?? 0;
+
+            axisControls.push({ slider, numInput, prop: ap });
+
+            slider.addEventListener('input', () => {
+              let v = ap.type === 'int' ? parseInt(slider.value) : parseFloat(slider.value);
+              activeGraph.setNodeValue(node.id, ap.key, v);
+              numInput.value = v;
+              if (node.values[linkKey]) {
+                // Update all three axes
+                grp.keys.forEach((k, ki) => {
+                  activeGraph.setNodeValue(node.id, k, v);
+                  if (ki !== ai && axisControls[ki]) {
+                    axisControls[ki].slider.value = v;
+                    axisControls[ki].numInput.value = v;
+                  }
+                });
+              }
+              saveGraph();
+              autoRun();
+            });
+
+            numInput.addEventListener('change', () => {
+              let v = ap.type === 'int' ? parseInt(numInput.value) : parseFloat(numInput.value);
+              if (isNaN(v)) v = 0;
+              activeGraph.setNodeValue(node.id, ap.key, v);
+              slider.value = v;
+              if (node.values[linkKey]) {
+                grp.keys.forEach((k, ki) => {
+                  activeGraph.setNodeValue(node.id, k, v);
+                  if (ki !== ai && axisControls[ki]) {
+                    axisControls[ki].slider.value = v;
+                    axisControls[ki].numInput.value = v;
+                  }
+                });
+              }
+              saveGraph();
+              autoRun();
+            });
+
+            row.appendChild(slider);
+            row.appendChild(numInput);
+            group.appendChild(row);
+          });
+
+          propsContent.appendChild(group);
+          continue;
+        }
+
+        // Normal single prop rendering
         const group = document.createElement('div');
         group.className = 'prop-group';
 

@@ -3,6 +3,7 @@
  * Refactored as ES module using the shared registry.
  */
 import { registry, SocketColors } from '../core/registry.js';
+import { NodeGraph } from '../core/graph.js';
 
 export class GraphRenderer {
   constructor(canvas, graph) {
@@ -283,7 +284,9 @@ export class GraphRenderer {
       const socket = this.hitTestSocket(world.x, world.y);
 
       if (socket && socket.isOutput !== this.connecting.isOutput &&
-          socket.type === this.connecting.type) {
+          NodeGraph.typesCompatible(
+            this.connecting.isOutput ? this.connecting.type : socket.type,
+            this.connecting.isOutput ? socket.type : this.connecting.type)) {
         let from, to;
         if (this.connecting.isOutput) {
           from = { nodeId: this.connecting.fromNode, socketIdx: this.connecting.fromSocket };
@@ -400,7 +403,9 @@ export class GraphRenderer {
       const socket = this.hitTestSocket(world.x, world.y);
 
       if (socket && socket.isOutput !== this.connecting.isOutput &&
-          socket.type === this.connecting.type) {
+          NodeGraph.typesCompatible(
+            this.connecting.isOutput ? this.connecting.type : socket.type,
+            this.connecting.isOutput ? socket.type : this.connecting.type)) {
         let from, to;
         if (this.connecting.isOutput) {
           from = { nodeId: this.connecting.fromNode, socketIdx: this.connecting.fromSocket };
