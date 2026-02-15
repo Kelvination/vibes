@@ -18,11 +18,17 @@ export function buildGeometry(geoData) {
   let geometry;
 
   switch (geoData.type) {
-    case 'cube':
+    case 'cube': {
+      // verticesX/Y/Z are vertex counts; Three.js wants segment counts (vertices - 1)
+      const segX = Math.max(1, (geoData.verticesX || 2) - 1);
+      const segY = Math.max(1, (geoData.verticesY || 2) - 1);
+      const segZ = Math.max(1, (geoData.verticesZ || 2) - 1);
       geometry = new THREE.BoxGeometry(
-        geoData.sizeX || 1, geoData.sizeY || 1, geoData.sizeZ || 1
+        geoData.sizeX || 1, geoData.sizeY || 1, geoData.sizeZ || 1,
+        segX, segY, segZ
       );
       break;
+    }
 
     case 'sphere':
       geometry = new THREE.SphereGeometry(
@@ -37,7 +43,9 @@ export function buildGeometry(geoData) {
         geoData.radius || 1,
         geoData.radius || 1,
         geoData.depth || 2,
-        geoData.vertices || 16
+        geoData.vertices || 16,
+        geoData.sideSegments || 1,
+        geoData.fillType === 'none' // openEnded
       );
       break;
 
@@ -46,7 +54,9 @@ export function buildGeometry(geoData) {
         geoData.radius2 ?? 0,
         geoData.radius1 || 1,
         geoData.depth || 2,
-        geoData.vertices || 16
+        geoData.vertices || 16,
+        geoData.sideSegments || 1,
+        geoData.fillType === 'none' // openEnded
       );
       break;
 
@@ -453,6 +463,13 @@ export function buildGeometry(geoData) {
       return null;
   }
 
+  // Apply subdivision (flat or smooth)
+  if (geoData.subdivide > 0 || geoData.subdivisionSurface > 0) {
+    const levels = geoData.subdivisionSurface || geoData.subdivide || 0;
+    const smooth = !!geoData.subdivisionSurface;
+    geometry = subdivideGeometry(geometry, Math.min(levels, 4), smooth);
+  }
+
   // Apply extrude by scaling geometry
   if (geoData.extrude) {
     const offset = geoData.extrude.offset || 0;
@@ -468,6 +485,171 @@ export function buildGeometry(geoData) {
   }
 
   return geometry;
+}
+
+/**
+ * Subdivide a BufferGeometry using Loop subdivision.
+ * Each triangle is split into 4 sub-triangles. If smooth is true,
+ * original vertex positions are adjusted (Loop's averaging rule).
+ *
+ * @param {THREE.BufferGeometry} inputGeo
+ * @param {number} levels - Number of subdivision iterations
+ * @param {boolean} smooth - Apply position smoothing (true = subdivision surface)
+ * @returns {THREE.BufferGeometry}
+ */
+function subdivideGeometry(inputGeo, levels, smooth) {
+  if (levels <= 0) return inputGeo;
+
+  // Ensure we have an indexed geometry to work with
+  let geo = inputGeo.index ? inputGeo : inputGeo.toNonIndexed();
+  if (!geo.index) {
+    // Build trivial index for non-indexed geometry
+    const count = geo.getAttribute('position').count;
+    const indices = [];
+    for (let i = 0; i < count; i++) indices.push(i);
+    geo.setIndex(indices);
+  }
+
+  for (let iter = 0; iter < levels; iter++) {
+    const posAttr = geo.getAttribute('position');
+    const indexArr = geo.index.array;
+    const triCount = Math.floor(indexArr.length / 3);
+
+    // Collect positions
+    const positions = [];
+    for (let i = 0; i < posAttr.count; i++) {
+      positions.push([posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i)]);
+    }
+    const origVertCount = positions.length;
+
+    // Build edge → midpoint-vertex-index map
+    const edgeMidMap = new Map();     // "min,max" → new vertex index
+    const edgeToFaces = new Map();    // "min,max" → [triIdx, ...]
+    const vertEdges = new Map();      // vertIdx → Set of "min,max" edge keys
+
+    const getEdgeKey = (a, b) => Math.min(a, b) + ',' + Math.max(a, b);
+
+    // First pass: identify edges and create midpoints
+    for (let f = 0; f < triCount; f++) {
+      const a = indexArr[f * 3], b = indexArr[f * 3 + 1], c = indexArr[f * 3 + 2];
+      for (const [v0, v1] of [[a, b], [b, c], [a, c]]) {
+        const key = getEdgeKey(v0, v1);
+        if (!edgeMidMap.has(key)) {
+          // Create midpoint vertex
+          const midIdx = positions.length;
+          positions.push([
+            (positions[v0][0] + positions[v1][0]) / 2,
+            (positions[v0][1] + positions[v1][1]) / 2,
+            (positions[v0][2] + positions[v1][2]) / 2,
+          ]);
+          edgeMidMap.set(key, midIdx);
+          edgeToFaces.set(key, []);
+        }
+        edgeToFaces.get(key).push(f);
+
+        if (!vertEdges.has(v0)) vertEdges.set(v0, new Set());
+        if (!vertEdges.has(v1)) vertEdges.set(v1, new Set());
+        vertEdges.get(v0).add(key);
+        vertEdges.get(v1).add(key);
+      }
+    }
+
+    // Smooth: adjust edge midpoints and original vertices (Loop subdivision rules)
+    if (smooth) {
+      // Adjust edge midpoints: for interior edges, use 3/8*(v0+v1) + 1/8*(v2+v3)
+      // where v2,v3 are the opposite vertices of the two adjacent triangles
+      for (const [key, midIdx] of edgeMidMap) {
+        const [sv0, sv1] = key.split(',').map(Number);
+        const faces = edgeToFaces.get(key);
+        if (faces.length === 2) {
+          // Interior edge: find opposite vertices
+          const oppVerts = [];
+          for (const fi of faces) {
+            const fa = indexArr[fi * 3], fb = indexArr[fi * 3 + 1], fc = indexArr[fi * 3 + 2];
+            for (const v of [fa, fb, fc]) {
+              if (v !== sv0 && v !== sv1) { oppVerts.push(v); break; }
+            }
+          }
+          if (oppVerts.length === 2) {
+            positions[midIdx] = [
+              (positions[sv0][0] + positions[sv1][0]) * 3 / 8 + (positions[oppVerts[0]][0] + positions[oppVerts[1]][0]) / 8,
+              (positions[sv0][1] + positions[sv1][1]) * 3 / 8 + (positions[oppVerts[0]][1] + positions[oppVerts[1]][1]) / 8,
+              (positions[sv0][2] + positions[sv1][2]) * 3 / 8 + (positions[oppVerts[0]][2] + positions[oppVerts[1]][2]) / 8,
+            ];
+          }
+        }
+        // Boundary edges keep simple midpoint (already set)
+      }
+
+      // Adjust original vertices using Loop's vertex rule
+      const newPositions = positions.map(p => [...p]); // copy
+      for (let vi = 0; vi < origVertCount; vi++) {
+        const edges = vertEdges.get(vi);
+        if (!edges) continue;
+        const n = edges.size; // valence
+        if (n < 3) continue;
+
+        // Loop's beta: 1/n * (5/8 - (3/8 + 1/4*cos(2*PI/n))^2)
+        const beta = n === 3
+          ? 3 / 16
+          : (1 / n) * (5 / 8 - Math.pow(3 / 8 + (1 / 4) * Math.cos(2 * Math.PI / n), 2));
+
+        // Gather neighbor vertices (the other end of each edge)
+        let nx = 0, ny = 0, nz = 0;
+        for (const eKey of edges) {
+          const [ev0, ev1] = eKey.split(',').map(Number);
+          const neighbor = ev0 === vi ? ev1 : ev0;
+          nx += positions[neighbor][0];
+          ny += positions[neighbor][1];
+          nz += positions[neighbor][2];
+        }
+
+        const w = 1 - n * beta;
+        newPositions[vi] = [
+          w * positions[vi][0] + beta * nx,
+          w * positions[vi][1] + beta * ny,
+          w * positions[vi][2] + beta * nz,
+        ];
+      }
+
+      // Apply smoothed positions to original vertices only
+      for (let vi = 0; vi < origVertCount; vi++) {
+        positions[vi] = newPositions[vi];
+      }
+    }
+
+    // Build new triangles: each original triangle → 4 sub-triangles
+    const newIndices = [];
+    for (let f = 0; f < triCount; f++) {
+      const a = indexArr[f * 3], b = indexArr[f * 3 + 1], c = indexArr[f * 3 + 2];
+      const mab = edgeMidMap.get(getEdgeKey(a, b));
+      const mbc = edgeMidMap.get(getEdgeKey(b, c));
+      const mac = edgeMidMap.get(getEdgeKey(a, c));
+
+      // 4 sub-triangles
+      newIndices.push(a, mab, mac);
+      newIndices.push(mab, b, mbc);
+      newIndices.push(mac, mbc, c);
+      newIndices.push(mab, mbc, mac);
+    }
+
+    // Build new geometry
+    const flatPositions = new Float32Array(positions.length * 3);
+    for (let i = 0; i < positions.length; i++) {
+      flatPositions[i * 3] = positions[i][0];
+      flatPositions[i * 3 + 1] = positions[i][1];
+      flatPositions[i * 3 + 2] = positions[i][2];
+    }
+
+    geo.dispose();
+    geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(flatPositions, 3));
+    geo.setIndex(newIndices);
+    geo.computeVertexNormals();
+  }
+
+  inputGeo.dispose();
+  return geo;
 }
 
 // ── Geometry Analysis Helpers ────────────────────────────────────────────────
