@@ -407,6 +407,20 @@ export function buildGeometry(geoData) {
 
       const merged = [];
       const sc = geoData.scale || { x: 1, y: 1, z: 1 };
+      const rot = geoData.rotation || { x: 0, y: 0, z: 0 };
+      const hasRotation = (rot.x || 0) !== 0 || (rot.y || 0) !== 0 || (rot.z || 0) !== 0;
+
+      // Pre-compute rotation matrix if needed
+      let rotMatrix = null;
+      if (hasRotation) {
+        rotMatrix = new THREE.Matrix4().makeRotationFromEuler(
+          new THREE.Euler(
+            (rot.x || 0) * Math.PI / 180,
+            (rot.y || 0) * Math.PI / 180,
+            (rot.z || 0) * Math.PI / 180
+          )
+        );
+      }
 
       for (let i = 0; i < posAttr.count; i++) {
         const px = posAttr.getX(i);
@@ -415,6 +429,7 @@ export function buildGeometry(geoData) {
 
         const clone = instanceGeo.clone();
         clone.scale(sc.x, sc.y, sc.z);
+        if (rotMatrix) clone.applyMatrix4(rotMatrix);
         clone.translate(px, py, pz);
         merged.push(clone);
       }
@@ -463,11 +478,139 @@ export function buildGeometry(geoData) {
       return null;
   }
 
+  // ── Curve post-processing ────────────────────────────────────────────────
+
+  // Reverse curve direction
+  if (geoData.reverseCurve) {
+    const posAttr = geometry.getAttribute('position');
+    if (posAttr) {
+      const count = posAttr.count;
+      for (let i = 0; i < Math.floor(count / 2); i++) {
+        const j = count - 1 - i;
+        const tx = posAttr.getX(i), ty = posAttr.getY(i), tz = posAttr.getZ(i);
+        posAttr.setXYZ(i, posAttr.getX(j), posAttr.getY(j), posAttr.getZ(j));
+        posAttr.setXYZ(j, tx, ty, tz);
+      }
+      posAttr.needsUpdate = true;
+    }
+  }
+
+  // Set spline cyclic (close the curve)
+  if (geoData.cyclic) {
+    const posAttr = geometry.getAttribute('position');
+    if (posAttr && posAttr.count >= 2) {
+      const fx = posAttr.getX(0), fy = posAttr.getY(0), fz = posAttr.getZ(0);
+      const lx = posAttr.getX(posAttr.count - 1), ly = posAttr.getY(posAttr.count - 1), lz = posAttr.getZ(posAttr.count - 1);
+      const dx = fx - lx, dy = fy - ly, dz = fz - lz;
+      if (Math.sqrt(dx * dx + dy * dy + dz * dz) > 0.0001) {
+        // Add closing point
+        const pts = [];
+        for (let i = 0; i < posAttr.count; i++) {
+          pts.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+        }
+        pts.push(fx, fy, fz);
+        geometry.dispose();
+        geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      }
+    }
+  }
+
+  // Trim curve to start/end fraction
+  if (geoData.trim) {
+    const posAttr = geometry.getAttribute('position');
+    if (posAttr && posAttr.count >= 2) {
+      const start = Math.max(0, Math.min(1, geoData.trim.start || 0));
+      const end = Math.max(0, Math.min(1, geoData.trim.end ?? 1));
+      if (start > 0 || end < 1) {
+        const count = posAttr.count;
+        const startIdx = Math.floor(start * (count - 1));
+        const endIdx = Math.ceil(end * (count - 1));
+        const pts = [];
+        for (let i = startIdx; i <= endIdx && i < count; i++) {
+          pts.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+        }
+        if (pts.length >= 6) {
+          geometry.dispose();
+          geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+        }
+      }
+    }
+  }
+
+  // Resample curve at new point count or segment length
+  if (geoData.resample) {
+    const posAttr = geometry.getAttribute('position');
+    if (posAttr && posAttr.count >= 2) {
+      geometry = resampleCurveGeometry(geometry, geoData.resample);
+    }
+  }
+
+  // Set spline resolution (resample to resolution)
+  if (geoData.splineResolution > 0) {
+    const posAttr = geometry.getAttribute('position');
+    if (posAttr && posAttr.count >= 2) {
+      geometry = resampleCurveGeometry(geometry, { mode: 'count', count: geoData.splineResolution });
+    }
+  }
+
+  // ── Mesh post-processing ───────────────────────────────────────────────
+
   // Apply subdivision (flat or smooth)
   if (geoData.subdivide > 0 || geoData.subdivisionSurface > 0) {
     const levels = geoData.subdivisionSurface || geoData.subdivide || 0;
     const smooth = !!geoData.subdivisionSurface;
     geometry = subdivideGeometry(geometry, Math.min(levels, 4), smooth);
+  }
+
+  // Triangulate (Three.js already uses triangles, so this ensures non-indexed → indexed)
+  if (geoData.triangulate && !geometry.index) {
+    const count = geometry.getAttribute('position')?.count || 0;
+    const idx = [];
+    for (let i = 0; i < count; i++) idx.push(i);
+    geometry.setIndex(idx);
+  }
+
+  // Split edges: convert to non-indexed so each face has its own vertices
+  if (geoData.splitEdges && geometry.index) {
+    geometry = geometry.toNonIndexed();
+    geometry.computeVertexNormals();
+  }
+
+  // Merge vertices by distance
+  if (geoData.mergeByDistance > 0) {
+    geometry = mergeByDistanceGeometry(geometry, geoData.mergeByDistance);
+  }
+
+  // Convex hull
+  if (geoData.convexHull) {
+    geometry = computeConvexHull(geometry);
+  }
+
+  // Dual mesh
+  if (geoData.dualMesh) {
+    geometry = computeDualMesh(geometry);
+  }
+
+  // Points to vertices (tag for mesh rendering instead of points)
+  if (geoData.pointsToVertices) {
+    // Convert points to a mesh by connecting nearby points with faces
+    // For now, just ensure the geometry has normals so it renders as mesh
+    if (!geometry.index) {
+      const count = geometry.getAttribute('position')?.count || 0;
+      const idx = [];
+      for (let i = 0; i + 2 < count; i += 3) {
+        idx.push(i, i + 1, i + 2);
+      }
+      if (idx.length > 0) geometry.setIndex(idx);
+    }
+    if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+  }
+
+  // Mesh to curve: extract boundary/edge loop as line geometry
+  if (geoData.meshToCurve) {
+    geometry = meshToCurveGeometry(geometry);
   }
 
   // Apply extrude by scaling geometry
@@ -650,6 +793,368 @@ function subdivideGeometry(inputGeo, levels, smooth) {
 
   inputGeo.dispose();
   return geo;
+}
+
+/**
+ * Resample a curve geometry to a new point count or segment length.
+ */
+function resampleCurveGeometry(geo, opts) {
+  const posAttr = geo.getAttribute('position');
+  if (!posAttr || posAttr.count < 2) return geo;
+
+  // Compute cumulative arc lengths
+  const arcLengths = [0];
+  for (let i = 1; i < posAttr.count; i++) {
+    const dx = posAttr.getX(i) - posAttr.getX(i - 1);
+    const dy = posAttr.getY(i) - posAttr.getY(i - 1);
+    const dz = posAttr.getZ(i) - posAttr.getZ(i - 1);
+    arcLengths.push(arcLengths[i - 1] + Math.sqrt(dx * dx + dy * dy + dz * dz));
+  }
+  const totalLength = arcLengths[arcLengths.length - 1];
+  if (totalLength === 0) return geo;
+
+  let targetCount;
+  if (opts.mode === 'length' && opts.length > 0) {
+    targetCount = Math.max(2, Math.round(totalLength / opts.length) + 1);
+  } else {
+    targetCount = Math.max(2, opts.count || 16);
+  }
+
+  // Interpolate new points at uniform arc-length intervals
+  const pts = [];
+  for (let i = 0; i < targetCount; i++) {
+    const t = i / (targetCount - 1);
+    const targetLen = t * totalLength;
+
+    // Find segment containing this arc length
+    let segIdx = 0;
+    for (let j = 1; j < arcLengths.length; j++) {
+      if (arcLengths[j] >= targetLen) { segIdx = j - 1; break; }
+      if (j === arcLengths.length - 1) segIdx = j - 1;
+    }
+
+    const segLen = arcLengths[segIdx + 1] - arcLengths[segIdx];
+    const localT = segLen > 0 ? (targetLen - arcLengths[segIdx]) / segLen : 0;
+
+    const x = posAttr.getX(segIdx) + (posAttr.getX(segIdx + 1) - posAttr.getX(segIdx)) * localT;
+    const y = posAttr.getY(segIdx) + (posAttr.getY(segIdx + 1) - posAttr.getY(segIdx)) * localT;
+    const z = posAttr.getZ(segIdx) + (posAttr.getZ(segIdx + 1) - posAttr.getZ(segIdx)) * localT;
+    pts.push(x, y, z);
+  }
+
+  geo.dispose();
+  const newGeo = new THREE.BufferGeometry();
+  newGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  return newGeo;
+}
+
+/**
+ * Merge vertices that are within a distance threshold.
+ */
+function mergeByDistanceGeometry(geo, threshold) {
+  const posAttr = geo.getAttribute('position');
+  if (!posAttr) return geo;
+
+  // Build mapping: old vertex index → merged vertex index
+  const mergedPositions = [];
+  const indexMap = new Int32Array(posAttr.count).fill(-1);
+
+  for (let i = 0; i < posAttr.count; i++) {
+    if (indexMap[i] !== -1) continue;
+    const x = posAttr.getX(i), y = posAttr.getY(i), z = posAttr.getZ(i);
+    const newIdx = mergedPositions.length / 3;
+    mergedPositions.push(x, y, z);
+    indexMap[i] = newIdx;
+
+    // Find all other vertices within threshold
+    for (let j = i + 1; j < posAttr.count; j++) {
+      if (indexMap[j] !== -1) continue;
+      const dx = posAttr.getX(j) - x, dy = posAttr.getY(j) - y, dz = posAttr.getZ(j) - z;
+      if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= threshold) {
+        indexMap[j] = newIdx;
+      }
+    }
+  }
+
+  // Rebuild index buffer with merged references
+  const newGeo = new THREE.BufferGeometry();
+  newGeo.setAttribute('position', new THREE.Float32BufferAttribute(mergedPositions, 3));
+
+  if (geo.index) {
+    const oldIdx = geo.index.array;
+    const newIdx = [];
+    for (let i = 0; i < oldIdx.length; i += 3) {
+      const a = indexMap[oldIdx[i]], b = indexMap[oldIdx[i + 1]], c = indexMap[oldIdx[i + 2]];
+      // Skip degenerate triangles
+      if (a !== b && b !== c && a !== c) newIdx.push(a, b, c);
+    }
+    newGeo.setIndex(newIdx);
+  } else {
+    const newIdx = [];
+    for (let i = 0; i < posAttr.count; i += 3) {
+      const a = indexMap[i], b = indexMap[i + 1], c = indexMap[i + 2];
+      if (a !== b && b !== c && a !== c) newIdx.push(a, b, c);
+    }
+    newGeo.setIndex(newIdx);
+  }
+
+  newGeo.computeVertexNormals();
+  geo.dispose();
+  return newGeo;
+}
+
+/**
+ * Compute the convex hull of a geometry's vertices.
+ * Uses an incremental algorithm for 3D convex hull.
+ */
+function computeConvexHull(geo) {
+  const posAttr = geo.getAttribute('position');
+  if (!posAttr || posAttr.count < 4) return geo;
+
+  // Collect unique vertices
+  const verts = [];
+  for (let i = 0; i < posAttr.count; i++) {
+    verts.push({ x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) });
+  }
+
+  // Find initial tetrahedron (4 non-coplanar points)
+  let p0 = 0, p1 = -1, p2 = -1, p3 = -1;
+  // Find farthest point from p0
+  let maxDist = 0;
+  for (let i = 1; i < verts.length; i++) {
+    const dx = verts[i].x - verts[p0].x, dy = verts[i].y - verts[p0].y, dz = verts[i].z - verts[p0].z;
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d > maxDist) { maxDist = d; p1 = i; }
+  }
+  if (p1 === -1) return geo;
+
+  // Find farthest from line p0-p1
+  const e01 = { x: verts[p1].x - verts[p0].x, y: verts[p1].y - verts[p0].y, z: verts[p1].z - verts[p0].z };
+  maxDist = 0;
+  for (let i = 0; i < verts.length; i++) {
+    if (i === p0 || i === p1) continue;
+    const ap = { x: verts[i].x - verts[p0].x, y: verts[i].y - verts[p0].y, z: verts[i].z - verts[p0].z };
+    const cx = e01.y * ap.z - e01.z * ap.y, cy = e01.z * ap.x - e01.x * ap.z, cz = e01.x * ap.y - e01.y * ap.x;
+    const d = cx * cx + cy * cy + cz * cz;
+    if (d > maxDist) { maxDist = d; p2 = i; }
+  }
+  if (p2 === -1) return geo;
+
+  // Find farthest from plane p0-p1-p2
+  const e02 = { x: verts[p2].x - verts[p0].x, y: verts[p2].y - verts[p0].y, z: verts[p2].z - verts[p0].z };
+  const normal = { x: e01.y * e02.z - e01.z * e02.y, y: e01.z * e02.x - e01.x * e02.z, z: e01.x * e02.y - e01.y * e02.x };
+  maxDist = 0;
+  for (let i = 0; i < verts.length; i++) {
+    if (i === p0 || i === p1 || i === p2) continue;
+    const d = Math.abs(normal.x * (verts[i].x - verts[p0].x) + normal.y * (verts[i].y - verts[p0].y) + normal.z * (verts[i].z - verts[p0].z));
+    if (d > maxDist) { maxDist = d; p3 = i; }
+  }
+  if (p3 === -1) return geo;
+
+  // Orient initial tetrahedron so all normals point outward
+  const d = normal.x * (verts[p3].x - verts[p0].x) + normal.y * (verts[p3].y - verts[p0].y) + normal.z * (verts[p3].z - verts[p0].z);
+  let faces = d > 0
+    ? [[p0, p2, p1], [p0, p1, p3], [p1, p2, p3], [p0, p3, p2]]
+    : [[p0, p1, p2], [p0, p3, p1], [p1, p3, p2], [p0, p2, p3]];
+
+  const faceNormal = (f) => {
+    const a = verts[f[0]], b = verts[f[1]], c = verts[f[2]];
+    const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+    const acx = c.x - a.x, acy = c.y - a.y, acz = c.z - a.z;
+    return { x: aby * acz - abz * acy, y: abz * acx - abx * acz, z: abx * acy - aby * acx };
+  };
+
+  // Incrementally add remaining points
+  const used = new Set([p0, p1, p2, p3]);
+  for (let i = 0; i < verts.length; i++) {
+    if (used.has(i)) continue;
+    const pt = verts[i];
+
+    // Find visible faces
+    const visible = [];
+    for (let fi = 0; fi < faces.length; fi++) {
+      const n = faceNormal(faces[fi]);
+      const a = verts[faces[fi][0]];
+      const dot = n.x * (pt.x - a.x) + n.y * (pt.y - a.y) + n.z * (pt.z - a.z);
+      if (dot > 1e-10) visible.push(fi);
+    }
+    if (visible.length === 0) continue;
+    used.add(i);
+
+    // Find horizon edges (edges shared by exactly one visible face)
+    const edgeCount = new Map();
+    for (const fi of visible) {
+      const f = faces[fi];
+      for (let j = 0; j < 3; j++) {
+        const a = f[j], b = f[(j + 1) % 3];
+        const key = Math.min(a, b) + ',' + Math.max(a, b);
+        const dir = a < b ? 1 : -1;
+        edgeCount.set(key, (edgeCount.get(key) || 0) + dir);
+      }
+    }
+
+    // Remove visible faces (in reverse order to preserve indices)
+    visible.sort((a, b) => b - a);
+    for (const fi of visible) faces.splice(fi, 1);
+
+    // Create new faces from horizon edges to new point
+    for (const fi of [...Array(faces.length + visible.length).keys()].slice(faces.length - faces.length)) { /* skip */ }
+    for (const [key, count] of edgeCount) {
+      if (Math.abs(count) !== 1) continue; // only horizon edges
+      const [a, b] = key.split(',').map(Number);
+      if (count > 0) faces.push([a, b, i]);
+      else faces.push([b, a, i]);
+    }
+  }
+
+  // Build geometry from hull faces
+  const pts = [];
+  const indices = [];
+  const vertMap = new Map();
+  for (const f of faces) {
+    for (const vi of f) {
+      if (!vertMap.has(vi)) {
+        vertMap.set(vi, pts.length / 3);
+        pts.push(verts[vi].x, verts[vi].y, verts[vi].z);
+      }
+    }
+    indices.push(vertMap.get(f[0]), vertMap.get(f[1]), vertMap.get(f[2]));
+  }
+
+  geo.dispose();
+  const newGeo = new THREE.BufferGeometry();
+  newGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  newGeo.setIndex(indices);
+  newGeo.computeVertexNormals();
+  return newGeo;
+}
+
+/**
+ * Compute the dual mesh: each face becomes a vertex (at centroid),
+ * each original vertex becomes a face connecting adjacent centroids.
+ */
+function computeDualMesh(geo) {
+  if (!geo.index) return geo;
+  const posAttr = geo.getAttribute('position');
+  const idxArr = geo.index.array;
+  const triCount = Math.floor(idxArr.length / 3);
+  if (triCount < 2) return geo;
+
+  // Compute face centroids
+  const centroids = [];
+  for (let f = 0; f < triCount; f++) {
+    const a = idxArr[f * 3], b = idxArr[f * 3 + 1], c = idxArr[f * 3 + 2];
+    centroids.push({
+      x: (posAttr.getX(a) + posAttr.getX(b) + posAttr.getX(c)) / 3,
+      y: (posAttr.getY(a) + posAttr.getY(b) + posAttr.getY(c)) / 3,
+      z: (posAttr.getZ(a) + posAttr.getZ(b) + posAttr.getZ(c)) / 3,
+    });
+  }
+
+  // Build vertex → face adjacency
+  const vertFaces = new Map();
+  for (let f = 0; f < triCount; f++) {
+    for (let j = 0; j < 3; j++) {
+      const v = idxArr[f * 3 + j];
+      if (!vertFaces.has(v)) vertFaces.set(v, []);
+      vertFaces.get(v).push(f);
+    }
+  }
+
+  // For each vertex with 3+ adjacent faces, create a dual face
+  const pts = [];
+  const indices = [];
+  for (const c of centroids) pts.push(c.x, c.y, c.z);
+
+  for (const [, adjFaces] of vertFaces) {
+    if (adjFaces.length < 3) continue;
+    // Fan triangulate the polygon formed by adjacent face centroids
+    for (let i = 1; i < adjFaces.length - 1; i++) {
+      indices.push(adjFaces[0], adjFaces[i], adjFaces[i + 1]);
+    }
+  }
+
+  geo.dispose();
+  const newGeo = new THREE.BufferGeometry();
+  newGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  if (indices.length > 0) newGeo.setIndex(indices);
+  newGeo.computeVertexNormals();
+  return newGeo;
+}
+
+/**
+ * Convert a mesh to a curve by extracting boundary/edge loops.
+ */
+function meshToCurveGeometry(geo) {
+  if (!geo.index) {
+    // Non-indexed: just return as-is (already point-based)
+    return geo;
+  }
+  const posAttr = geo.getAttribute('position');
+  const idxArr = geo.index.array;
+  const triCount = Math.floor(idxArr.length / 3);
+
+  // Find boundary edges (edges used by only one triangle)
+  const edgeMap = new Map();
+  for (let f = 0; f < triCount; f++) {
+    const verts = [idxArr[f * 3], idxArr[f * 3 + 1], idxArr[f * 3 + 2]];
+    for (let j = 0; j < 3; j++) {
+      const a = verts[j], b = verts[(j + 1) % 3];
+      const key = Math.min(a, b) + ',' + Math.max(a, b);
+      edgeMap.set(key, (edgeMap.get(key) || 0) + 1);
+    }
+  }
+
+  // Collect boundary edge vertices
+  const boundaryEdges = [];
+  for (const [key, count] of edgeMap) {
+    if (count === 1) {
+      const [a, b] = key.split(',').map(Number);
+      boundaryEdges.push([a, b]);
+    }
+  }
+
+  if (boundaryEdges.length === 0) {
+    // Closed mesh, no boundary - extract all unique edges instead
+    const pts = [];
+    const seen = new Set();
+    for (const [key] of edgeMap) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const [a, b] = key.split(',').map(Number);
+      pts.push(posAttr.getX(a), posAttr.getY(a), posAttr.getZ(a));
+      pts.push(posAttr.getX(b), posAttr.getY(b), posAttr.getZ(b));
+    }
+    geo.dispose();
+    const newGeo = new THREE.BufferGeometry();
+    newGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    return newGeo;
+  }
+
+  // Chain boundary edges into a loop
+  const adjMap = new Map();
+  for (const [a, b] of boundaryEdges) {
+    if (!adjMap.has(a)) adjMap.set(a, []);
+    if (!adjMap.has(b)) adjMap.set(b, []);
+    adjMap.get(a).push(b);
+    adjMap.get(b).push(a);
+  }
+
+  const visited = new Set();
+  const pts = [];
+  let current = boundaryEdges[0][0];
+  while (!visited.has(current) && adjMap.has(current)) {
+    visited.add(current);
+    pts.push(posAttr.getX(current), posAttr.getY(current), posAttr.getZ(current));
+    const neighbors = adjMap.get(current) || [];
+    current = neighbors.find(n => !visited.has(n)) ?? -1;
+    if (current === -1) break;
+  }
+
+  geo.dispose();
+  const newGeo = new THREE.BufferGeometry();
+  newGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  return newGeo;
 }
 
 // ── Geometry Analysis Helpers ────────────────────────────────────────────────
@@ -1030,8 +1535,8 @@ export function buildMesh(geoData, wireframeMode = false) {
   if (!geometry) return null;
 
   const isWireframeOnly = geoData.wireframeOnly;
-  const isPoints = geoData.type === 'points';
-  const isCurve = geoData.type === 'curve_circle' || geoData.type === 'curve_line' || geoData.type === 'spiral' || geoData.type === 'curve_arc' || geoData.type === 'curve_star';
+  const isPoints = geoData.type === 'points' && !geoData.pointsToVertices;
+  const isCurve = (geoData.type === 'curve_circle' || geoData.type === 'curve_line' || geoData.type === 'spiral' || geoData.type === 'curve_arc' || geoData.type === 'curve_star' || geoData.meshToCurve) && !geoData.pointsToVertices;
   const isUnfilledCircle = geoData.type === 'mesh_circle' && geoData.fillType === 'none';
 
   // Apply flipFaces
