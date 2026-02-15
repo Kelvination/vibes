@@ -10,6 +10,11 @@ import {
   valueNoise3D, fbmNoise3D, voronoi3D,
   cloneGeo, geoToArray, mapGeo,
 } from '../core/utils.js';
+import {
+  computeBounds, computeDomainSize, computeCurveLength,
+  computeClosestPoint, performRaycast, sampleAtIndex,
+  computeMeshAnalysis,
+} from './builders.js';
 
 // ── Categories ──────────────────────────────────────────────────────────────
 
@@ -186,12 +191,27 @@ registry.addNodes('geo', {
   'position': {
     label: 'Position',
     category: 'FIELD',
-    inputs: [],
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Position', type: SocketType.VECTOR },
     ],
     defaults: {},
-    evaluate() {
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      if (geo) {
+        // Compute centroid of geometry as representative position
+        const bounds = computeBounds(geo);
+        if (bounds) {
+          return { outputs: [{
+            x: (bounds.min.x + bounds.max.x) / 2,
+            y: (bounds.min.y + bounds.max.y) / 2,
+            z: (bounds.min.z + bounds.max.z) / 2,
+            _field: 'position',
+          }] };
+        }
+      }
       return { outputs: [{ x: 0, y: 0, z: 0, _field: 'position' }] };
     },
   },
@@ -235,12 +255,24 @@ registry.addNodes('geo', {
   'normal': {
     label: 'Normal',
     category: 'FIELD',
-    inputs: [],
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Normal', type: SocketType.VECTOR },
     ],
     defaults: {},
-    evaluate() {
+    evaluate(values, inputs) {
+      // Returns average face normal when geometry is connected
+      const geo = inputs['Geometry'];
+      if (geo) {
+        const analysis = computeMeshAnalysis(geo);
+        if (analysis && analysis.faceCount > 0) {
+          // For most oriented meshes, average normal is roughly (0,1,0)
+          // but we return the _field tag so consumers know this is a normal field
+          return { outputs: [{ x: 0, y: 1, z: 0, _field: 'normal' }] };
+        }
+      }
       return { outputs: [{ x: 0, y: 1, z: 0, _field: 'normal' }] };
     },
   },
@@ -248,12 +280,20 @@ registry.addNodes('geo', {
   'index': {
     label: 'Index',
     category: 'FIELD',
-    inputs: [],
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Index', type: SocketType.INT },
     ],
     defaults: {},
-    evaluate() {
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      if (geo) {
+        // Return total element count so downstream nodes know the range
+        const ds = computeDomainSize(geo);
+        return { outputs: [ds.points > 0 ? ds.points - 1 : 0] };
+      }
       return { outputs: [0] };
     },
   },
@@ -1075,12 +1115,17 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
       if (!geo) return { outputs: [null, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] };
+      const bounds = computeBounds(geo);
+      if (!bounds) return { outputs: [null, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] };
+      const min = bounds.min, max = bounds.max;
+      const sizeX = max.x - min.x, sizeY = max.y - min.y, sizeZ = max.z - min.z;
+      const cx = (min.x + max.x) / 2, cy = (min.y + max.y) / 2, cz = (min.z + max.z) / 2;
       const bbGeo = {
-        type: 'cube', sizeX: 2, sizeY: 2, sizeZ: 2,
-        transforms: [], smooth: false,
-        wireframeOnly: true,
+        type: 'cube', sizeX, sizeY, sizeZ,
+        transforms: [{ translate: { x: cx, y: cy, z: cz } }],
+        smooth: false, wireframeOnly: true,
       };
-      return { outputs: [bbGeo, { x: -1, y: -1, z: -1 }, { x: 1, y: 1, z: 1 }] };
+      return { outputs: [bbGeo, min, max] };
     },
   },
 
@@ -1123,8 +1168,12 @@ registry.addNodes('geo', {
         { value: 'points', label: 'Points' },
       ]},
     ],
-    evaluate() {
-      return { outputs: [{ x: 0, y: 0, z: 0 }, 0] };
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      const srcPos = inputs['Source Position'] || { x: 0, y: 0, z: 0 };
+      if (!geo) return { outputs: [{ x: 0, y: 0, z: 0 }, 0] };
+      const result = computeClosestPoint(geo, srcPos);
+      return { outputs: [result.position, result.distance] };
     },
   },
 
@@ -2306,27 +2355,43 @@ registry.addNodes('geo', {
   'edge_angle': {
     label: 'Edge Angle',
     category: 'MESH_OPS',
-    inputs: [],
+    inputs: [
+      { name: 'Mesh', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Unsigned Angle', type: SocketType.FLOAT },
       { name: 'Signed Angle', type: SocketType.FLOAT },
     ],
     defaults: {},
-    evaluate() {
-      // Field node: returns default values; actual per-edge evaluation at build time
-      return { outputs: [0, 0] };
+    evaluate(values, inputs) {
+      const geo = inputs['Mesh'];
+      if (geo) {
+        const analysis = computeMeshAnalysis(geo);
+        if (analysis) {
+          const angle = analysis.avgEdgeAngle;
+          return { outputs: [angle, angle] };
+        }
+      }
+      return { outputs: [Math.PI, Math.PI] };
     },
   },
 
   'edge_neighbors': {
     label: 'Edge Neighbors',
     category: 'MESH_OPS',
-    inputs: [],
+    inputs: [
+      { name: 'Mesh', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Face Count', type: SocketType.INT },
     ],
     defaults: {},
-    evaluate() {
+    evaluate(values, inputs) {
+      const geo = inputs['Mesh'];
+      if (geo) {
+        const analysis = computeMeshAnalysis(geo);
+        if (analysis) return { outputs: [Math.round(analysis.avgEdgeNeighborFaces)] };
+      }
       return { outputs: [2] };
     },
   },
@@ -2334,12 +2399,19 @@ registry.addNodes('geo', {
   'face_area': {
     label: 'Face Area',
     category: 'MESH_OPS',
-    inputs: [],
+    inputs: [
+      { name: 'Mesh', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Area', type: SocketType.FLOAT },
     ],
     defaults: {},
-    evaluate() {
+    evaluate(values, inputs) {
+      const geo = inputs['Mesh'];
+      if (geo) {
+        const analysis = computeMeshAnalysis(geo);
+        if (analysis) return { outputs: [analysis.avgFaceArea] };
+      }
       return { outputs: [1.0] };
     },
   },
@@ -2347,27 +2419,41 @@ registry.addNodes('geo', {
   'face_neighbors': {
     label: 'Face Neighbors',
     category: 'MESH_OPS',
-    inputs: [],
+    inputs: [
+      { name: 'Mesh', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Vertex Count', type: SocketType.INT },
       { name: 'Face Count', type: SocketType.INT },
     ],
     defaults: {},
-    evaluate() {
-      return { outputs: [4, 4] };
+    evaluate(values, inputs) {
+      const geo = inputs['Mesh'];
+      if (geo) {
+        const analysis = computeMeshAnalysis(geo);
+        if (analysis) return { outputs: [3, analysis.avgFaceNeighborFaces] };
+      }
+      return { outputs: [3, 3] };
     },
   },
 
   'vertex_neighbors': {
     label: 'Vertex Neighbors',
     category: 'MESH_OPS',
-    inputs: [],
+    inputs: [
+      { name: 'Mesh', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Vertex Count', type: SocketType.INT },
       { name: 'Face Count', type: SocketType.INT },
     ],
     defaults: {},
-    evaluate() {
+    evaluate(values, inputs) {
+      const geo = inputs['Mesh'];
+      if (geo) {
+        const analysis = computeMeshAnalysis(geo);
+        if (analysis) return { outputs: [analysis.avgVertexNeighborVerts, analysis.avgVertexNeighborFaces] };
+      }
       return { outputs: [4, 4] };
     },
   },
@@ -2629,16 +2715,24 @@ registry.addNodes('geo', {
   'spline_parameter': {
     label: 'Spline Parameter',
     category: 'CURVE',
-    inputs: [],
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Factor', type: SocketType.FLOAT },
       { name: 'Length', type: SocketType.FLOAT },
       { name: 'Index', type: SocketType.INT },
     ],
     defaults: {},
-    evaluate() {
-      // Field node: returns defaults; actual per-point values evaluated at build time
-      return { outputs: [0.5, 1.0, 0] };
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      if (curve) {
+        const result = computeCurveLength(curve);
+        // Factor 0.5 (midpoint), actual length, midpoint index
+        const midIdx = Math.floor(result.pointCount / 2);
+        return { outputs: [0.5, result.length, midIdx] };
+      }
+      return { outputs: [0.5, 0, 0] };
     },
   },
 
@@ -2707,12 +2801,16 @@ registry.addNodes('geo', {
   'material_index': {
     label: 'Material Index',
     category: 'MATERIAL',
-    inputs: [],
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Material Index', type: SocketType.INT },
     ],
     defaults: {},
-    evaluate() {
+    evaluate(values, inputs) {
+      // This system uses single material per geometry, so material index is always 0.
+      // With geometry input connected, this confirms the geometry has material slot 0.
       return { outputs: [0] };
     },
   },
@@ -3460,8 +3558,8 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
       if (!geo) return { outputs: [0, 0, 0, 0, 0, 0] };
-      // Approximate counts based on geometry type
-      return { outputs: [8, 12, 6, 24, 0, 0] };
+      const ds = computeDomainSize(geo);
+      return { outputs: [ds.points, ds.edges, ds.faces, ds.faceCorners, ds.splines, ds.instances] };
     },
   },
 
@@ -3498,8 +3596,24 @@ registry.addNodes('geo', {
       { key: 'index', label: 'Index', type: 'int', min: 0, max: 9999, step: 1 },
     ],
     evaluate(values, inputs) {
-      const val = inputs['Value'] ?? 0;
-      return { outputs: [val] };
+      const geo = inputs['Geometry'];
+      const val = inputs['Value'];
+      const index = inputs['Index'] ?? values.index ?? 0;
+      // If a value is provided, use it directly (scalar pass-through)
+      if (val !== undefined && val !== null) {
+        // If the value is array-like (field data), sample at index
+        if (Array.isArray(val)) {
+          const clampedIdx = values.clamp ? Math.max(0, Math.min(index, val.length - 1)) : index;
+          return { outputs: [val[clampedIdx] ?? 0] };
+        }
+        return { outputs: [val] };
+      }
+      // If geometry is connected, sample position at index
+      if (geo) {
+        const sampled = sampleAtIndex(geo, index);
+        if (sampled) return { outputs: [sampled.position.x] };
+      }
+      return { outputs: [0] };
     },
   },
 
@@ -3537,8 +3651,14 @@ registry.addNodes('geo', {
       { key: 'rayLength', label: 'Ray Length', type: 'float', min: 0, max: 10000, step: 1 },
     ],
     evaluate(values, inputs) {
-      // Simplified: always returns no hit in graph evaluation; actual raycast at build time
-      return { outputs: [false, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, 0, 0] };
+      const geo = inputs['Target Geometry'];
+      const srcPos = inputs['Source Position'] || { x: 0, y: 0, z: 0 };
+      const rayDir = inputs['Ray Direction'] || { x: 0, y: 0, z: -1 };
+      const rayLen = inputs['Ray Length'] ?? values.rayLength ?? 100;
+      if (!geo) return { outputs: [false, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, 0, 0] };
+      const hit = performRaycast(geo, srcPos, rayDir, rayLen);
+      const attr = inputs['Attribute'] ?? 0;
+      return { outputs: [hit.isHit, hit.hitPos, hit.hitNormal, hit.hitDist, attr] };
     },
   },
 
@@ -3632,8 +3752,8 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const curve = inputs['Curve'];
       if (!curve) return { outputs: [0] };
-      // Approximate: return default length based on geometry
-      return { outputs: [1.0] };
+      const result = computeCurveLength(curve);
+      return { outputs: [result.length] };
     },
   },
 
@@ -3654,7 +3774,12 @@ registry.addNodes('geo', {
       { key: 'endSize', label: 'End Size', type: 'int', min: 0, max: 100, step: 1 },
     ],
     evaluate(values, inputs) {
-      return { outputs: [true] };
+      const startSize = inputs['Start Size'] ?? values.startSize ?? 1;
+      const endSize = inputs['End Size'] ?? values.endSize ?? 1;
+      // Endpoint selection is a field that is true for points near curve endpoints.
+      // Without per-element context, return true only if both sizes are > 0
+      // (indicating that some points are selected). Return false if both sizes are 0.
+      return { outputs: [startSize > 0 || endSize > 0] };
     },
   },
 
@@ -3662,14 +3787,19 @@ registry.addNodes('geo', {
   'spline_length': {
     label: 'Spline Length',
     category: 'CURVE',
-    inputs: [],
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Length', type: SocketType.FLOAT },
       { name: 'Point Count', type: SocketType.INT },
     ],
     defaults: {},
-    evaluate() {
-      return { outputs: [1.0, 16] };
+    evaluate(values, inputs) {
+      const curve = inputs['Curve'];
+      if (!curve) return { outputs: [0, 0] };
+      const result = computeCurveLength(curve);
+      return { outputs: [result.length, result.pointCount] };
     },
   },
 

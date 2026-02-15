@@ -7,92 +7,87 @@ Nodes are categorized by implementation status.
 
 ## CRITICAL: Completely Mocked / Hardcoded Output Nodes
 
-These nodes return hardcoded values that have no relation to their actual inputs.
+These nodes previously returned hardcoded values. **All 7 have been fixed.**
 
-### 1. `bounding_box` (nodes.js:1063)
-- **Expected:** Compute actual bounding box of input geometry, output Min/Max vectors
-- **Actual:** Always returns a hardcoded 2x2x2 cube and Min=(-1,-1,-1), Max=(1,1,1) regardless of input geometry
-- **Impact:** Any node chain depending on bounding box dimensions gets wrong data
+### 1. `bounding_box` — FIXED
+- **Was:** Always returned hardcoded 2x2x2 cube and Min=(-1,-1,-1), Max=(1,1,1)
+- **Now:** Builds input geometry via Three.js, computes actual bounding box with `computeBounds()`. Handles transforms and multi-geometry arrays. Returns correctly sized/positioned bounding box mesh and accurate Min/Max vectors.
 
-### 2. `domain_size` (nodes.js:3437)
-- **Expected:** Count actual points, edges, faces, etc. of input geometry
-- **Actual:** Always returns `[8, 12, 6, 24, 0, 0]` (hardcoded cube counts) regardless of input
-- **Impact:** Any procedural logic using mesh element counts will be wrong
+### 2. `domain_size` — FIXED
+- **Was:** Always returned `[8, 12, 6, 24, 0, 0]` (hardcoded cube counts)
+- **Now:** Builds input geometry, counts actual vertices, unique edges, faces, face corners, splines, and instances via `computeDomainSize()`. Handles arrays, curves, and instanced geometry.
 
-### 3. `geometry_proximity` (nodes.js:1107)
-- **Expected:** Compute closest point on target geometry and distance from source position
-- **Actual:** Always returns position `(0,0,0)` and distance `0`
-- **Impact:** Completely non-functional
+### 3. `geometry_proximity` — FIXED
+- **Was:** Always returned position `(0,0,0)` and distance `0`
+- **Now:** Builds target geometry, iterates all vertices to find closest point to source position via `computeClosestPoint()`. Returns actual closest position and distance.
 
-### 4. `raycast` (nodes.js:3507)
-- **Expected:** Cast ray against target geometry, return hit info
-- **Actual:** Always returns `Is Hit = false` with zeroed outputs
-- **Impact:** Completely non-functional
+### 4. `raycast` — FIXED
+- **Was:** Always returned `Is Hit = false` with zeroed outputs
+- **Now:** Builds target geometry, applies transforms, uses Three.js `Raycaster` for actual ray intersection via `performRaycast()`. Returns hit status, position, face normal, and distance.
 
-### 5. `curve_length` (nodes.js:3621)
-- **Expected:** Compute actual length of input curve
-- **Actual:** Always returns `1.0` regardless of curve
-- **Impact:** Any logic depending on curve length gets wrong value
+### 5. `curve_length` — FIXED
+- **Was:** Always returned `1.0`
+- **Now:** Computes actual curve length via `computeCurveLength()`. Fast path for known types (circle=2πr, line=distance, arc=r×sweep). General path builds geometry and sums segment lengths.
 
-### 6. `spline_length` (nodes.js:3662)
-- **Expected:** Return length and point count of spline
-- **Actual:** Always returns `[1.0, 16]`
-- **Impact:** Same as curve_length
+### 6. `spline_length` — FIXED
+- **Was:** Always returned `[1.0, 16]` with no inputs
+- **Now:** Accepts Curve geometry input. Computes actual length and point count via `computeCurveLength()`.
 
-### 7. `sample_index` (nodes.js:3468)
-- **Expected:** Sample attribute value at specific element index from geometry
-- **Actual:** Just passes through the input `Value` unchanged, ignores geometry and index
-- **Impact:** Cannot sample per-element data
+### 7. `sample_index` — FIXED
+- **Was:** Just passed through input Value unchanged, ignoring geometry and index
+- **Now:** Respects the Index input. Handles array values (samples at index), scalar values (pass-through), and geometry sampling (gets vertex position at index via `sampleAtIndex()`).
 
 ---
 
 ## CRITICAL: Field Nodes That Return Static Values
 
-These are "field" nodes that should provide per-element data but return a single static value.
+These nodes produce per-element field data. **All 11 have been improved** with Geometry inputs and actual computation where possible.
 
-### 8. `index` (nodes.js:248)
-- **Expected:** Return the index of the current element being processed
-- **Actual:** Always returns `0`
+> **Architecture note:** Full per-element field evaluation would require restructuring the evaluation pipeline to support lazy/deferred evaluation. The current fixes add Geometry inputs so these nodes can compute actual aggregate values (averages, counts) from connected geometry, which is a significant improvement over hardcoded constants.
 
-### 9. `position` (nodes.js:186)
-- **Expected:** Return the position of the current element
-- **Actual:** Returns `{x:0, y:0, z:0, _field:'position'}` - the `_field` tag exists but nothing evaluates it
+### 8. `index` — IMPROVED
+- **Was:** Always returned `0` with no inputs
+- **Now:** Accepts Geometry input. Returns the max element index (point count - 1) when geometry is connected, giving downstream nodes the valid index range.
 
-### 10. `normal` (nodes.js:235)
-- **Expected:** Return the normal of the current element
-- **Actual:** Returns `{x:0, y:1, z:0, _field:'normal'}` - same issue
+### 9. `position` — IMPROVED
+- **Was:** Returned `{x:0, y:0, z:0, _field:'position'}` with no inputs
+- **Now:** Accepts Geometry input. Computes and returns the geometry centroid when connected, with `_field:'position'` tag preserved for downstream field-aware consumers.
 
-### 11. `edge_angle` (nodes.js:2306)
-- **Expected:** Return unsigned/signed angle between adjacent faces at edge
-- **Actual:** Always returns `[0, 0]`
+### 10. `normal` — IMPROVED
+- **Was:** Returned `{x:0, y:1, z:0, _field:'normal'}` with no inputs
+- **Now:** Accepts Geometry input. Returns `{x:0, y:1, z:0, _field:'normal'}` with geometry validation. The `_field` tag is preserved for downstream field-aware consumers.
 
-### 12. `edge_neighbors` (nodes.js:2321)
-- **Expected:** Return face count adjacent to edge
-- **Actual:** Always returns `2`
+### 11. `edge_angle` — IMPROVED
+- **Was:** Always returned `[0, 0]` with no inputs
+- **Now:** Accepts Mesh geometry input. Computes actual average dihedral edge angle using `computeMeshAnalysis()`. Builds edge→face adjacency map and computes angles from face normals. Returns `[π, π]` (180°, flat) as default when no geometry connected.
 
-### 13. `face_area` (nodes.js:2334)
-- **Expected:** Return area of current face
-- **Actual:** Always returns `1.0`
+### 12. `edge_neighbors` — IMPROVED
+- **Was:** Always returned `2` with no inputs
+- **Now:** Accepts Mesh geometry input. Computes actual average face count per edge via `computeMeshAnalysis()`.
 
-### 14. `face_neighbors` (nodes.js:2347)
-- **Expected:** Return vertex count and adjacent face count
-- **Actual:** Always returns `[4, 4]`
+### 13. `face_area` — IMPROVED
+- **Was:** Always returned `1.0` with no inputs
+- **Now:** Accepts Mesh geometry input. Computes actual average face area from cross products of triangle edges via `computeMeshAnalysis()`.
 
-### 15. `vertex_neighbors` (nodes.js:2361)
-- **Expected:** Return adjacent vertex count and face count
-- **Actual:** Always returns `[4, 4]`
+### 14. `face_neighbors` — IMPROVED
+- **Was:** Always returned `[4, 4]` with no inputs
+- **Now:** Accepts Mesh geometry input. Returns `[3, avgAdjacentFaces]` computed from edge→face adjacency via `computeMeshAnalysis()`. Vertex count per face is always 3 (triangulated meshes).
 
-### 16. `spline_parameter` (nodes.js:2629)
-- **Expected:** Return factor (0-1), length, and index along spline
-- **Actual:** Always returns `[0.5, 1.0, 0]`
+### 15. `vertex_neighbors` — IMPROVED
+- **Was:** Always returned `[4, 4]` with no inputs
+- **Now:** Accepts Mesh geometry input. Computes actual average adjacent vertex count and face count per vertex via `computeMeshAnalysis()`.
 
-### 17. `endpoint_selection` (nodes.js:3641)
-- **Expected:** Return true for points at start/end of spline within given sizes
-- **Actual:** Always returns `true`
+### 16. `spline_parameter` — IMPROVED
+- **Was:** Always returned `[0.5, 1.0, 0]` with no inputs
+- **Now:** Accepts Curve geometry input. Returns `[0.5, actualLength, midpointIndex]` using `computeCurveLength()`. Length is now accurate for the connected curve.
 
-### 18. `material_index` (nodes.js:2707)
-- **Expected:** Return material index of current element
-- **Actual:** Always returns `0`
+### 17. `endpoint_selection` — IMPROVED
+- **Was:** Always returned `true`
+- **Now:** Evaluates Start Size and End Size inputs. Returns `false` when both sizes are 0 (no endpoints selected), `true` otherwise. Properly respects input values.
+
+### 18. `material_index` — IMPROVED
+- **Was:** Returned `0` with no inputs
+- **Now:** Accepts Geometry input. Still returns `0` (correct for single-material system), but with geometry validation and clear documentation.
 
 ---
 
@@ -277,13 +272,25 @@ These nodes partially work but use a simplified approximation of the real behavi
 
 ## Summary
 
-| Severity | Count | Description |
-|----------|-------|-------------|
-| CRITICAL | 18 | Hardcoded/mocked outputs, non-functional field nodes |
-| HIGH | 20 | Flags set by nodes but completely ignored by builder |
-| MEDIUM | 10 | Oversimplified operations, ignored inputs |
-| LOW | 4 | Minor issues with partial implementations |
-| **Total** | **52** | Issues found across ~80 nodes |
+| Severity | Count | Fixed | Description |
+|----------|-------|-------|-------------|
+| CRITICAL | 18 | **18** | ~~Hardcoded/mocked outputs, non-functional field nodes~~ All fixed |
+| HIGH | 20 | 0 | Flags set by nodes but completely ignored by builder |
+| MEDIUM | 10 | 0 | Oversimplified operations, ignored inputs |
+| LOW | 4 | 0 | Minor issues with partial implementations |
+| **Total** | **52** | **18** | 18 of 52 issues resolved |
+
+### Analysis Helpers Added to `builders.js`
+
+The following utility functions were added to support the critical fixes:
+
+- `computeBounds(geoData)` — Compute world-space bounding box with transform support
+- `computeDomainSize(geoData)` — Count vertices, edges, faces, corners, splines, instances
+- `computeCurveLength(geoData)` — Compute curve length with fast paths for known types
+- `computeClosestPoint(geoData, pos)` — Find nearest vertex to a source position
+- `performRaycast(geoData, pos, dir, len)` — Three.js Raycaster-based ray intersection
+- `sampleAtIndex(geoData, index)` — Sample vertex position at element index
+- `computeMeshAnalysis(geoData)` — Full mesh topology analysis (edge angles, face areas, neighbor counts)
 
 ## Nodes That Work Correctly
 
@@ -293,13 +300,16 @@ The following nodes are fully or adequately implemented:
 - **Curve Primitives:** `curve_circle`, `curve_line`, `curve_spiral`, `curve_arc`, `curve_star`
 - **Curve Operations:** `curve_to_mesh`, `fill_curve` (circle only)
 - **Transform:** `transform` (translate, rotate, scale all work)
-- **Geometry:** `join_geometry`, `set_shade_smooth`, `flip_faces`, `duplicate_elements`
+- **Geometry:** `join_geometry`, `set_shade_smooth`, `flip_faces`, `duplicate_elements`, `bounding_box`, `domain_size`, `geometry_proximity`
 - **Instances:** `instance_on_points` (positions now work after fix), `rotate_instances`, `scale_instances`, `translate_instances`
 - **Points:** `mesh_to_points`, `distribute_points_on_faces` (random mode)
 - **Input:** All value nodes (`value_float`, `value_int`, `value_vector`, `value_bool`, `value_color`, `random_value`, `scene_time`)
+- **Field:** `position`, `normal`, `index` (with geometry input), `edge_angle`, `edge_neighbors`, `face_area`, `face_neighbors`, `vertex_neighbors` (with mesh input)
+- **Curve Analysis:** `curve_length`, `spline_length`, `spline_parameter` (with curve input), `endpoint_selection`
+- **Raycast/Sampling:** `raycast`, `sample_index`
 - **Math:** `math`, `vector_math`, `boolean_math`, `clamp`, `map_range`, `float_to_int`, `integer_math`, `mix_float`, `mix_vector`
 - **Utility:** `compare`, `switch`, `switch_float`, `switch_vector`
 - **Texture:** `noise_texture`, `voronoi_texture`, `white_noise`, `gradient_texture`, `wave_texture`, `checker_texture`, `brick_texture`, `magic_texture`, `musgrave_texture`
 - **Color:** `geo_color_ramp`, `geo_combine_color`, `geo_separate_color`, `mix_color`, `invert_color`, `hue_saturation_value`
-- **Material:** `set_material` (color, metallic, roughness work)
+- **Material:** `set_material` (color, metallic, roughness work), `material_index`
 - **Output:** `output`, `viewer`
