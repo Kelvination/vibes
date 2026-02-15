@@ -90,17 +90,131 @@ export function buildGeometry(geoData) {
     }
 
     case 'points': {
-      // Generate scattered points on a unit surface
-      const numPoints = Math.min(200, Math.round(geoData.density * 10));
       const pts = [];
-      const seed = geoData.seed || 0;
-      for (let i = 0; i < numPoints; i++) {
-        const s = seed * 1000 + i;
-        const theta = seededRandom(s) * Math.PI * 2;
-        const phi = Math.acos(2 * seededRandom(s + 7777) - 1);
-        const r = Math.cbrt(seededRandom(s + 13333));
-        pts.push(Math.sin(phi) * Math.cos(theta) * r, Math.sin(phi) * Math.sin(theta) * r, Math.cos(phi) * r);
+
+      if (geoData.source) {
+        const sourceGeo = buildGeometry(geoData.source);
+        if (sourceGeo) {
+          const posAttr = sourceGeo.getAttribute('position');
+          const mode = geoData.mode || 'vertices';
+          const getIdx = sourceGeo.index
+            ? (i) => sourceGeo.index.getX(i)
+            : (i) => i;
+          const triCount = sourceGeo.index
+            ? Math.floor(sourceGeo.index.count / 3)
+            : Math.floor(posAttr.count / 3);
+
+          if (mode === 'vertices') {
+            // Deduplicate vertex positions
+            const seen = new Set();
+            for (let i = 0; i < posAttr.count; i++) {
+              const x = posAttr.getX(i), y = posAttr.getY(i), z = posAttr.getZ(i);
+              const key = x.toFixed(5) + ',' + y.toFixed(5) + ',' + z.toFixed(5);
+              if (!seen.has(key)) {
+                seen.add(key);
+                pts.push(x, y, z);
+              }
+            }
+          } else if (mode === 'faces') {
+            // Face center positions
+            for (let f = 0; f < triCount; f++) {
+              const a = getIdx(f * 3), b = getIdx(f * 3 + 1), c = getIdx(f * 3 + 2);
+              pts.push(
+                (posAttr.getX(a) + posAttr.getX(b) + posAttr.getX(c)) / 3,
+                (posAttr.getY(a) + posAttr.getY(b) + posAttr.getY(c)) / 3,
+                (posAttr.getZ(a) + posAttr.getZ(b) + posAttr.getZ(c)) / 3,
+              );
+            }
+          } else if (mode === 'edges') {
+            // Edge midpoints (deduplicated)
+            const seen = new Set();
+            const addEdge = (ai, bi) => {
+              const mx = ((posAttr.getX(ai) + posAttr.getX(bi)) / 2).toFixed(5);
+              const my = ((posAttr.getY(ai) + posAttr.getY(bi)) / 2).toFixed(5);
+              const mz = ((posAttr.getZ(ai) + posAttr.getZ(bi)) / 2).toFixed(5);
+              const key = mx + ',' + my + ',' + mz;
+              if (!seen.has(key)) {
+                seen.add(key);
+                pts.push(+mx, +my, +mz);
+              }
+            };
+            for (let f = 0; f < triCount; f++) {
+              const a = getIdx(f * 3), b = getIdx(f * 3 + 1), c = getIdx(f * 3 + 2);
+              addEdge(a, b);
+              addEdge(b, c);
+              addEdge(c, a);
+            }
+          } else if (mode === 'corners') {
+            // All face corner positions (includes duplicates at shared vertices)
+            const count = sourceGeo.index ? sourceGeo.index.count : posAttr.count;
+            for (let i = 0; i < count; i++) {
+              const vi = getIdx(i);
+              pts.push(posAttr.getX(vi), posAttr.getY(vi), posAttr.getZ(vi));
+            }
+          } else if (mode === 'random' || mode === 'poisson') {
+            // Scatter random points on mesh faces weighted by triangle area
+            const areas = [];
+            let totalArea = 0;
+            for (let f = 0; f < triCount; f++) {
+              const a = getIdx(f * 3), b = getIdx(f * 3 + 1), c = getIdx(f * 3 + 2);
+              const abx = posAttr.getX(b) - posAttr.getX(a);
+              const aby = posAttr.getY(b) - posAttr.getY(a);
+              const abz = posAttr.getZ(b) - posAttr.getZ(a);
+              const acx = posAttr.getX(c) - posAttr.getX(a);
+              const acy = posAttr.getY(c) - posAttr.getY(a);
+              const acz = posAttr.getZ(c) - posAttr.getZ(a);
+              const nx = aby * acz - abz * acy;
+              const ny = abz * acx - abx * acz;
+              const nz = abx * acy - aby * acx;
+              totalArea += Math.sqrt(nx * nx + ny * ny + nz * nz) * 0.5;
+              areas.push(totalArea);
+            }
+
+            const density = geoData.density || 1;
+            const numPoints = Math.min(500, Math.max(1, Math.round(density * totalArea * 10)));
+            const seed = geoData.seed || 0;
+
+            for (let i = 0; i < numPoints; i++) {
+              const s = seed * 1000 + i;
+              const r = seededRandom(s) * totalArea;
+              let triIdx = 0;
+              for (let f = 0; f < triCount; f++) {
+                if (areas[f] >= r) { triIdx = f; break; }
+              }
+              let u = seededRandom(s + 7777);
+              let v = seededRandom(s + 13333);
+              if (u + v > 1) { u = 1 - u; v = 1 - v; }
+              const w = 1 - u - v;
+              const a = getIdx(triIdx * 3), b = getIdx(triIdx * 3 + 1), c = getIdx(triIdx * 3 + 2);
+              pts.push(
+                posAttr.getX(a) * w + posAttr.getX(b) * u + posAttr.getX(c) * v,
+                posAttr.getY(a) * w + posAttr.getY(b) * u + posAttr.getY(c) * v,
+                posAttr.getZ(a) * w + posAttr.getZ(b) * u + posAttr.getZ(c) * v,
+              );
+            }
+          }
+
+          sourceGeo.dispose();
+        }
       }
+
+      // Fallback: random scattered points when no source mesh is available
+      if (pts.length === 0) {
+        const numPoints = Math.min(200, Math.round((geoData.density || 1) * 10));
+        const seed = geoData.seed || 0;
+        for (let i = 0; i < numPoints; i++) {
+          const s = seed * 1000 + i;
+          const theta = seededRandom(s) * Math.PI * 2;
+          const phi = Math.acos(2 * seededRandom(s + 7777) - 1);
+          const r = Math.cbrt(seededRandom(s + 13333));
+          pts.push(
+            Math.sin(phi) * Math.cos(theta) * r,
+            Math.sin(phi) * Math.sin(theta) * r,
+            Math.cos(phi) * r
+          );
+        }
+      }
+
       geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
       break;
@@ -266,7 +380,7 @@ export function buildGeometry(geoData) {
     }
 
     case 'instance_on_points': {
-      // Build the source instance geometry and clone it at point locations
+      // Build the source instance geometry and clone it at actual point locations
       const pts = geoData.points;
       const inst = geoData.instance;
       if (!pts || !inst) return null;
@@ -274,26 +388,28 @@ export function buildGeometry(geoData) {
       const instanceGeo = buildGeometry(inst);
       if (!instanceGeo) return null;
 
-      // Generate points
-      const numPts = Math.min(50, Math.round((pts.density || 1) * 10));
-      const seed = pts.seed || 0;
-      const merged = [];
+      // Build the points geometry to get actual positions
+      const pointsGeo = buildGeometry(pts);
+      if (!pointsGeo) { instanceGeo.dispose(); return null; }
 
-      for (let i = 0; i < numPts; i++) {
-        const s = seed * 1000 + i;
-        const theta = seededRandom(s) * Math.PI * 2;
-        const phi = Math.acos(2 * seededRandom(s + 7777) - 1);
-        const r = Math.cbrt(seededRandom(s + 13333));
-        const px = Math.sin(phi) * Math.cos(theta) * r;
-        const py = Math.sin(phi) * Math.sin(theta) * r;
-        const pz = Math.cos(phi) * r;
+      const posAttr = pointsGeo.getAttribute('position');
+      if (!posAttr || posAttr.count === 0) { pointsGeo.dispose(); instanceGeo.dispose(); return null; }
+
+      const merged = [];
+      const sc = geoData.scale || { x: 1, y: 1, z: 1 };
+
+      for (let i = 0; i < posAttr.count; i++) {
+        const px = posAttr.getX(i);
+        const py = posAttr.getY(i);
+        const pz = posAttr.getZ(i);
 
         const clone = instanceGeo.clone();
-        clone.translate(px, py, pz);
-        const sc = geoData.scale || { x: 1, y: 1, z: 1 };
         clone.scale(sc.x, sc.y, sc.z);
+        clone.translate(px, py, pz);
         merged.push(clone);
       }
+
+      pointsGeo.dispose();
 
       if (merged.length === 0) return instanceGeo;
 
