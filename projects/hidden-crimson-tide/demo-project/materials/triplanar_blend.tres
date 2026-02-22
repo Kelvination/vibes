@@ -1,0 +1,17 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/triplanar_blend.gdshader" id="1"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/texture_scale = 1.0
+shader_parameter/blend_sharpness = 8.0
+shader_parameter/top_threshold = 0.7
+shader_parameter/use_height_blend = false
+shader_parameter/height_blend_contrast = 0.5
+shader_parameter/roughness = 0.8
+shader_parameter/metallic = 0.0
+shader_parameter/specular = 0.5
+shader_parameter/color_tint = Color(1.0, 1.0, 1.0, 1.0)
+shader_parameter/ao_strength = 0.0
+shader_parameter/normal_strength = 1.0

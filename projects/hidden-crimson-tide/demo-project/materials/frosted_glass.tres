@@ -1,0 +1,22 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/frosted_glass.gdshader" id="1"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/tint_color = Color(0.9, 0.95, 1.0, 0.3)
+shader_parameter/opacity = 0.4
+shader_parameter/roughness = 0.15
+shader_parameter/metallic = 0.0
+shader_parameter/specular_strength = 0.7
+shader_parameter/frost_enabled = true
+shader_parameter/frost_amount = 0.5
+shader_parameter/frost_scale = 5.0
+shader_parameter/frost_roughness_boost = 0.6
+shader_parameter/frost_color = Color(1.0, 1.0, 1.0, 1.0)
+shader_parameter/refraction_strength = 0.05
+shader_parameter/blur_amount = 3.0
+shader_parameter/fresnel_power = 4.0
+shader_parameter/fresnel_opacity = 0.8
+shader_parameter/thickness_variation = false
+shader_parameter/thickness_scale = 1.0

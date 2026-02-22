@@ -1,0 +1,19 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/dissolve.gdshader" id="1"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/dissolve_amount = 0.35
+shader_parameter/noise_scale = 1.0
+shader_parameter/use_world_coords = false
+shader_parameter/edge_width = 0.05
+shader_parameter/edge_color_inner = Color(1.0, 0.8, 0.0, 1.0)
+shader_parameter/edge_color_outer = Color(1.0, 0.2, 0.0, 1.0)
+shader_parameter/edge_emission_strength = 6.0
+shader_parameter/base_color = Color(0.9, 0.9, 0.9, 1.0)
+shader_parameter/metallic = 0.0
+shader_parameter/roughness = 0.5
+shader_parameter/animate = true
+shader_parameter/animation_speed = 1.0
+shader_parameter/animation_direction = 1.0

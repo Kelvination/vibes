@@ -1,0 +1,21 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/lava_flow.gdshader" id="1"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/hot_color = Color(1.0, 0.6, 0.0, 1.0)
+shader_parameter/warm_color = Color(1.0, 0.15, 0.0, 1.0)
+shader_parameter/crust_color = Color(0.1, 0.05, 0.03, 1.0)
+shader_parameter/emission_strength = 8.0
+shader_parameter/flow_direction = Vector2(0.3, 0.7)
+shader_parameter/flow_speed = 0.4
+shader_parameter/turbulence = 2.0
+shader_parameter/scale = 3.0
+shader_parameter/crust_threshold = 0.45
+shader_parameter/crust_softness = 0.08
+shader_parameter/crust_roughness = 0.95
+shader_parameter/height_scale = 0.3
+shader_parameter/vertex_displacement = true
+shader_parameter/roughness_hot = 0.2
+shader_parameter/metallic = 0.1

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>RENDERING</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;overflow:hidden}
+</style>
+</head>
+<body>
+<canvas id="bg" style="position:absolute;top:0;left:0"></canvas>
+<div id="overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:10">
+</div>
+<script>
+const urlParams = new URLSearchParams(window.location.search);
+const type = urlParams.get('type') || 'banner';
+
+const sizes = {
+  banner: { w: 960, h: 540 },
+  cover: { w: 630, h: 500 },
+  icon: { w: 256, h: 256 }
+};
+
+const { w, h } = sizes[type] || sizes.banner;
+const canvas = document.getElementById('bg');
+canvas.width = w;
+canvas.height = h;
+canvas.style.width = w + 'px';
+canvas.style.height = h + 'px';
+
+const overlay = document.getElementById('overlay');
+overlay.style.width = w + 'px';
+overlay.style.height = h + 'px';
+
+const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: true });
+
+const vertSrc = `attribute vec2 p;varying vec2 uv;void main(){uv=p*.5+.5;gl_Position=vec4(p,0,1);}`;
+
+const bannerFrag = `precision highp float;
+varying vec2 uv;
+uniform float time;
+uniform vec2 resolution;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<5;i++){v+=a*noise(p);p*=2.;a*=.5;}return v;}
+void main(){
+  vec2 p=uv;
+  float aspect=resolution.x/resolution.y;
+
+  // Animated abstract background
+  float t=time*0.2;
+  vec2 q=p*3.;
+  float n1=fbm(q+vec2(t*0.3,t*0.1));
+  float n2=fbm(q*1.5+vec2(-t*0.2,t*0.4)+n1*1.5);
+  float n3=fbm(q*0.7+n2*2.0+vec2(t*0.1,-t*0.15));
+
+  // Color palette - deep purple/blue/cyan/gold
+  vec3 c1=vec3(0.08,0.02,0.2);  // deep purple
+  vec3 c2=vec3(0.05,0.15,0.4);  // deep blue
+  vec3 c3=vec3(0.0,0.5,0.7);   // cyan
+  vec3 c4=vec3(1.0,0.7,0.2);   // gold
+  vec3 c5=vec3(0.8,0.2,0.5);   // magenta
+
+  vec3 col=mix(c1,c2,n1);
+  col=mix(col,c3,smoothstep(0.3,0.7,n2)*0.6);
+  col=mix(col,c4,smoothstep(0.5,0.8,n3)*0.3);
+  col=mix(col,c5,smoothstep(0.6,0.9,n1*n2)*0.4);
+
+  // Bright accents
+  float accent=smoothstep(0.55,0.65,n3)*0.8;
+  col+=c4*accent;
+
+  // Subtle hex grid overlay
+  vec2 hexUV=uv*vec2(aspect,1.0)*15.;
+  vec2 r=vec2(1,1.732);vec2 hh=r*0.5;
+  vec2 a=mod(hexUV,r)-hh;vec2 b=mod(hexUV-hh,r)-hh;
+  vec2 gv=length(a)<length(b)?a:b;
+  float hexEdge=0.5-max(dot(abs(gv),normalize(vec2(1,1.732))),abs(gv.x));
+  float hexLine=1.-smoothstep(0.02,0.05,hexEdge);
+  col+=vec3(0.2,0.5,0.8)*hexLine*0.08;
+
+  // Vignette
+  vec2 vig=uv*2.-1.;
+  float vignette=1.-dot(vig*vec2(0.7,1.0),vig*vec2(0.7,1.0))*0.4;
+  col*=max(vignette,0.3);
+
+  // Subtle scanlines
+  col*=0.95+0.05*sin(uv.y*resolution.y*1.5);
+
+  gl_FragColor=vec4(col,1);
+}`;
+
+const iconFrag = `precision highp float;
+varying vec2 uv;
+uniform float time;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+void main(){
+  vec2 p=uv*2.-1.;
+  float r=length(p);
+
+  // Rounded square mask
+  vec2 ap=abs(p);
+  float roundedSq=max(ap.x,ap.y)-0.85+smoothstep(0.7,0.85,max(ap.x,ap.y))*0.1;
+  if(roundedSq>0.0){gl_FragColor=vec4(0,0,0,0);return;}
+
+  // Gradient background
+  vec3 col=mix(vec3(0.06,0.02,0.18),vec3(0.02,0.12,0.35),uv.y);
+
+  // Central crystal/gem shape
+  float diamond=abs(p.x)+abs(p.y);
+  float inner=smoothstep(0.55,0.5,diamond);
+  float edge=smoothstep(0.5,0.48,diamond)-smoothstep(0.48,0.46,diamond);
+
+  // Facet lighting
+  float facet1=smoothstep(0.,0.3,p.x+p.y)*0.5;
+  float facet2=smoothstep(0.,0.3,-p.x+p.y)*0.3;
+  vec3 gemCol=mix(vec3(0.1,0.3,0.8),vec3(0.,0.8,1.),facet1);
+  gemCol=mix(gemCol,vec3(0.8,0.3,1.),facet2);
+  gemCol+=vec3(1.,0.8,0.3)*pow(max(1.-diamond*2.,0.),3.)*0.8;
+
+  col=mix(col,gemCol,inner);
+  col+=vec3(0.5,0.8,1.)*edge*2.;
+
+  // Particle sparkles
+  for(float i=0.;i<8.;i++){
+    float a=i*0.785+0.3;
+    float dist=0.3+sin(i*2.1)*0.15;
+    vec2 sp=vec2(cos(a),sin(a))*dist;
+    float sd=length(p-sp);
+    col+=vec3(0.5,0.7,1.)*smoothstep(0.04,0.,sd)*0.6;
+  }
+
+  // Border glow
+  float borderDist=smoothstep(0.85,0.7,max(ap.x,ap.y));
+  col+=vec3(0.1,0.3,0.6)*(1.-borderDist)*0.3;
+
+  gl_FragColor=vec4(col,1);
+}`;
+
+const fragSrc = type === 'icon' ? iconFrag : bannerFrag;
+
+function createShader(t, src) {
+  const s = gl.createShader(t);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(s));
+    document.title = 'SHADER_ERROR';
+    return null;
+  }
+  return s;
+}
+
+const vs = createShader(gl.VERTEX_SHADER, vertSrc);
+const fs = createShader(gl.FRAGMENT_SHADER, fragSrc);
+const prog = gl.createProgram();
+gl.attachShader(prog, vs); gl.attachShader(prog, fs);
+gl.linkProgram(prog); gl.useProgram(prog);
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'p');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+const timeLoc = gl.getUniformLocation(prog, 'time');
+const resLoc = gl.getUniformLocation(prog, 'resolution');
+gl.uniform2f(resLoc, w, h);
+gl.uniform1f(timeLoc, 3.0);
+gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+// Add text overlay via HTML
+if (type === 'banner' || type === 'cover') {
+  overlay.innerHTML = `
+    <div style="text-align:center;color:white;text-shadow:0 0 30px rgba(0,150,255,0.8),0 0 60px rgba(0,100,200,0.4);font-family:system-ui,-apple-system,sans-serif">
+      <div style="font-size:${type==='banner'?'56':'44'}px;font-weight:800;letter-spacing:4px;margin-bottom:8px;background:linear-gradient(135deg,#7dd3fc,#c084fc,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent">LUMINARA</div>
+      <div style="font-size:${type==='banner'?'22':'18'}px;font-weight:300;letter-spacing:8px;color:#94a3b8;margin-bottom:16px">SHADER COLLECTION</div>
+      <div style="font-size:${type==='banner'?'14':'12'}px;color:#64748b;letter-spacing:3px">12 PROFESSIONAL SHADERS FOR GODOT 4</div>
+    </div>
+  `;
+} else if (type === 'icon') {
+  overlay.innerHTML = `
+    <div style="text-align:center;color:white;font-family:system-ui,sans-serif;margin-top:10px">
+      <div style="font-size:28px;font-weight:800;letter-spacing:2px;background:linear-gradient(135deg,#7dd3fc,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent">L</div>
+    </div>
+  `;
+}
+
+// Wait for fonts to render
+setTimeout(() => { document.title = 'RENDERED'; }, 500);
+</script>
+</body>
+</html>
