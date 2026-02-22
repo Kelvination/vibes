@@ -1,0 +1,74 @@
+[gd_scene load_steps=4 format=3 uid="uid://cpixelatedemo01"]
+
+[ext_resource type="ShaderMaterial" path="res://materials/pixelate.tres" id="1_pixelate"]
+
+[sub_resource type="Gradient" id="Gradient_bg"]
+offsets = PackedFloat32Array(0, 0.4, 0.7, 1)
+colors = PackedColorArray(0.9, 0.3, 0.1, 1, 0.8, 0.6, 0.1, 1, 0.1, 0.5, 0.7, 1, 0.15, 0.15, 0.3, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_bg"]
+width = 512
+height = 512
+gradient = SubResource("Gradient_bg")
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(0.5, 0)
+
+[node name="PixelateDemo" type="Node2D"]
+
+[node name="Background" type="ColorRect" parent="."]
+offset_right = 1920.0
+offset_bottom = 1080.0
+color = Color(0.12, 0.12, 0.18, 1)
+
+[node name="DemoContent" type="Node2D" parent="."]
+
+[node name="GradientSprite" type="Sprite2D" parent="DemoContent"]
+position = Vector2(960, 400)
+scale = Vector2(2.5, 2.5)
+texture = SubResource("GradientTexture2D_bg")
+
+[node name="Square" type="Polygon2D" parent="DemoContent"]
+position = Vector2(400, 600)
+color = Color(0.2, 0.7, 0.9, 1)
+polygon = PackedVector2Array(-60, -60, 60, -60, 60, 60, -60, 60)
+
+[node name="Octagon" type="Polygon2D" parent="DemoContent"]
+position = Vector2(700, 500)
+color = Color(0.9, 0.4, 0.6, 1)
+polygon = PackedVector2Array(-40, -80, 40, -80, 80, -20, 80, 20, 40, 80, -40, 80, -80, 20, -80, -20)
+
+[node name="Hexagon" type="Polygon2D" parent="DemoContent"]
+position = Vector2(1200, 650)
+color = Color(0.3, 0.9, 0.4, 1)
+polygon = PackedVector2Array(0, -70, 60, -35, 60, 35, 0, 70, -60, 35, -60, -35)
+
+[node name="Star" type="Polygon2D" parent="DemoContent"]
+position = Vector2(1500, 400)
+color = Color(1.0, 0.85, 0.2, 1)
+polygon = PackedVector2Array(0, -80, 20, -25, 76, -25, 30, 10, 47, 65, 0, 32, -47, 65, -30, 10, -76, -25, -20, -25)
+
+[node name="TitleLabel" type="Label" parent="DemoContent"]
+offset_left = 660.0
+offset_top = 30.0
+offset_right = 1260.0
+offset_bottom = 80.0
+text = "Pixelate Shader Demo (Canvas Item)"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="InfoLabel" type="Label" parent="DemoContent"]
+offset_left = 560.0
+offset_top = 900.0
+offset_right = 1360.0
+offset_bottom = 960.0
+text = "This shader applies pixelation, color reduction, dithering, and optional CRT effects.
+Adjust the material parameters in the inspector to see changes."
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="PixelateOverlay" type="ColorRect" parent="."]
+material = ExtResource("1_pixelate")
+offset_right = 1920.0
+offset_bottom = 1080.0
+color = Color(1, 1, 1, 1)

@@ -1,0 +1,20 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/pixelate.gdshader" id="1"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/pixel_size = 8.0
+shader_parameter/snap_to_grid = true
+shader_parameter/reduce_colors = true
+shader_parameter/color_levels = 8.0
+shader_parameter/dither_enabled = true
+shader_parameter/dither_intensity = 0.5
+shader_parameter/crt_enabled = true
+shader_parameter/scanline_weight = 0.2
+shader_parameter/scanline_frequency = 3.0
+shader_parameter/curvature = 0.02
+shader_parameter/vignette_intensity = 0.3
+shader_parameter/brightness_boost = 1.0
+shader_parameter/contrast = 1.0
+shader_parameter/saturation = 1.0

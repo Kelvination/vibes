@@ -1,62 +1,591 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <title>Cannon Shooting Game</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Luminara Shader Collection - 12 Professional Shaders for Godot 4</title>
+<style>
+  :root {
+    --bg: #0a0a14;
+    --bg-card: #12121f;
+    --bg-card-hover: #1a1a2e;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --accent: #38bdf8;
+    --accent2: #a78bfa;
+    --accent3: #fbbf24;
+    --border: #1e293b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Hero Section */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    padding: 80px 20px 60px;
+    text-align: center;
+    background: linear-gradient(180deg, #0d1025 0%, #0a0a14 100%);
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background:
+      radial-gradient(ellipse at 20% 50%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 50%, rgba(167, 139, 250, 0.08) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  .hero-content { position: relative; z-index: 1; max-width: 800px; margin: 0 auto; }
+
+  .hero h1 {
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    font-weight: 800;
+    letter-spacing: 4px;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #7dd3fc, #c084fc, #fbbf24);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero .subtitle {
+    font-size: clamp(1rem, 2.5vw, 1.4rem);
+    font-weight: 300;
+    letter-spacing: 6px;
+    color: #94a3b8;
+    margin-bottom: 16px;
+    text-transform: uppercase;
+  }
+
+  .hero .tagline {
+    font-size: 1rem;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    margin-bottom: 32px;
+  }
+
+  .hero-badges {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 40px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .badge-godot { color: #478cbf; border-color: rgba(71,140,191,0.3); }
+  .badge-count { color: var(--accent3); border-color: rgba(251,191,36,0.3); }
+  .badge-license { color: #4ade80; border-color: rgba(74,222,128,0.3); }
+
+  .cta-group { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 32px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+    cursor: pointer;
+    border: none;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(56, 189, 248, 0.3);
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 30px rgba(56, 189, 248, 0.4);
+  }
+
+  .btn-secondary {
+    background: rgba(255,255,255,0.05);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255,255,255,0.1);
+    border-color: var(--accent);
+  }
+
+  /* Shader Grid */
+  .section { padding: 60px 20px; max-width: 1200px; margin: 0 auto; }
+
+  .section-header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  .section-header h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .section-header p {
+    color: var(--text-muted);
+    font-size: 1.1rem;
+  }
+
+  .shader-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+  }
+
+  .shader-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+
+  .shader-card:hover {
+    background: var(--bg-card-hover);
+    border-color: rgba(56, 189, 248, 0.3);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+
+  .shader-card .preview {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    display: block;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .shader-card .info {
+    padding: 16px;
+  }
+
+  .shader-card h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .shader-card .type {
+    display: inline-block;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    font-weight: 500;
+  }
+
+  .type-spatial { background: rgba(56,189,248,0.15); color: var(--accent); }
+  .type-canvas { background: rgba(167,139,250,0.15); color: var(--accent2); }
+
+  .shader-card .desc {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  /* Features */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 24px;
+    margin-top: 48px;
+  }
+
+  .feature {
+    padding: 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  .feature h3 {
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+    color: var(--accent);
+  }
+
+  .feature p {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+
+  /* What's Included */
+  .included-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 24px;
+  }
+
+  .included-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .included-item .check {
+    color: #4ade80;
+    font-size: 1.2rem;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .included-item h4 { font-size: 0.95rem; margin-bottom: 2px; }
+  .included-item p { font-size: 0.85rem; color: var(--text-muted); }
+
+  /* Live Preview Section */
+  .live-preview-section {
+    text-align: center;
+    padding: 40px 20px;
+    background: linear-gradient(180deg, transparent, rgba(56,189,248,0.03), transparent);
+  }
+
+  .live-preview-section h2 { font-size: 1.5rem; margin-bottom: 12px; }
+  .live-preview-section p { color: var(--text-muted); margin-bottom: 24px; }
+
+  .preview-controls {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+
+  .preview-btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    background: var(--bg-card);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .preview-btn:hover, .preview-btn.active {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(56,189,248,0.1);
+  }
+
+  .live-canvas-wrap {
+    max-width: 512px;
+    margin: 0 auto;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+  }
+
+  .live-canvas-wrap canvas {
+    width: 100%;
+    display: block;
+  }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 40px 20px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  @media (max-width: 600px) {
+    .hero { padding: 50px 16px 40px; }
+    .section { padding: 40px 16px; }
+    .shader-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+    .shader-card .info { padding: 10px; }
+    .shader-card h3 { font-size: 0.95rem; }
+    .shader-card .desc { display: none; }
+  }
+</style>
 </head>
 <body>
-    <div id="game-container">
-        <!-- UI Overlay -->
-        <div id="ui-overlay">
-            <div id="score-display">
-                Score: <span id="score">0</span>
-            </div>
-            <div id="instructions">
-                Drag to aim | Hold button to charge power
-            </div>
-            <div id="power-container">
-                <div id="power-label">Power</div>
-                <div id="power-bar-bg">
-                    <div id="power-bar"></div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Fire Button -->
-        <button id="fire-button">
-            <div class="button-content">
-                <span class="button-text">HOLD TO CHARGE</span>
-                <span class="button-subtext">Release to Fire</span>
-            </div>
-        </button>
-
-        <!-- Start Screen -->
-        <div id="start-screen" class="screen">
-            <h1>🎯 Cannon Master</h1>
-            <p>Shoot cannonballs into the holes to score points!</p>
-            <ul class="instructions-list">
-                <li>Drag anywhere to aim the cannon</li>
-                <li>Hold the button to charge power</li>
-                <li>Release to fire!</li>
-            </ul>
-            <button id="start-btn" class="menu-button">Start Game</button>
-        </div>
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-content">
+    <h1>LUMINARA</h1>
+    <p class="subtitle">Shader Collection</p>
+    <p class="tagline">12 Professional Shaders for Godot 4</p>
+    <div class="hero-badges">
+      <span class="badge badge-godot">Godot 4.0+</span>
+      <span class="badge badge-count">12 Shaders</span>
+      <span class="badge badge-license">MIT License</span>
     </div>
+    <div class="cta-group">
+      <a class="btn btn-primary" href="#shaders">View Shaders</a>
+      <a class="btn btn-secondary" href="#included">What's Included</a>
+    </div>
+  </div>
+</section>
 
-    <!-- Three.js and Cannon-es from CDN -->
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-        }
-    }
-    </script>
+<!-- Shader Gallery -->
+<section class="section" id="shaders">
+  <div class="section-header">
+    <h2>Shader Gallery</h2>
+    <p>Every shader is fully configurable with exposed uniforms in the Godot Inspector.</p>
+  </div>
+  <div class="shader-grid" id="shaderGrid"></div>
+</section>
 
-    <script type="module" src="game.js"></script>
+<!-- Live Preview -->
+<section class="live-preview-section">
+  <h2>Live Interactive Preview</h2>
+  <p>See the shaders running in real-time. Click a shader to preview it.</p>
+  <div class="preview-controls" id="previewControls"></div>
+  <div class="live-canvas-wrap">
+    <canvas id="liveCanvas" width="512" height="512"></canvas>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="section">
+  <div class="section-header">
+    <h2>Why Luminara?</h2>
+  </div>
+  <div class="features">
+    <div class="feature">
+      <h3>Production Ready</h3>
+      <p>Every shader is optimized for real-time rendering with configurable quality settings. Tested on both desktop and mobile Godot renderers.</p>
+    </div>
+    <div class="feature">
+      <h3>Fully Documented</h3>
+      <p>Comprehensive documentation with parameter descriptions, usage examples, and performance tips. Inspector-friendly uniform groups.</p>
+    </div>
+    <div class="feature">
+      <h3>Easy Integration</h3>
+      <p>Drop .gdshader files into your project and apply to materials. No plugins, no dependencies, no compilation steps required.</p>
+    </div>
+    <div class="feature">
+      <h3>MIT Licensed</h3>
+      <p>Use in commercial and personal projects. Modify, extend, and redistribute freely. No royalties, no attribution required.</p>
+    </div>
+  </div>
+</section>
+
+<!-- What's Included -->
+<section class="section" id="included">
+  <div class="section-header">
+    <h2>What's Included</h2>
+  </div>
+  <div class="included-list">
+    <div class="included-item">
+      <span class="check">&#10003;</span>
+      <div>
+        <h4>12 .gdshader Files</h4>
+        <p>Production-ready Godot 4 shader files with organized uniform groups</p>
+      </div>
+    </div>
+    <div class="included-item">
+      <span class="check">&#10003;</span>
+      <div>
+        <h4>Demo Godot Project</h4>
+        <p>Ready-to-open Godot 4 project showcasing every shader with example scenes</p>
+      </div>
+    </div>
+    <div class="included-item">
+      <span class="check">&#10003;</span>
+      <div>
+        <h4>Pre-configured Materials</h4>
+        <p>ShaderMaterial .tres files with sensible defaults for instant use</p>
+      </div>
+    </div>
+    <div class="included-item">
+      <span class="check">&#10003;</span>
+      <div>
+        <h4>Documentation</h4>
+        <p>Full shader guide with parameter explanations, tips, and use cases</p>
+      </div>
+    </div>
+    <div class="included-item">
+      <span class="check">&#10003;</span>
+      <div>
+        <h4>Preview Images</h4>
+        <p>512x512 PNG previews for every shader effect</p>
+      </div>
+    </div>
+    <div class="included-item">
+      <span class="check">&#10003;</span>
+      <div>
+        <h4>MIT License</h4>
+        <p>Full commercial use rights with no royalties or attribution</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <p>Luminara Shader Collection &mdash; Made for the Godot community</p>
+  <p style="margin-top:8px">
+    <a href="https://godotengine.org" target="_blank">Godot Engine</a> &middot;
+    MIT License &middot; 2026
+  </p>
+</footer>
+
+<script>
+// Shader data
+const shaders = [
+  { id: 'toon', name: 'Toon Shading', type: 'spatial', desc: 'Cel-shaded look with configurable color bands, rim lighting, and toon specular highlights.' },
+  { id: 'dissolve', name: 'Dissolve Effect', type: 'spatial', desc: 'Burn-edge dissolve with procedural noise, glowing edges, and emission.' },
+  { id: 'hologram', name: 'Hologram', type: 'spatial', desc: 'Sci-fi hologram with scanlines, random flicker, glitch displacement, and fresnel glow.' },
+  { id: 'water', name: 'Water Surface', type: 'spatial', desc: 'Animated water with dual-layer waves, foam at shallow depth, and fresnel reflections.' },
+  { id: 'forcefield', name: 'Force Field', type: 'spatial', desc: 'Hexagonal energy shield with depth intersection highlights and animated pulse.' },
+  { id: 'pixelate', name: 'Pixelation', type: 'canvas_item', desc: 'Retro pixelation post-process with color palette reduction, dithering, and CRT scanlines.' },
+  { id: 'outline', name: 'Outline Stroke', type: 'spatial', desc: 'Inverted-hull outline with distance-based fade, configurable width, and pulse animation.' },
+  { id: 'frosted_glass', name: 'Frosted Glass', type: 'spatial', desc: 'Realistic frosted glass with voronoi frost patterns, blur, and refraction.' },
+  { id: 'lava', name: 'Lava Flow', type: 'spatial', desc: 'Animated flowing lava with domain-warped crust, glowing cracks, and vertex displacement.' },
+  { id: 'energy_beam', name: 'Energy Beam', type: 'spatial', desc: 'Animated laser/beam with core glow, noise distortion, and sparkle particles.' },
+  { id: 'triplanar', name: 'Triplanar Blend', type: 'spatial', desc: 'Seamless triplanar texture mapping with height-based blending for terrain.' },
+  { id: 'wind', name: 'Wind Sway', type: 'spatial', desc: 'Vertex animation for foliage and grass with realistic multi-layer wind simulation.' },
+];
+
+// Populate shader grid
+const grid = document.getElementById('shaderGrid');
+shaders.forEach(s => {
+  const card = document.createElement('div');
+  card.className = 'shader-card';
+  card.innerHTML = `
+    <img class="preview" src="previews/${s.id}.png" alt="${s.name}" loading="lazy">
+    <div class="info">
+      <h3>${s.name}</h3>
+      <span class="type ${s.type === 'spatial' ? 'type-spatial' : 'type-canvas'}">${s.type}</span>
+      <p class="desc">${s.desc}</p>
+    </div>
+  `;
+  card.style.cursor = 'pointer';
+  card.addEventListener('click', () => {
+    switchPreview(s.id);
+    document.querySelector('.live-preview-section').scrollIntoView({ behavior: 'smooth' });
+  });
+  grid.appendChild(card);
+});
+
+// Live preview
+const canvas = document.getElementById('liveCanvas');
+const gl = canvas.getContext('webgl', { antialias: true });
+const controls = document.getElementById('previewControls');
+
+let currentProgram = null;
+let currentTimeLoc = null;
+let animFrame = null;
+
+const vertSrc = `attribute vec2 p;varying vec2 uv;void main(){uv=p*.5+.5;gl_Position=vec4(p,0,1);}`;
+
+// Same fragment shaders as the preview renderer (minified versions)
+const fragShaders = {
+toon: `precision highp float;varying vec2 uv;uniform float time;void main(){vec2 p=uv*2.-1.;float r=length(p);if(r>0.85){gl_FragColor=vec4(0.12,0.1,0.15,1);return;}vec3 n=normalize(vec3(p,sqrt(max(0.,0.72-dot(p,p)))));vec3 light=normalize(vec3(sin(time*0.5)*0.5,0.7,1.0));float NdotL=dot(n,light);float band=floor(NdotL*3.0+1.5)/3.0;band=clamp(band,0.0,1.0);vec3 base=vec3(0.85,0.4,0.2);vec3 shadow=vec3(0.15,0.1,0.2);vec3 col=mix(shadow,base,band);float rim=pow(1.0-max(dot(n,vec3(0,0,1)),0.0),2.5);col+=vec3(1.0,0.9,0.8)*rim*0.6*max(NdotL,0.0);vec3 h=normalize(light+vec3(0,0,1));float spec=smoothstep(0.68,0.72,dot(n,h));col+=vec3(1)*spec*0.8;float outline=smoothstep(0.82,0.85,r);col=mix(col,vec3(0.02),outline);gl_FragColor=vec4(col,1);}`,
+dissolve: `precision highp float;varying vec2 uv;uniform float time;float hash(vec2 p){vec3 p3=fract(vec3(p.xyx)*0.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*noise(p);p*=2.;a*=.5;}return v;}void main(){vec2 p=uv*2.-1.;float r=length(p);if(r>0.85){gl_FragColor=vec4(0.08,0.06,0.1,1);return;}vec3 n=normalize(vec3(p,sqrt(max(0.,0.72-dot(p,p)))));float NdotL=dot(n,normalize(vec3(0.5,0.7,1)));vec3 base=vec3(0.9)*max(NdotL,0.2);float nv=fbm(uv*4.0);float dissolve=0.3+sin(time*0.8)*0.25;float diff=nv-dissolve;if(diff<0.0){gl_FragColor=vec4(0.08,0.06,0.1,1);return;}float edge=1.0-smoothstep(0.0,0.06,diff);vec3 edgeCol=mix(vec3(1,0.2,0),vec3(1,0.8,0),edge);base=mix(base,edgeCol,edge);vec3 emit=edgeCol*edge*3.0;gl_FragColor=vec4(base+emit,1);}`,
+hologram: `precision highp float;varying vec2 uv;uniform float time;float rand(float x){return fract(sin(x*127.1)*43758.5453);}void main(){vec2 p=uv*2.-1.;float r=length(p);if(r>0.88){gl_FragColor=vec4(0.01,0.02,0.04,1);return;}vec3 n=normalize(vec3(p,sqrt(max(0.,0.77-dot(p,p)))));float fresnel=pow(1.-abs(n.z),2.5);vec3 col=mix(vec3(0,0.4,1),vec3(0,0.8,1),fresnel);float scanline=1.0-0.3*(sin(uv.y*240.+time*2.)*0.5+0.5);float flicker=1.0-0.15*(rand(floor(time*12.))*0.5+sin(time*5.)*0.25+0.25);float glow=fresnel*1.5;col=col*1.5*scanline+col*glow;float alpha=(0.7*scanline*flicker+glow*0.3);if(r>0.85)alpha*=smoothstep(0.88,0.85,r);col*=flicker;gl_FragColor=vec4(col*alpha*1.2,1);}`,
+water: `precision highp float;varying vec2 uv;uniform float time;float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);float a=fract(sin(dot(i,vec2(127.1,311.7)))*43758.5453);float b=fract(sin(dot(i+vec2(1,0),vec2(127.1,311.7)))*43758.5453);float c=fract(sin(dot(i+vec2(0,1),vec2(127.1,311.7)))*43758.5453);float d=fract(sin(dot(i+vec2(1,1),vec2(127.1,311.7)))*43758.5453);return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}void main(){vec2 p=uv;float t=time*0.5;float n1=noise(p*6.+vec2(t*0.7,t*0.3));float n2=noise(p*8.+vec2(-t*0.4,t*0.6));float wave=(n1+n2)*0.5;float depth=uv.y;vec3 shallow=vec3(0.1,0.65,0.7);vec3 deep=vec3(0.02,0.15,0.3);vec3 col=mix(shallow,deep,depth);float highlight=smoothstep(0.55,0.7,wave);col+=vec3(0.3,0.4,0.5)*highlight;float fresnel=pow(depth,1.5)*0.3;col=mix(col,vec3(0.7,0.85,0.95),fresnel);float foam=smoothstep(0.08,0.0,depth)*0.8;col=mix(col,vec3(1),foam);float spec=pow(max(wave,0.0),16.0)*0.5;col+=vec3(1,0.95,0.9)*spec;gl_FragColor=vec4(col,1);}`,
+forcefield: `precision highp float;varying vec2 uv;uniform float time;vec4 hex(vec2 p){vec2 r=vec2(1,1.732);vec2 h=r*0.5;vec2 a=mod(p,r)-h;vec2 b=mod(p-h,r)-h;vec2 g=length(a)<length(b)?a:b;float e=0.5-max(dot(abs(g),normalize(vec2(1,1.732))),abs(g.x));return vec4(g,e,0);}void main(){vec2 p=uv*2.-1.;float r=length(p);if(r>0.88){gl_FragColor=vec4(0.01,0.01,0.03,1);return;}vec3 n=normalize(vec3(p,sqrt(max(0.,0.77-dot(p,p)))));float fresnel=pow(1.-abs(n.z),3.)*2.0;vec2 hexUV=uv*24.+vec2(0,time*0.5);vec4 h=hex(hexUV);float hexEdge=1.-smoothstep(0.05,0.07,h.z);float pulse=sin(time*2.)*0.5+0.5;vec3 col=mix(vec3(0.1,0.5,1),vec3(0,0.8,1),fresnel);float alpha=0.15+fresnel*0.5+hexEdge*0.6;alpha*=1.+pulse*0.3;float edgeGlow=smoothstep(0.78,0.87,r)*3.0;alpha+=edgeGlow;col=col*2.+vec3(0,0.8,1)*edgeGlow;if(r>0.85)alpha*=smoothstep(0.88,0.85,r);gl_FragColor=vec4(col*alpha*0.5,1);}`,
+lava: `precision highp float;varying vec2 uv;uniform float time;float hash(vec2 p){vec3 p3=fract(vec3(p.xyx)*0.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}float fbm(vec2 p){float v=0.,a=.5;mat2 rot=mat2(cos(.5),sin(.5),-sin(.5),cos(.5));for(int i=0;i<5;i++){v+=a*noise(p);p=rot*p*2.+100.;a*=.5;}return v;}void main(){float t=time*0.3;vec2 flow=vec2(0.3,0.7)*t;float wx=fbm(uv*3.+flow);float wy=fbm(uv*3.+flow+vec2(5.2,1.3));vec2 warped=uv*3.+vec2(wx,wy)*2.+flow;float pattern=fbm(warped);float crust=smoothstep(0.37,0.53,pattern);vec3 hot=mix(vec3(1,0.15,0),vec3(1,0.6,0),pattern*pattern);vec3 crustCol=vec3(0.1,0.05,0.03);vec3 col=mix(hot,crustCol,crust);float emit=(1.-crust)*4.;col+=hot*emit*0.15;float crack=noise(uv*24.+t*0.5);float crackLine=smoothstep(0.48,0.5,crack)*crust;col=mix(col,vec3(1,0.6,0),crackLine);col+=vec3(1,0.3,0)*crackLine*2.;gl_FragColor=vec4(col,1);}`,
+energy_beam: `precision highp float;varying vec2 uv;uniform float time;float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}void main(){vec2 p=uv;float dist=abs(p.y-0.5)*2.;float t=time;vec2 nUV=vec2(p.x*5.-t*3.,p.y*5.);float n=noise(nUV)*2.-1.;dist+=n*0.08;float scroll=p.x*10.-t*8.;float energy=noise(vec2(scroll,p.y*3.))*0.3;float core=1.-smoothstep(0.03,0.08,dist);float inner=1.-smoothstep(0.12,0.17,dist);float outer=1.-smoothstep(0.35,0.45,dist);vec3 col=vec3(0.1,0.2,1)*outer;col=mix(col,vec3(0.3,0.7,1),inner);col=mix(col,vec3(1),core);col+=vec3(0.3,0.7,1)*energy*inner;vec2 sparkUV=vec2(p.x*20.-t*10.,p.y*20.);vec2 sc=floor(sparkUV);float sr=hash(sc);if(sr>0.85){float sd=length(fract(sparkUV)-vec2(hash(sc+.5),0.5));col+=vec3(1)*smoothstep(0.15,0.,sd)*2.*inner;}float alpha=max(max(core,inner*0.7),outer*0.3);float flicker=1.-0.1*hash(vec2(floor(t*15.),0.));col*=5.*flicker;vec3 bg=vec3(0.02,0.02,0.06);gl_FragColor=vec4(mix(bg,col,alpha),1);}`
+};
+
+// Build preview buttons
+shaders.forEach(s => {
+  if (!fragShaders[s.id]) return;
+  const btn = document.createElement('button');
+  btn.className = 'preview-btn';
+  btn.textContent = s.name;
+  btn.dataset.shader = s.id;
+  btn.addEventListener('click', () => switchPreview(s.id));
+  controls.appendChild(btn);
+});
+
+function createShaderGL(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(s));
+    return null;
+  }
+  return s;
+}
+
+// Set up geometry (once)
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+
+function switchPreview(id) {
+  if (!fragShaders[id]) return;
+  if (animFrame) cancelAnimationFrame(animFrame);
+  if (currentProgram) gl.deleteProgram(currentProgram);
+
+  // Update active button
+  document.querySelectorAll('.preview-btn').forEach(b => b.classList.toggle('active', b.dataset.shader === id));
+
+  const vs = createShaderGL(gl.VERTEX_SHADER, vertSrc);
+  const fs = createShaderGL(gl.FRAGMENT_SHADER, fragShaders[id]);
+  if (!vs || !fs) return;
+
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  currentProgram = prog;
+
+  const loc = gl.getAttribLocation(prog, 'p');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  currentTimeLoc = gl.getUniformLocation(prog, 'time');
+
+  const startTime = performance.now() / 1000;
+  function render() {
+    const t = performance.now() / 1000 - startTime;
+    gl.uniform1f(currentTimeLoc, t);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    animFrame = requestAnimationFrame(render);
+  }
+  render();
+}
+
+// Start with toon shader
+if (gl) switchPreview('toon');
+</script>
 </body>
 </html>

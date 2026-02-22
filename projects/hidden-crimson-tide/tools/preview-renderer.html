@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>RENDERING</title>
+<style>body{margin:0;background:#000}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const urlParams = new URLSearchParams(window.location.search);
+const shaderName = urlParams.get('shader') || 'toon';
+const size = parseInt(urlParams.get('size') || '512');
+const canvas = document.getElementById('c');
+canvas.width = size;
+canvas.height = size;
+
+const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: true });
+if (!gl) { document.title = 'NO_WEBGL'; throw 'no webgl'; }
+
+const vertSrc = `attribute vec2 p;varying vec2 uv;void main(){uv=p*.5+.5;gl_Position=vec4(p,0,1);}`;
+
+const shaders = {
+toon: `precision highp float;
+varying vec2 uv;
+uniform float time;
+void main(){
+  vec2 p=uv*2.-1.;
+  // Simulated sphere for toon demo
+  float r=length(p);
+  if(r>0.85){gl_FragColor=vec4(0.12,0.1,0.15,1);return;}
+  vec3 n=normalize(vec3(p,sqrt(max(0.,0.72-dot(p,p)))));
+  vec3 light=normalize(vec3(0.5,0.7,1.0));
+  float NdotL=dot(n,light);
+  // Quantize to 3 bands
+  float band=floor(NdotL*3.0+1.5)/3.0;
+  band=clamp(band,0.0,1.0);
+  vec3 base=vec3(0.85,0.4,0.2);
+  vec3 shadow=vec3(0.15,0.1,0.2);
+  vec3 col=mix(shadow,base,band);
+  // Rim light
+  float rim=pow(1.0-max(dot(n,vec3(0,0,1)),0.0),2.5);
+  col+=vec3(1.0,0.9,0.8)*rim*0.6*max(NdotL,0.0);
+  // Specular
+  vec3 h=normalize(light+vec3(0,0,1));
+  float spec=smoothstep(0.68,0.72,dot(n,h));
+  col+=vec3(1)*spec*0.8;
+  // Outline
+  float outline=smoothstep(0.82,0.85,r);
+  col=mix(col,vec3(0.02),outline);
+  gl_FragColor=vec4(col,1);
+}`,
+
+dissolve: `precision highp float;
+varying vec2 uv;
+uniform float time;
+float hash(vec2 p){vec3 p3=fract(vec3(p.xyx)*0.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
+float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*noise(p);p*=2.;a*=.5;}return v;}
+void main(){
+  vec2 p=uv*2.-1.;
+  float r=length(p);
+  if(r>0.85){gl_FragColor=vec4(0.08,0.06,0.1,1);return;}
+  vec3 n=normalize(vec3(p,sqrt(max(0.,0.72-dot(p,p)))));
+  float NdotL=dot(n,normalize(vec3(0.5,0.7,1)));
+  vec3 base=vec3(0.9)*max(NdotL,0.2);
+  float nv=fbm(uv*4.0);
+  float dissolve=0.35;
+  float diff=nv-dissolve;
+  if(diff<0.0){gl_FragColor=vec4(0.08,0.06,0.1,1);return;}
+  float edge=1.0-smoothstep(0.0,0.06,diff);
+  vec3 edgeCol=mix(vec3(1,0.2,0),vec3(1,0.8,0),edge);
+  base=mix(base,edgeCol,edge);
+  vec3 emit=edgeCol*edge*3.0;
+  gl_FragColor=vec4(base+emit,1);
+}`,
+
+hologram: `precision highp float;
+varying vec2 uv;
+uniform float time;
+float rand(float x){return fract(sin(x*127.1)*43758.5453);}
+void main(){
+  vec2 p=uv*2.-1.;
+  float r=length(p);
+  if(r>0.88){gl_FragColor=vec4(0.01,0.02,0.04,1);return;}
+  vec3 n=normalize(vec3(p,sqrt(max(0.,0.77-dot(p,p)))));
+  float fresnel=pow(1.-abs(n.z),2.5);
+  vec3 col=mix(vec3(0,0.4,1),vec3(0,0.8,1),fresnel);
+  float scanline=1.0-0.3*(sin(uv.y*240.+time*2.)*0.5+0.5);
+  float flicker=1.0-0.15*(rand(floor(time*12.))*0.5+sin(time*5.)*0.25+0.25);
+  float glow=fresnel*1.5;
+  col=col*1.5*scanline+col*glow;
+  float alpha=(0.7*scanline*flicker+glow*0.3);
+  if(r>0.85)alpha*=smoothstep(0.88,0.85,r);
+  col*=flicker;
+  // Additive on dark bg
+  gl_FragColor=vec4(col*alpha*1.2,1);
+}`,
+
+water: `precision highp float;
+varying vec2 uv;
+uniform float time;
+float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);float a=fract(sin(dot(i,vec2(127.1,311.7)))*43758.5453);float b=fract(sin(dot(i+vec2(1,0),vec2(127.1,311.7)))*43758.5453);float c=fract(sin(dot(i+vec2(0,1),vec2(127.1,311.7)))*43758.5453);float d=fract(sin(dot(i+vec2(1,1),vec2(127.1,311.7)))*43758.5453);return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}
+void main(){
+  vec2 p=uv;
+  float t=time*0.5;
+  // Animated wave normals
+  float n1=noise(p*6.+vec2(t*0.7,t*0.3));
+  float n2=noise(p*8.+vec2(-t*0.4,t*0.6));
+  float wave=(n1+n2)*0.5;
+  // Depth gradient
+  float depth=uv.y;
+  vec3 shallow=vec3(0.1,0.65,0.7);
+  vec3 deep=vec3(0.02,0.15,0.3);
+  vec3 col=mix(shallow,deep,depth);
+  // Wave highlights
+  float highlight=smoothstep(0.55,0.7,wave);
+  col+=vec3(0.3,0.4,0.5)*highlight;
+  // Fresnel approximation (view from above)
+  float fresnel=pow(depth,1.5)*0.3;
+  col=mix(col,vec3(0.7,0.85,0.95),fresnel);
+  // Foam at edges
+  float foam=smoothstep(0.08,0.0,depth)*0.8;
+  col=mix(col,vec3(1),foam);
+  // Specular sun glint
+  float spec=pow(max(wave,0.0),16.0)*0.5;
+  col+=vec3(1,0.95,0.9)*spec;
+  gl_FragColor=vec4(col,1);
+}`,
+
+forcefield: `precision highp float;
+varying vec2 uv;
+uniform float time;
+vec4 hex(vec2 p){vec2 r=vec2(1,1.732);vec2 h=r*0.5;vec2 a=mod(p,r)-h;vec2 b=mod(p-h,r)-h;vec2 g=length(a)<length(b)?a:b;float e=0.5-max(dot(abs(g),normalize(vec2(1,1.732))),abs(g.x));return vec4(g,e,0);}
+void main(){
+  vec2 p=uv*2.-1.;
+  float r=length(p);
+  // Sphere
+  if(r>0.88){gl_FragColor=vec4(0.01,0.01,0.03,1);return;}
+  vec3 n=normalize(vec3(p,sqrt(max(0.,0.77-dot(p,p)))));
+  float fresnel=pow(1.-abs(n.z),3.)*2.0;
+  // Hex grid
+  vec2 hexUV=uv*24.+vec2(0,time*0.5);
+  vec4 h=hex(hexUV);
+  float hexEdge=1.-smoothstep(0.05,0.07,h.z);
+  float pulse=sin(time*2.)*0.5+0.5;
+  vec3 col=mix(vec3(0.1,0.5,1),vec3(0,0.8,1),fresnel);
+  float alpha=0.15+fresnel*0.5+hexEdge*0.6;
+  alpha*=1.+pulse*0.3;
+  // Edge glow at sphere boundary
+  float edgeGlow=smoothstep(0.78,0.87,r)*3.0;
+  alpha+=edgeGlow;
+  col=col*2.+vec3(0,0.8,1)*edgeGlow;
+  if(r>0.85)alpha*=smoothstep(0.88,0.85,r);
+  gl_FragColor=vec4(col*alpha*0.5,1);
+}`,
+
+pixelate: `precision highp float;
+varying vec2 uv;
+uniform float time;
+float noise(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+void main(){
+  // Create a scene to pixelate
+  vec2 p=uv;
+  vec3 scene;
+  // Sunset gradient
+  scene=mix(vec3(0.1,0.0,0.3),vec3(1.0,0.4,0.1),uv.y);
+  scene=mix(scene,vec3(1.0,0.8,0.2),smoothstep(0.4,0.6,uv.y));
+  // Sun
+  float sun=smoothstep(0.15,0.12,length(uv-vec2(0.5,0.55)));
+  scene=mix(scene,vec3(1,0.95,0.8),sun);
+  // Mountains
+  float mt=0.3+0.1*sin(uv.x*8.)+0.05*sin(uv.x*15.);
+  if(uv.y<mt)scene=vec3(0.05,0.02,0.1);
+  // Now pixelate
+  float pixelSize=8.0;
+  vec2 pixelCount=vec2(512./pixelSize);
+  vec2 puv=floor(p*pixelCount)/pixelCount+0.5/pixelCount;
+  // Re-render scene at pixelated coords
+  vec3 pscene=mix(vec3(0.1,0.0,0.3),vec3(1.0,0.4,0.1),puv.y);
+  pscene=mix(pscene,vec3(1.0,0.8,0.2),smoothstep(0.4,0.6,puv.y));
+  float psun=smoothstep(0.15,0.12,length(puv-vec2(0.5,0.55)));
+  pscene=mix(pscene,vec3(1,0.95,0.8),psun);
+  float pmt=0.3+0.1*sin(puv.x*8.)+0.05*sin(puv.x*15.);
+  if(puv.y<pmt)pscene=vec3(0.05,0.02,0.1);
+  // Color reduction
+  pscene=floor(pscene*8.)/8.;
+  // CRT scanlines
+  float scanline=1.-0.15*(sin(uv.y*512.*3.14159)*0.5+0.5);
+  pscene*=scanline;
+  gl_FragColor=vec4(pscene,1);
+}`,
+
+outline: `precision highp float;
+varying vec2 uv;
+uniform float time;
+void main(){
+  vec2 p=uv*2.-1.;
+  float r=length(p);
+  vec3 bg=vec3(0.15,0.12,0.18);
+  if(r>0.88){gl_FragColor=vec4(bg,1);return;}
+  vec3 n=normalize(vec3(p,sqrt(max(0.,0.77-dot(p,p)))));
+  float NdotL=dot(n,normalize(vec3(0.5,0.7,1)));
+  vec3 base=vec3(0.4,0.6,0.9)*max(NdotL,0.25);
+  // Thick black outline at edge
+  float outlineOuter=smoothstep(0.80,0.83,r);
+  float outlineInner=smoothstep(0.77,0.80,r);
+  vec3 col=mix(base,vec3(0.02),outlineInner);
+  // Second inner outline ring for style
+  float ring2=abs(r-0.6);
+  float ringLine=1.-smoothstep(0.008,0.015,ring2);
+  col=mix(col,vec3(0.02),ringLine*0.3);
+  if(r>0.83)col=bg;
+  gl_FragColor=vec4(col,1);
+}`,
+
+frosted_glass: `precision highp float;
+varying vec2 uv;
+uniform float time;
+vec2 rand2(vec2 p){return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453);}
+float voronoi(vec2 uv){vec2 i=floor(uv);vec2 f=fract(uv);float md=1.;for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){vec2 n=vec2(float(x),float(y));vec2 pt=rand2(i+n);md=min(md,length(n+pt-f));}return md;}
+void main(){
+  // Background: colorful gradient (what's behind the glass)
+  vec3 behind=mix(vec3(0.8,0.2,0.3),vec3(0.2,0.5,0.9),uv.x);
+  behind=mix(behind,vec3(0.1,0.8,0.4),uv.y);
+  // Blur approximation: average nearby "pixels"
+  vec3 blurred=vec3(0);
+  float total=0.;
+  for(float i=0.;i<8.;i++){
+    float a=i*6.283/8.;
+    vec2 off=vec2(cos(a),sin(a))*0.03;
+    vec2 suv=uv+off;
+    vec3 s=mix(vec3(0.8,0.2,0.3),vec3(0.2,0.5,0.9),suv.x);
+    s=mix(s,vec3(0.1,0.8,0.4),suv.y);
+    blurred+=s;total+=1.;
+  }
+  blurred/=total;
+  // Frost pattern (voronoi)
+  float frost=voronoi(uv*8.);
+  float frostMask=smoothstep(0.5,1.,frost);
+  // Glass
+  vec3 col=mix(blurred,vec3(1),frostMask*0.4);
+  col=mix(col,vec3(0.9,0.95,1),0.2);
+  // Fresnel-like edge brightening
+  float edge=pow(max(1.-abs(uv.x-0.5)*2.,0.)*max(1.-abs(uv.y-0.5)*2.,0.),0.3);
+  col+=vec3(0.15)*(1.-edge);
+  // Specular glint
+  float spec=smoothstep(0.7,0.75,1.-length(uv-vec2(0.3,0.7)));
+  col+=vec3(1)*spec*0.4;
+  gl_FragColor=vec4(col,1);
+}`,
+
+lava: `precision highp float;
+varying vec2 uv;
+uniform float time;
+float hash(vec2 p){vec3 p3=fract(vec3(p.xyx)*0.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
+float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float v=0.,a=.5;mat2 rot=mat2(cos(.5),sin(.5),-sin(.5),cos(.5));for(int i=0;i<5;i++){v+=a*noise(p);p=rot*p*2.+100.;a*=.5;}return v;}
+void main(){
+  float t=time*0.3;
+  vec2 flow=vec2(0.3,0.7)*t;
+  float wx=fbm(uv*3.+flow);
+  float wy=fbm(uv*3.+flow+vec2(5.2,1.3));
+  vec2 warped=uv*3.+vec2(wx,wy)*2.+flow;
+  float pattern=fbm(warped);
+  // Crust vs hot
+  float crust=smoothstep(0.37,0.53,pattern);
+  vec3 hot=mix(vec3(1,0.15,0),vec3(1,0.6,0),pattern*pattern);
+  vec3 crustCol=vec3(0.1,0.05,0.03);
+  vec3 col=mix(hot,crustCol,crust);
+  // Emission glow
+  float emit=(1.-crust)*4.;
+  col+=hot*emit*0.15;
+  // Cracks in crust
+  float crack=noise(uv*24.+t*0.5);
+  float crackLine=smoothstep(0.48,0.5,crack)*crust;
+  col=mix(col,vec3(1,0.6,0),crackLine);
+  col+=vec3(1,0.3,0)*crackLine*2.;
+  gl_FragColor=vec4(col,1);
+}`,
+
+energy_beam: `precision highp float;
+varying vec2 uv;
+uniform float time;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+void main(){
+  vec2 p=uv;
+  float dist=abs(p.y-0.5)*2.;
+  float t=time;
+  // Noise distortion
+  vec2 nUV=vec2(p.x*5.-t*3.,p.y*5.);
+  float n=noise(nUV)*2.-1.;
+  dist+=n*0.08;
+  // Scrolling energy
+  float scroll=p.x*10.-t*8.;
+  float energy=noise(vec2(scroll,p.y*3.))*0.3;
+  // Beam layers
+  float core=1.-smoothstep(0.03,0.08,dist);
+  float inner=1.-smoothstep(0.12,0.17,dist);
+  float outer=1.-smoothstep(0.35,0.45,dist);
+  // Color
+  vec3 col=vec3(0.1,0.2,1)*outer;
+  col=mix(col,vec3(0.3,0.7,1),inner);
+  col=mix(col,vec3(1),core);
+  col+=vec3(0.3,0.7,1)*energy*inner;
+  // Sparkles
+  vec2 sparkUV=vec2(p.x*20.-t*10.,p.y*20.);
+  vec2 sc=floor(sparkUV);
+  float sr=hash(sc);
+  if(sr>0.85){float sd=length(fract(sparkUV)-vec2(hash(sc+.5),0.5));col+=vec3(1)*smoothstep(0.15,0.,sd)*2.*inner;}
+  float alpha=max(max(core,inner*0.7),outer*0.3);
+  float flicker=1.-0.1*hash(vec2(floor(t*15.),0.));
+  col*=5.*flicker;
+  // Dark background
+  vec3 bg=vec3(0.02,0.02,0.06);
+  gl_FragColor=vec4(mix(bg,col,alpha),1);
+}`,
+
+triplanar: `precision highp float;
+varying vec2 uv;
+uniform float time;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+void main(){
+  vec2 p=uv*2.-1.;
+  float r=length(p);
+  if(r>0.88){gl_FragColor=vec4(0.1,0.08,0.06,1);return;}
+  vec3 n=normalize(vec3(p,sqrt(max(0.,0.77-dot(p,p)))));
+  // Triplanar weights
+  vec3 w=abs(n);w=pow(w,vec3(8.));w/=(w.x+w.y+w.z);
+  // Texture samples (procedural)
+  // Top = grass green
+  float grassNoise=noise(vec2(p.x,p.y+n.z)*8.);
+  vec3 top=mix(vec3(0.2,0.5,0.1),vec3(0.3,0.65,0.15),grassNoise);
+  // Side = rock brown
+  float rockNoise=noise(vec2(n.x+p.x,p.y)*6.);
+  vec3 side=mix(vec3(0.35,0.25,0.15),vec3(0.5,0.4,0.25),rockNoise);
+  // Blend based on normal direction
+  float topFactor=smoothstep(0.6,0.8,n.y);
+  vec3 col=mix(side,top,topFactor);
+  // Lighting
+  float NdotL=max(dot(n,normalize(vec3(0.5,0.8,0.6))),0.2);
+  col*=NdotL;
+  // Edge
+  if(r>0.85)col*=smoothstep(0.88,0.85,r);
+  gl_FragColor=vec4(col,1);
+}`,
+
+wind: `precision highp float;
+varying vec2 uv;
+uniform float time;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+void main(){
+  // Grass field with wind animation
+  vec3 sky=mix(vec3(0.4,0.6,0.9),vec3(0.7,0.85,1.0),uv.y);
+  float horizon=0.45;
+  if(uv.y>horizon){gl_FragColor=vec4(sky,1);return;}
+  // Ground
+  float groundY=uv.y/horizon;
+  vec3 ground=mix(vec3(0.15,0.35,0.08),vec3(0.25,0.55,0.12),groundY);
+  // Grass blades
+  float t=time;
+  for(float i=0.;i<60.;i++){
+    float x=hash(vec2(i,0.))*1.0;
+    float baseY=hash(vec2(i,1.))*horizon*0.8;
+    float h=0.03+hash(vec2(i,2.))*0.06;
+    float w=0.003+hash(vec2(i,3.))*0.004;
+    // Wind sway
+    float phase=hash(vec2(i,4.))*6.28;
+    float sway=sin(t*2.+x*5.+phase)*0.015*(1.0-groundY);
+    sway+=sin(t*3.5+x*8.)*0.008;
+    float dx=uv.x-x-sway*(uv.y-baseY)/h*3.;
+    float dy=uv.y-baseY;
+    if(dy>0.&&dy<h&&abs(dx)<w*(1.-dy/h)){
+      float shade=0.7+0.3*(dy/h);
+      vec3 tipCol=vec3(0.5,0.7,0.1);
+      vec3 baseCol=vec3(0.15,0.4,0.08);
+      ground=mix(baseCol,tipCol,dy/h)*shade;
+    }
+  }
+  gl_FragColor=vec4(ground,1);
+}`
+};
+
+function createShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error('Shader error:', gl.getShaderInfoLog(s));
+    document.title = 'SHADER_ERROR: ' + gl.getShaderInfoLog(s);
+    return null;
+  }
+  return s;
+}
+
+const fsSrc = shaders[shaderName];
+if (!fsSrc) {
+  document.title = 'UNKNOWN_SHADER';
+  throw 'Unknown shader: ' + shaderName;
+}
+
+const vs = createShader(gl.VERTEX_SHADER, vertSrc);
+const fs = createShader(gl.FRAGMENT_SHADER, fsSrc);
+if (!vs || !fs) throw 'Compilation failed';
+
+const prog = gl.createProgram();
+gl.attachShader(prog, vs);
+gl.attachShader(prog, fs);
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'p');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+const timeLoc = gl.getUniformLocation(prog, 'time');
+
+// Render a few frames to get animated shaders to a good state
+let frame = 0;
+const targetTime = 2.5; // render at t=2.5s for nice animation state
+function render() {
+  gl.uniform1f(timeLoc, targetTime);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  frame++;
+  if (frame < 3) {
+    requestAnimationFrame(render);
+  } else {
+    document.title = 'RENDERED';
+  }
+}
+render();
+</script>
+</body>
+</html>

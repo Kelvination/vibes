@@ -1,0 +1,222 @@
+[gd_scene load_steps=20 format=3 uid="uid://cshadershowcase01"]
+
+[ext_resource type="ShaderMaterial" path="res://materials/toon_shading.tres" id="1_toon"]
+[ext_resource type="ShaderMaterial" path="res://materials/dissolve.tres" id="2_dissolve"]
+[ext_resource type="ShaderMaterial" path="res://materials/hologram.tres" id="3_hologram"]
+[ext_resource type="ShaderMaterial" path="res://materials/water_surface.tres" id="4_water"]
+[ext_resource type="ShaderMaterial" path="res://materials/force_field.tres" id="5_force"]
+[ext_resource type="ShaderMaterial" path="res://materials/outline.tres" id="6_outline"]
+[ext_resource type="ShaderMaterial" path="res://materials/frosted_glass.tres" id="7_frost"]
+[ext_resource type="ShaderMaterial" path="res://materials/lava_flow.tres" id="8_lava"]
+[ext_resource type="ShaderMaterial" path="res://materials/energy_beam.tres" id="9_beam"]
+[ext_resource type="ShaderMaterial" path="res://materials/triplanar_blend.tres" id="10_tri"]
+[ext_resource type="ShaderMaterial" path="res://materials/wind_sway.tres" id="11_wind"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_demo"]
+radius = 1.0
+height = 2.0
+radial_segments = 48
+rings = 24
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_demo"]
+size = Vector2(3.0, 3.0)
+subdivide_width = 32
+subdivide_depth = 32
+
+[sub_resource type="QuadMesh" id="QuadMesh_demo"]
+size = Vector2(3.0, 1.0)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+size = Vector2(1.0, 1.0)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
+albedo_color = Color(0.18, 0.18, 0.22, 1)
+roughness = 0.9
+metallic = 0.0
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
+sky_top_color = Color(0.15, 0.15, 0.25, 1)
+sky_horizon_color = Color(0.25, 0.2, 0.3, 1)
+ground_bottom_color = Color(0.08, 0.08, 0.1, 1)
+ground_horizon_color = Color(0.2, 0.18, 0.22, 1)
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("ProceduralSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 2
+ambient_light_color = Color(0.2, 0.2, 0.25, 1)
+ambient_light_energy = 0.5
+tonemap_mode = 2
+glow_enabled = true
+glow_intensity = 0.8
+glow_bloom = 0.1
+
+[node name="ShaderShowcase" type="Node3D"]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.939693, 0.34202, 0, -0.34202, 0.939693, 5.25, 8, 10)
+fov = 50.0
+near = 0.05
+far = 500.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, 0.25, -0.433013, 0, 0.866025, 0.5, 0.5, -0.433013, 0.75, 0, 10, 0)
+light_color = Color(1, 0.97, 0.92, 1)
+light_energy = 1.2
+shadow_enabled = true
+directional_shadow_max_distance = 50.0
+
+[node name="FillLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.25, 0.433013, 0, 0.866025, 0.5, -0.5, -0.433013, 0.75, 0, 5, 0)
+light_color = Color(0.7, 0.8, 1.0, 1)
+light_energy = 0.3
+shadow_enabled = false
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="GroundPlane" type="MeshInstance3D" parent="."]
+transform = Transform3D(30, 0, 0, 0, 1, 0, 0, 0, 20, 5, -0.6, -4.5)
+mesh = SubResource("PlaneMesh_ground")
+material_override = SubResource("StandardMaterial3D_ground")
+
+[node name="Row1_Front" type="Node3D" parent="."]
+
+[node name="ToonShading" type="MeshInstance3D" parent="Row1_Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+mesh = SubResource("SphereMesh_demo")
+material_override = ExtResource("1_toon")
+
+[node name="ToonLabel" type="Label3D" parent="Row1_Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, 0)
+text = "Toon Shading"
+font_size = 48
+outline_size = 8
+modulate = Color(1, 1, 1, 0.9)
+
+[node name="Dissolve" type="MeshInstance3D" parent="Row1_Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.5, 1, 0)
+mesh = SubResource("SphereMesh_demo")
+material_override = ExtResource("2_dissolve")
+
+[node name="DissolveLabel" type="Label3D" parent="Row1_Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.5, -0.4, 0)
+text = "Dissolve"
+font_size = 48
+outline_size = 8
+modulate = Color(1, 1, 1, 0.9)
+
+[node name="Hologram" type="MeshInstance3D" parent="Row1_Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 1, 0)
+mesh = SubResource("SphereMesh_demo")
+material_override = ExtResource("3_hologram")
+
+[node name="HologramLabel" type="Label3D" parent="Row1_Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, -0.4, 0)
+text = "Hologram"
+font_size = 48
+outline_size = 8
+modulate = Color(1, 1, 1, 0.9)
+
+[node name="WaterSurface" type="MeshInstance3D" parent="Row1_Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.5, 0.5, 0)
+mesh = SubResource("PlaneMesh_demo")
+material_override = ExtResource("4_water")
+
+[node name="WaterLabel" type="Label3D" parent="Row1_Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.5, -0.4, 0)
+text = "Water Surface"
+font_size = 48
+outline_size = 8
+modulate = Color(1, 1, 1, 0.9)
+
+[node name="Row2_Middle" type="Node3D" parent="."]
+
+[node name="ForceField" type="MeshInstance3D" parent="Row2_Middle"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -4.5)
+mesh = SubResource("SphereMesh_demo")
+material_override = ExtResource("5_force")
+
+[node name="ForceFieldLabel" type="Label3D" parent="Row2_Middle"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, -4.5)
+text = "Force Field"
+font_size = 48
+outline_size = 8
+modulate = Color(1, 1, 1, 0.9)
+
+[node name="Outline" type="MeshInstance3D" parent="Row2_Middle"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.5, 1, -4.5)
+mesh = SubResource("SphereMesh_demo")
+material_override = ExtResource("6_outline")
+
+[node name="OutlineLabel" type="Label3D" parent="Row2_Middle"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.5, -0.4, -4.5)
+text = "Outline"
+font_size = 48
+outline_size = 8
+modulate = Color(1, 1, 1, 0.9)
+
+[node name="FrostedGlass" type="MeshInstance3D" parent="Row2_Middle"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 1, -4.5)
+mesh = SubResource("SphereMesh_demo")
+material_override = ExtResource("7_frost")
+
+[node name="FrostedGlassLabel" type="Label3D" parent="Row2_Middle"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, -0.4, -4.5)
+text = "Frosted Glass"
+font_size = 48
+outline_size = 8
+modulate = Color(1, 1, 1, 0.9)
+
+[node name="LavaFlow" type="MeshInstance3D" parent="Row2_Middle"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.5, 0.5, -4.5)
+mesh = SubResource("PlaneMesh_demo")
+material_override = ExtResource("8_lava")
+
+[node name="LavaLabel" type="Label3D" parent="Row2_Middle"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.5, -0.4, -4.5)
+text = "Lava Flow"
+font_size = 48
+outline_size = 8
+modulate = Color(1, 1, 1, 0.9)
+
+[node name="Row3_Back" type="Node3D" parent="."]
+
+[node name="EnergyBeam" type="MeshInstance3D" parent="Row3_Back"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -9)
+mesh = SubResource("QuadMesh_demo")
+material_override = ExtResource("9_beam")
+
+[node name="EnergyBeamLabel" type="Label3D" parent="Row3_Back"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, -9)
+text = "Energy Beam"
+font_size = 48
+outline_size = 8
+modulate = Color(1, 1, 1, 0.9)
+
+[node name="TriplanarBlend" type="MeshInstance3D" parent="Row3_Back"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.5, 1, -9)
+mesh = SubResource("SphereMesh_demo")
+material_override = ExtResource("10_tri")
+
+[node name="TriplanarLabel" type="Label3D" parent="Row3_Back"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.5, -0.4, -9)
+text = "Triplanar Blend"
+font_size = 48
+outline_size = 8
+modulate = Color(1, 1, 1, 0.9)
+
+[node name="WindSway" type="MeshInstance3D" parent="Row3_Back"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 0.5, -9)
+mesh = SubResource("PlaneMesh_demo")
+material_override = ExtResource("11_wind")
+
+[node name="WindSwayLabel" type="Label3D" parent="Row3_Back"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, -0.4, -9)
+text = "Wind Sway"
+font_size = 48
+outline_size = 8
+modulate = Color(1, 1, 1, 0.9)

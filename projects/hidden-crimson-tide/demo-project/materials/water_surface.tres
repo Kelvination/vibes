@@ -1,0 +1,27 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/water_surface.gdshader" id="1"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/shallow_color = Color(0.1, 0.6, 0.7, 0.8)
+shader_parameter/deep_color = Color(0.02, 0.15, 0.3, 0.95)
+shader_parameter/depth_distance = 5.0
+shader_parameter/wave_speed = 1.0
+shader_parameter/wave_height = 0.15
+shader_parameter/wave_direction_1 = Vector2(1.0, 0.0)
+shader_parameter/wave_direction_2 = Vector2(0.0, 1.0)
+shader_parameter/wave_frequency_1 = 2.0
+shader_parameter/wave_frequency_2 = 3.5
+shader_parameter/roughness = 0.05
+shader_parameter/metallic = 0.3
+shader_parameter/specular_strength = 0.8
+shader_parameter/normal_scale = 1.0
+shader_parameter/normal_tile = 4.0
+shader_parameter/normal_speed = 0.3
+shader_parameter/foam_enabled = true
+shader_parameter/foam_color = Color(1.0, 1.0, 1.0, 1.0)
+shader_parameter/foam_amount = 0.5
+shader_parameter/foam_sharpness = 3.0
+shader_parameter/fresnel_power = 3.0
+shader_parameter/fresnel_intensity = 0.5

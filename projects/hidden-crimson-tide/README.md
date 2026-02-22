@@ -1,126 +1,103 @@
-# 🎯 Cannon Master - Three.js Mobile Game
+# Luminara Shader Collection
 
-A mobile-optimized 3D cannon shooting game built with Three.js. Aim your cannon, charge your power, and shoot cannonballs into target holes to score points!
+**12 Professional Shaders for Godot 4**
 
-**Play now:** Automatically deployed to Vercel!
-
-## 🎮 How to Play
-
-1. **Aim**: Drag anywhere on the screen to rotate and aim the cannon
-2. **Charge**: Press and hold the red "CHARGE" button to build up power
-3. **Fire**: Release the button to launch the cannonball
-4. **Score**: Land your cannonball in the holes to earn 100 points each!
-
-## ✨ Features
-
-- **Full 3D Graphics**: Built with Three.js for immersive gameplay
-- **Realistic Physics**: Gravity-based projectile motion with accurate ballistics
-- **Mobile-First Design**: Touch-optimized controls for smartphones and tablets
-- **Intuitive Controls**: Simple drag-to-aim and hold-to-charge mechanics
-- **Visual Feedback**: Power meter, score display, and hit effects
-- **Dynamic Landscape**: Large terrain with trees, flags, and multiple target holes
-- **Responsive Design**: Works on any screen size
-
-## 🎯 Game Mechanics
-
-- **Cannon Position**: Mounted on a raised ledge overlooking the landscape
-- **Aiming**: 360-degree horizontal rotation + vertical angle adjustment (30-70 degrees)
-- **Power System**: Hold button to charge from 0-100% power
-- **Gravity**: Realistic projectile physics with downward acceleration
-- **Scoring**: 100 points per hole hit, holes reset after 2 seconds
-- **Multiple Targets**: 6 colored target holes at varying distances
-
-## 🛠️ Technology Stack
-
-- **Three.js r160**: 3D rendering and scene management
-- **Vanilla JavaScript**: Game logic and physics simulation
-- **HTML5 Canvas**: Hardware-accelerated rendering
-- **CSS3**: UI styling and responsive layout
-- **ES6 Modules**: Modern JavaScript architecture
-
-## 🎨 Scene Elements
-
-- **Cannon**: Metallic 3D model with rotating base and barrel
-- **Ledge**: Stone platform 3 meters above ground level
-- **Landscape**: 200x200 meter terrain with height variation
-- **Trees**: Procedurally placed vegetation for scale
-- **Target Holes**: 6 holes with colored flags and rim indicators
-- **Lighting**: Directional sun with soft shadows
-
-## 🎯 Controls
-
-### Mobile (Touch)
-- **Drag screen**: Aim the cannon
-- **Hold red button**: Charge power
-- **Release button**: Fire!
-
-### Desktop (Mouse)
-- **Click and drag**: Aim the cannon
-- **Click and hold red button**: Charge power
-- **Release**: Fire!
-
-## 🚀 Local Development
-
-Simply open `index.html` in a modern web browser, or run a local server:
-
-```bash
-# Using Python
-python -m http.server 8000
-
-# Using Node.js
-npx serve
-
-# Using PHP
-php -S localhost:8000
-```
-
-Then visit `http://localhost:8000`
-
-## 📱 Mobile Optimization
-
-- Touch event handling for smooth aiming
-- Viewport meta tags prevent unwanted zooming
-- Optimized render settings for mobile GPUs
-- Responsive UI elements scale to screen size
-- Efficient physics calculations for 60fps on mobile
-
-## 🎮 Gameplay Tips
-
-1. **Start Low**: Begin with lower power to gauge distance
-2. **Watch the Angle**: Higher angles go further but less accurately
-3. **Lead the Target**: Account for the arc of your shot
-4. **Quick Reset**: Holes become active again after scoring
-5. **Power Control**: Max power isn't always the best shot!
-
-## 🏗️ Project Structure
-
-```
-hidden-crimson-tide/
-├── index.html      # Main HTML structure and UI
-├── style.css       # Responsive styling and layout
-├── game.js         # Three.js game engine and physics
-└── README.md       # This file
-```
-
-## 🎯 Future Enhancements
-
-- Multiple levels with increasing difficulty
-- Moving targets and obstacles
-- Wind effects on cannonball trajectory
-- Multiplayer mode with turn-based shooting
-- Sound effects and background music
-- Particle effects for explosions and splashes
-- Leaderboard system
-- Different cannonball types (heavy, light, explosive)
-
-## 🐛 Known Issues
-
-- None! Built with love and tested extensively.
-
-## 📄 License
-
-Built as part of the vibes repository - a playground for rapid prototyping and creative coding.
+A curated pack of production-ready shaders for Godot 4, covering stylized rendering, environmental effects, post-processing, and vertex animation. Each shader is self-contained, well-documented, and designed for straightforward integration into any project.
 
 ---
 
-Built with Three.js 🎮 | Optimized for mobile 📱 | Have fun! 🎯
+## Shaders
+
+| # | Shader | Type | Description |
+|---|--------|------|-------------|
+| 1 | **Toon Shading** | `spatial` | Cel-shaded look with configurable color bands, rim lighting, and specular. |
+| 2 | **Dissolve** | `spatial` | Burn-edge dissolve with noise, edge glow, and emission. |
+| 3 | **Hologram** | `spatial` | Sci-fi hologram with scanlines, flicker, glitch, and fresnel. |
+| 4 | **Water Surface** | `spatial` | Animated water with dual-layer waves, foam, depth fade. |
+| 5 | **Force Field** | `spatial` | Hexagonal energy shield with intersection highlight and pulse. |
+| 6 | **Pixelation** | `canvas_item` | Retro pixelation with color reduction and CRT scanlines. |
+| 7 | **Outline** | `spatial` | Inverted-hull outline with distance fade and pulse. |
+| 8 | **Frosted Glass** | `spatial` | Frosted glass with voronoi frost patterns and refraction. |
+| 9 | **Lava Flow** | `spatial` | Animated flowing lava with crust, cracks, and emission. |
+| 10 | **Energy Beam** | `spatial` | Animated beam with core glow, noise distortion, sparkle. |
+| 11 | **Triplanar Blend** | `spatial` | Seamless triplanar mapping with height-based blending. |
+| 12 | **Wind Sway** | `spatial` | Vertex animation for foliage and grass with wind simulation. |
+
+---
+
+## Installation
+
+1. Download or clone this repository.
+2. Copy the `shaders/` folder into your Godot 4 project directory (e.g., `res://shaders/`).
+3. Each `.gdshader` file is self-contained and ready to use.
+
+No addons, no plugins, no external dependencies.
+
+---
+
+## Quick Start
+
+### Spatial Shaders (3D)
+
+1. Select a **MeshInstance3D** node in your scene.
+2. In the Inspector, create a new **ShaderMaterial** under the material slot.
+3. Click the ShaderMaterial, then assign a new **Shader** resource.
+4. Load the desired `.gdshader` file (e.g., `toon_shading.gdshader`).
+5. Adjust uniforms in the Inspector under **Shader Parameters**.
+
+### Canvas Item Shaders (2D / Post-Processing)
+
+1. Add a **ColorRect** or **TextureRect** that covers the viewport, or apply directly to any **CanvasItem** node.
+2. Create a new **ShaderMaterial** on the node.
+3. Load the desired `.gdshader` file (e.g., `pixelate.gdshader`).
+4. Adjust uniforms in the Inspector.
+
+For full-screen post-processing, parent a **ColorRect** to a **CanvasLayer** and set it to fill the screen.
+
+### Special Cases
+
+- **Outline shader** -- Apply as a **Next Pass** material on the same mesh, not as the primary material. The outline renders back faces expanded along normals.
+- **Water Surface shader** -- Assign normal map textures to `normal_texture_1` and `normal_texture_2` for best results. The shader reads the depth and screen textures internally.
+- **Force Field shader** -- Works best on sphere or capsule meshes. Uses the depth buffer for intersection highlighting.
+
+---
+
+## File Structure
+
+```
+shaders/
+  toon_shading.gdshader
+  dissolve.gdshader
+  hologram.gdshader
+  water_surface.gdshader
+  force_field.gdshader
+  pixelate.gdshader
+  outline.gdshader
+  frosted_glass.gdshader
+  lava_flow.gdshader
+  energy_beam.gdshader
+  triplanar_blend.gdshader
+  wind_sway.gdshader
+```
+
+---
+
+## Documentation
+
+See [SHADER_GUIDE.md](SHADER_GUIDE.md) for detailed documentation on every shader, including parameter descriptions, recommended use cases, and performance tips.
+
+---
+
+## Compatibility
+
+- **Engine**: Godot 4.0+
+- **Renderer**: Tested with Forward+ and Mobile renderers
+- **Platform**: Desktop, Mobile, Web (performance varies by shader complexity)
+
+---
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+Copyright 2026 Luminara Studios.
