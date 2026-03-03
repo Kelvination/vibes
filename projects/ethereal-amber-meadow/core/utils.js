@@ -46,7 +46,44 @@ export function fbmNoise3D(x, y, z, octaves, roughness) {
 
 // Geometry data helpers
 export function cloneGeo(geo) {
-  return JSON.parse(JSON.stringify(geo));
+  if (!geo) return null;
+  if (Array.isArray(geo)) return geo.map(g => cloneGeo(g));
+
+  // Preserve Field objects and other non-serializable values
+  const clone = {};
+  for (const key of Object.keys(geo)) {
+    const val = geo[key];
+    if (val === null || val === undefined) {
+      clone[key] = val;
+    } else if (val && val.isField) {
+      // Fields are immutable — safe to share reference
+      clone[key] = val;
+    } else if (typeof val === 'object' && val._fieldSetPosition) {
+      // Preserve nested field references
+      clone[key] = cloneGeo(val);
+    } else if (Array.isArray(val)) {
+      clone[key] = val.map(item =>
+        item && typeof item === 'object' && !item.isField
+          ? JSON.parse(JSON.stringify(item))
+          : item
+      );
+    } else if (typeof val === 'object') {
+      // Check if this sub-object has fields
+      const hasFields = Object.values(val).some(v => v && v.isField);
+      if (hasFields) {
+        clone[key] = { ...val }; // shallow copy preserves field references
+      } else {
+        try {
+          clone[key] = JSON.parse(JSON.stringify(val));
+        } catch (e) {
+          clone[key] = val; // fallback: share reference
+        }
+      }
+    } else {
+      clone[key] = val; // primitives
+    }
+  }
+  return clone;
 }
 
 export function geoToArray(geo) {
