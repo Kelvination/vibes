@@ -5,6 +5,7 @@
  */
 
 import { seededRandom } from '../core/utils.js';
+import { isField, resolveField } from '../core/field.js';
 
 /**
  * Build a Three.js BufferGeometry from a geometry data descriptor.
@@ -613,6 +614,205 @@ export function buildGeometry(geoData) {
     geometry = meshToCurveGeometry(geometry);
   }
 
+  // ── Field-based operations ──────────────────────────────────────────────
+
+  // Field-based Set Position: evaluate position/offset fields per vertex
+  if (geoData._fieldSetPosition) {
+    const fp = geoData._fieldSetPosition;
+    const posAttr = geometry.getAttribute('position');
+    if (posAttr) {
+      if (!geometry.getAttribute('normal')) {
+        try { geometry.computeVertexNormals(); } catch (e) { /* ok */ }
+      }
+      const normAttr = geometry.getAttribute('normal');
+      const count = posAttr.count;
+
+      // Build element contexts
+      const elements = [];
+      for (let i = 0; i < count; i++) {
+        elements.push({
+          position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
+          normal: normAttr
+            ? { x: normAttr.getX(i), y: normAttr.getY(i), z: normAttr.getZ(i) }
+            : { x: 0, y: 1, z: 0 },
+          index: i,
+          count,
+        });
+      }
+
+      // Resolve fields
+      const selArr = resolveField(fp.selection ?? true, elements);
+      const posArr = fp.position ? resolveField(fp.position, elements) : null;
+      const offArr = resolveField(fp.offset || { x: 0, y: 0, z: 0 }, elements);
+
+      for (let i = 0; i < count; i++) {
+        if (!selArr[i]) continue; // selection is false → skip
+
+        if (posArr) {
+          // Absolute position set
+          const p = posArr[i] || { x: 0, y: 0, z: 0 };
+          posAttr.setXYZ(i, p.x || 0, p.y || 0, p.z || 0);
+        } else {
+          // Offset mode
+          const off = offArr[i] || { x: 0, y: 0, z: 0 };
+          posAttr.setXYZ(i,
+            posAttr.getX(i) + (off.x || 0),
+            posAttr.getY(i) + (off.y || 0),
+            posAttr.getZ(i) + (off.z || 0),
+          );
+        }
+      }
+      posAttr.needsUpdate = true;
+      geometry.computeVertexNormals();
+    }
+  }
+
+  // Field-based Delete Geometry: remove elements where selection field is true
+  if (geoData._fieldDelete) {
+    const fd = geoData._fieldDelete;
+    const posAttr = geometry.getAttribute('position');
+    if (posAttr) {
+      if (!geometry.getAttribute('normal')) {
+        try { geometry.computeVertexNormals(); } catch (e) { /* ok */ }
+      }
+      const normAttr = geometry.getAttribute('normal');
+      const count = posAttr.count;
+
+      const elements = [];
+      for (let i = 0; i < count; i++) {
+        elements.push({
+          position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
+          normal: normAttr
+            ? { x: normAttr.getX(i), y: normAttr.getY(i), z: normAttr.getZ(i) }
+            : { x: 0, y: 1, z: 0 },
+          index: i,
+          count,
+        });
+      }
+
+      const selArr = resolveField(fd.selection, elements);
+
+      if (fd.domain === 'faces' && geometry.index) {
+        // Face-domain deletion
+        const idxArr = geometry.index.array;
+        const newIdx = [];
+        const triCount = Math.floor(idxArr.length / 3);
+        for (let f = 0; f < triCount; f++) {
+          const a = idxArr[f * 3], b = idxArr[f * 3 + 1], c = idxArr[f * 3 + 2];
+          // Delete if any vertex is selected (face domain approximation)
+          const faceSelected = (selArr[a] || selArr[b] || selArr[c]);
+          if (!faceSelected) {
+            newIdx.push(a, b, c);
+          }
+        }
+        if (newIdx.length > 0) {
+          geometry.setIndex(newIdx);
+        } else {
+          // All faces deleted — return empty geometry
+          geometry.dispose();
+          geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
+        }
+      } else {
+        // Point-domain deletion — rebuild geometry keeping unselected vertices
+        const keptPositions = [];
+        const keptNormals = [];
+        const vertMap = new Int32Array(count).fill(-1);
+        let newIdx = 0;
+
+        for (let i = 0; i < count; i++) {
+          if (!selArr[i]) {
+            vertMap[i] = newIdx++;
+            keptPositions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+            if (normAttr) keptNormals.push(normAttr.getX(i), normAttr.getY(i), normAttr.getZ(i));
+          }
+        }
+
+        const newGeo = new THREE.BufferGeometry();
+        newGeo.setAttribute('position', new THREE.Float32BufferAttribute(keptPositions, 3));
+        if (keptNormals.length > 0) newGeo.setAttribute('normal', new THREE.Float32BufferAttribute(keptNormals, 3));
+
+        if (geometry.index) {
+          const oldIdx = geometry.index.array;
+          const remappedIdx = [];
+          for (let i = 0; i < oldIdx.length; i += 3) {
+            const a = vertMap[oldIdx[i]], b = vertMap[oldIdx[i + 1]], c = vertMap[oldIdx[i + 2]];
+            if (a >= 0 && b >= 0 && c >= 0) remappedIdx.push(a, b, c);
+          }
+          if (remappedIdx.length > 0) newGeo.setIndex(remappedIdx);
+        }
+
+        if (!newGeo.getAttribute('normal') && keptPositions.length > 0) {
+          try { newGeo.computeVertexNormals(); } catch (e) { /* ok */ }
+        }
+
+        geometry.dispose();
+        geometry = newGeo;
+      }
+    }
+  }
+
+  // Field-based Separate Geometry: keep only selected or inverted elements
+  if (geoData._fieldSeparate) {
+    const fs = geoData._fieldSeparate;
+    const posAttr = geometry.getAttribute('position');
+    if (posAttr) {
+      if (!geometry.getAttribute('normal')) {
+        try { geometry.computeVertexNormals(); } catch (e) { /* ok */ }
+      }
+      const normAttr = geometry.getAttribute('normal');
+      const count = posAttr.count;
+
+      const elements = [];
+      for (let i = 0; i < count; i++) {
+        elements.push({
+          position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
+          normal: normAttr
+            ? { x: normAttr.getX(i), y: normAttr.getY(i), z: normAttr.getZ(i) }
+            : { x: 0, y: 1, z: 0 },
+          index: i,
+          count,
+        });
+      }
+
+      const selArr = resolveField(fs.selection, elements);
+      const keptPositions = [];
+      const keptNormals = [];
+      const vertMap = new Int32Array(count).fill(-1);
+      let newIdx = 0;
+
+      for (let i = 0; i < count; i++) {
+        const keep = fs.invert ? !selArr[i] : !!selArr[i];
+        if (keep) {
+          vertMap[i] = newIdx++;
+          keptPositions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+          if (normAttr) keptNormals.push(normAttr.getX(i), normAttr.getY(i), normAttr.getZ(i));
+        }
+      }
+
+      const newGeo = new THREE.BufferGeometry();
+      newGeo.setAttribute('position', new THREE.Float32BufferAttribute(keptPositions, 3));
+      if (keptNormals.length > 0) newGeo.setAttribute('normal', new THREE.Float32BufferAttribute(keptNormals, 3));
+
+      if (geometry.index) {
+        const oldIdx = geometry.index.array;
+        const remappedIdx = [];
+        for (let i = 0; i < oldIdx.length; i += 3) {
+          const a = vertMap[oldIdx[i]], b = vertMap[oldIdx[i + 1]], c = vertMap[oldIdx[i + 2]];
+          if (a >= 0 && b >= 0 && c >= 0) remappedIdx.push(a, b, c);
+        }
+        if (remappedIdx.length > 0) newGeo.setIndex(remappedIdx);
+      }
+
+      if (!newGeo.getAttribute('normal') && keptPositions.length > 0) {
+        try { newGeo.computeVertexNormals(); } catch (e) { /* ok */ }
+      }
+
+      geometry.dispose();
+      geometry = newGeo;
+    }
+  }
+
   // Apply extrude by scaling geometry
   if (geoData.extrude) {
     const offset = geoData.extrude.offset || 0;
@@ -1155,6 +1355,80 @@ function meshToCurveGeometry(geo) {
   const newGeo = new THREE.BufferGeometry();
   newGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
   return newGeo;
+}
+
+// ── Field Evaluation Helpers ─────────────────────────────────────────────────
+
+/**
+ * Build element contexts from a geometry descriptor for field evaluation.
+ * Returns an array of { position, normal, index, count } objects.
+ *
+ * @param {object} geoData - Geometry descriptor
+ * @param {string} [domain='point'] - Domain: 'point', 'face', 'edge'
+ * @returns {{ elements: Array, geometry: THREE.BufferGeometry|null }}
+ */
+export function buildElements(geoData, domain = 'point') {
+  if (!geoData) return { elements: [], geometry: null };
+
+  const item = Array.isArray(geoData) ? geoData[0] : geoData;
+  if (!item) return { elements: [], geometry: null };
+
+  const geo = buildGeometry(item);
+  if (!geo) return { elements: [], geometry: null };
+
+  const posAttr = geo.getAttribute('position');
+  if (!posAttr) { geo.dispose(); return { elements: [], geometry: null }; }
+
+  // Ensure normals exist
+  if (!geo.getAttribute('normal')) {
+    try { geo.computeVertexNormals(); } catch (e) { /* curves may not have normals */ }
+  }
+  const normAttr = geo.getAttribute('normal');
+
+  const elements = [];
+
+  if (domain === 'face' && geo.index) {
+    const idxArr = geo.index.array;
+    const triCount = Math.floor(idxArr.length / 3);
+    for (let f = 0; f < triCount; f++) {
+      const a = idxArr[f * 3], b = idxArr[f * 3 + 1], c = idxArr[f * 3 + 2];
+      // Face centroid as position
+      elements.push({
+        position: {
+          x: (posAttr.getX(a) + posAttr.getX(b) + posAttr.getX(c)) / 3,
+          y: (posAttr.getY(a) + posAttr.getY(b) + posAttr.getY(c)) / 3,
+          z: (posAttr.getZ(a) + posAttr.getZ(b) + posAttr.getZ(c)) / 3,
+        },
+        normal: normAttr ? {
+          x: (normAttr.getX(a) + normAttr.getX(b) + normAttr.getX(c)) / 3,
+          y: (normAttr.getY(a) + normAttr.getY(b) + normAttr.getY(c)) / 3,
+          z: (normAttr.getZ(a) + normAttr.getZ(b) + normAttr.getZ(c)) / 3,
+        } : { x: 0, y: 1, z: 0 },
+        index: f,
+        count: triCount,
+      });
+    }
+  } else {
+    // Point domain (default)
+    for (let i = 0; i < posAttr.count; i++) {
+      elements.push({
+        position: {
+          x: posAttr.getX(i),
+          y: posAttr.getY(i),
+          z: posAttr.getZ(i),
+        },
+        normal: normAttr ? {
+          x: normAttr.getX(i),
+          y: normAttr.getY(i),
+          z: normAttr.getZ(i),
+        } : { x: 0, y: 1, z: 0 },
+        index: i,
+        count: posAttr.count,
+      });
+    }
+  }
+
+  return { elements, geometry: geo };
 }
 
 // ── Geometry Analysis Helpers ────────────────────────────────────────────────

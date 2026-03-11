@@ -13,8 +13,14 @@ import {
 import {
   computeBounds, computeDomainSize, computeCurveLength,
   computeClosestPoint, performRaycast, sampleAtIndex,
-  computeMeshAnalysis,
+  computeMeshAnalysis, buildElements,
 } from './builders.js';
+import {
+  Field, isField, resolveField, resolveScalar,
+  positionField, normalField, indexField,
+  mapField, combineFields, combineFields3,
+  separateXYZ as fieldSeparateXYZ, combineXYZ as fieldCombineXYZ,
+} from '../core/field.js';
 
 // ── Categories ──────────────────────────────────────────────────────────────
 
@@ -191,28 +197,14 @@ registry.addNodes('geo', {
   'position': {
     label: 'Position',
     category: 'FIELD',
-    inputs: [
-      { name: 'Geometry', type: SocketType.GEOMETRY },
-    ],
+    inputs: [],
     outputs: [
       { name: 'Position', type: SocketType.VECTOR },
     ],
     defaults: {},
     evaluate(values, inputs) {
-      const geo = inputs['Geometry'];
-      if (geo) {
-        // Compute centroid of geometry as representative position
-        const bounds = computeBounds(geo);
-        if (bounds) {
-          return { outputs: [{
-            x: (bounds.min.x + bounds.max.x) / 2,
-            y: (bounds.min.y + bounds.max.y) / 2,
-            z: (bounds.min.z + bounds.max.z) / 2,
-            _field: 'position',
-          }] };
-        }
-      }
-      return { outputs: [{ x: 0, y: 0, z: 0, _field: 'position' }] };
+      // Return a Position field — evaluated per-element by consumer nodes
+      return { outputs: [positionField()] };
     },
   },
 
@@ -240,6 +232,17 @@ registry.addNodes('geo', {
       const sel = inputs['Selection'] ?? true;
       const pos = inputs['Position'] || null;
       const offset = inputs['Offset'] || { x: values.offsetX, y: values.offsetY, z: values.offsetZ };
+
+      // If any input is a field, store field references for the builder to resolve
+      if (isField(sel) || isField(pos) || isField(offset)) {
+        const clone = cloneGeo(geo);
+        return { outputs: [mapGeo(clone, g => {
+          g._fieldSetPosition = { selection: sel, position: pos, offset };
+          return g;
+        })] };
+      }
+
+      // Scalar path (original behavior)
       const clone = cloneGeo(geo);
       return { outputs: [mapGeo(clone, g => {
         g.setPosition = {
@@ -255,46 +258,28 @@ registry.addNodes('geo', {
   'normal': {
     label: 'Normal',
     category: 'FIELD',
-    inputs: [
-      { name: 'Geometry', type: SocketType.GEOMETRY },
-    ],
+    inputs: [],
     outputs: [
       { name: 'Normal', type: SocketType.VECTOR },
     ],
     defaults: {},
     evaluate(values, inputs) {
-      // Returns average face normal when geometry is connected
-      const geo = inputs['Geometry'];
-      if (geo) {
-        const analysis = computeMeshAnalysis(geo);
-        if (analysis && analysis.faceCount > 0) {
-          // For most oriented meshes, average normal is roughly (0,1,0)
-          // but we return the _field tag so consumers know this is a normal field
-          return { outputs: [{ x: 0, y: 1, z: 0, _field: 'normal' }] };
-        }
-      }
-      return { outputs: [{ x: 0, y: 1, z: 0, _field: 'normal' }] };
+      // Return a Normal field — evaluated per-element by consumer nodes
+      return { outputs: [normalField()] };
     },
   },
 
   'index': {
     label: 'Index',
     category: 'FIELD',
-    inputs: [
-      { name: 'Geometry', type: SocketType.GEOMETRY },
-    ],
+    inputs: [],
     outputs: [
       { name: 'Index', type: SocketType.INT },
     ],
     defaults: {},
     evaluate(values, inputs) {
-      const geo = inputs['Geometry'];
-      if (geo) {
-        // Return total element count so downstream nodes know the range
-        const ds = computeDomainSize(geo);
-        return { outputs: [ds.points > 0 ? ds.points - 1 : 0] };
-      }
-      return { outputs: [0] };
+      // Return an Index field — evaluated per-element by consumer nodes
+      return { outputs: [indexField()] };
     },
   },
 
@@ -312,7 +297,9 @@ registry.addNodes('geo', {
     defaults: {},
     evaluate(values, inputs) {
       const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
-      return { outputs: [v.x || 0, v.y || 0, v.z || 0] };
+      // If input is a field, produce 3 derived float fields
+      const result = fieldSeparateXYZ(v);
+      return { outputs: [result.x, result.y, result.z] };
     },
   },
 
@@ -337,7 +324,8 @@ registry.addNodes('geo', {
       const x = inputs['X'] ?? values.x;
       const y = inputs['Y'] ?? values.y;
       const z = inputs['Z'] ?? values.z;
-      return { outputs: [{ x, y, z }] };
+      // If any input is a field, produce a derived vector field
+      return { outputs: [fieldCombineXYZ(x, y, z)] };
     },
   },
 
@@ -936,6 +924,17 @@ registry.addNodes('geo', {
       const geo = inputs['Geometry'];
       const sel = inputs['Selection'] ?? true;
       if (!geo) return { outputs: [null] };
+
+      // If selection is a field, store it for per-element evaluation by builder
+      if (isField(sel)) {
+        const clone = cloneGeo(geo);
+        return { outputs: [mapGeo(clone, g => {
+          g._fieldDelete = { selection: sel, domain: values.domain };
+          return g;
+        })] };
+      }
+
+      // Scalar path (original behavior)
       if (sel) {
         return { outputs: [null] };
       }
@@ -968,6 +967,18 @@ registry.addNodes('geo', {
       const geo = inputs['Geometry'];
       const sel = inputs['Selection'] ?? true;
       if (!geo) return { outputs: [null, null] };
+
+      // If selection is a field, store it for per-element evaluation by builder
+      if (isField(sel)) {
+        const cloneSel = cloneGeo(geo);
+        const cloneInv = cloneGeo(geo);
+        return { outputs: [
+          mapGeo(cloneSel, g => { g._fieldSeparate = { selection: sel, invert: false, domain: values.domain }; return g; }),
+          mapGeo(cloneInv, g => { g._fieldSeparate = { selection: sel, invert: true, domain: values.domain }; return g; }),
+        ] };
+      }
+
+      // Scalar path (original behavior)
       if (sel) {
         return { outputs: [cloneGeo(geo), null] };
       }
@@ -1677,53 +1688,61 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const a = inputs['A'] ?? values.a;
       const b = inputs['B'] ?? values.b;
-      let val = 0;
-      switch (values.operation) {
-        case 'add': val = a + b; break;
-        case 'subtract': val = a - b; break;
-        case 'multiply': val = a * b; break;
-        case 'divide': val = b !== 0 ? a / b : 0; break;
-        case 'power': val = Math.pow(a, b); break;
-        case 'sqrt': val = Math.sqrt(Math.abs(a)); break;
-        case 'log': val = a > 0 ? Math.log(a) / (b > 0 && b !== 1 ? Math.log(b) : 1) : 0; break;
-        case 'modulo': val = b !== 0 ? ((a % b) + b) % b : 0; break;
-        case 'min': val = Math.min(a, b); break;
-        case 'max': val = Math.max(a, b); break;
-        case 'abs': val = Math.abs(a); break;
-        case 'floor': val = Math.floor(a); break;
-        case 'ceil': val = Math.ceil(a); break;
-        case 'round': val = Math.round(a); break;
-        case 'sin': val = Math.sin(a); break;
-        case 'cos': val = Math.cos(a); break;
-        case 'tan': val = Math.tan(a); break;
-        case 'asin': val = Math.asin(Math.max(-1, Math.min(1, a))); break;
-        case 'acos': val = Math.acos(Math.max(-1, Math.min(1, a))); break;
-        case 'atan': val = Math.atan(a); break;
-        case 'atan2': val = Math.atan2(a, b); break;
-        case 'sign': val = Math.sign(a); break;
-        case 'fract': val = a - Math.floor(a); break;
-        case 'snap': val = b !== 0 ? Math.floor(a / b) * b : a; break;
-        case 'pingpong': val = b !== 0 ? Math.abs(((a % (b * 2)) + b * 2) % (b * 2) - b) : 0; break;
-        case 'wrap': {
-          const range = b - 0;
-          val = range !== 0 ? a - Math.floor(a / range) * range : a;
-          break;
+      const op = values.operation;
+
+      // Core math operation (reusable for both scalar and field paths)
+      const doMath = (av, bv) => {
+        let val = 0;
+        switch (op) {
+          case 'add': val = av + bv; break;
+          case 'subtract': val = av - bv; break;
+          case 'multiply': val = av * bv; break;
+          case 'divide': val = bv !== 0 ? av / bv : 0; break;
+          case 'power': val = Math.pow(av, bv); break;
+          case 'sqrt': val = Math.sqrt(Math.abs(av)); break;
+          case 'log': val = av > 0 ? Math.log(av) / (bv > 0 && bv !== 1 ? Math.log(bv) : 1) : 0; break;
+          case 'modulo': val = bv !== 0 ? ((av % bv) + bv) % bv : 0; break;
+          case 'min': val = Math.min(av, bv); break;
+          case 'max': val = Math.max(av, bv); break;
+          case 'abs': val = Math.abs(av); break;
+          case 'floor': val = Math.floor(av); break;
+          case 'ceil': val = Math.ceil(av); break;
+          case 'round': val = Math.round(av); break;
+          case 'sin': val = Math.sin(av); break;
+          case 'cos': val = Math.cos(av); break;
+          case 'tan': val = Math.tan(av); break;
+          case 'asin': val = Math.asin(Math.max(-1, Math.min(1, av))); break;
+          case 'acos': val = Math.acos(Math.max(-1, Math.min(1, av))); break;
+          case 'atan': val = Math.atan(av); break;
+          case 'atan2': val = Math.atan2(av, bv); break;
+          case 'sign': val = Math.sign(av); break;
+          case 'fract': val = av - Math.floor(av); break;
+          case 'snap': val = bv !== 0 ? Math.floor(av / bv) * bv : av; break;
+          case 'pingpong': val = bv !== 0 ? Math.abs(((av % (bv * 2)) + bv * 2) % (bv * 2) - bv) : 0; break;
+          case 'wrap': {
+            const range = bv - 0;
+            val = range !== 0 ? av - Math.floor(av / range) * range : av;
+            break;
+          }
+          case 'smooth_min': {
+            const k = Math.max(bv, 0.0001);
+            const h = Math.max(0, Math.min(1, 0.5 + 0.5 * (bv - av) / k));
+            val = lerp(bv, av, h) - k * h * (1 - h);
+            break;
+          }
+          case 'smooth_max': {
+            const k = Math.max(bv, 0.0001);
+            const h = Math.max(0, Math.min(1, 0.5 + 0.5 * (av - bv) / k));
+            val = lerp(bv, av, h) + k * h * (1 - h);
+            break;
+          }
         }
-        case 'smooth_min': {
-          const k = Math.max(b, 0.0001);
-          const h = Math.max(0, Math.min(1, 0.5 + 0.5 * (b - a) / k));
-          val = lerp(b, a, h) - k * h * (1 - h);
-          break;
-        }
-        case 'smooth_max': {
-          const k = Math.max(b, 0.0001);
-          const h = Math.max(0, Math.min(1, 0.5 + 0.5 * (a - b) / k));
-          val = lerp(b, a, h) + k * h * (1 - h);
-          break;
-        }
-      }
-      if (!isFinite(val)) val = 0;
-      return { outputs: [val] };
+        return isFinite(val) ? val : 0;
+      };
+
+      // If either input is a field, produce a derived field
+      const result = combineFields(a, b, 'float', doMath);
+      return { outputs: [result] };
     },
   },
 
@@ -1768,62 +1787,88 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const a = inputs['A'] || { x: 0, y: 0, z: 0 };
       const b = inputs['B'] || { x: 0, y: 0, z: 0 };
-      let vec = { x: 0, y: 0, z: 0 };
-      let scalar = 0;
-      switch (values.operation) {
-        case 'add': vec = { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; break;
-        case 'subtract': vec = { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; break;
-        case 'multiply': vec = { x: a.x * b.x, y: a.y * b.y, z: a.z * b.z }; break;
-        case 'divide': vec = {
-          x: b.x !== 0 ? a.x / b.x : 0,
-          y: b.y !== 0 ? a.y / b.y : 0,
-          z: b.z !== 0 ? a.z / b.z : 0,
-        }; break;
-        case 'cross': vec = {
-          x: a.y * b.z - a.z * b.y,
-          y: a.z * b.x - a.x * b.z,
-          z: a.x * b.y - a.y * b.x,
-        }; break;
-        case 'dot': scalar = a.x * b.x + a.y * b.y + a.z * b.z; break;
-        case 'distance': {
-          const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
-          scalar = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        } break;
-        case 'normalize': {
-          const len = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z) || 1;
-          vec = { x: a.x / len, y: a.y / len, z: a.z / len };
-        } break;
-        case 'length': scalar = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z); break;
-        case 'scale': vec = { x: a.x * b.x, y: a.y * b.x, z: a.z * b.x }; break;
-        case 'reflect': {
-          const d = 2 * (a.x * b.x + a.y * b.y + a.z * b.z);
-          vec = { x: a.x - d * b.x, y: a.y - d * b.y, z: a.z - d * b.z };
-        } break;
-        case 'project': {
-          const d = (a.x * b.x + a.y * b.y + a.z * b.z);
-          const bl = b.x * b.x + b.y * b.y + b.z * b.z;
-          const f = bl !== 0 ? d / bl : 0;
-          vec = { x: b.x * f, y: b.y * f, z: b.z * f };
-        } break;
-        case 'faceforward': {
-          const d = a.x * b.x + a.y * b.y + a.z * b.z;
-          vec = d < 0 ? { x: a.x, y: a.y, z: a.z } : { x: -a.x, y: -a.y, z: -a.z };
-        } break;
-        case 'snap': vec = {
-          x: b.x !== 0 ? Math.floor(a.x / b.x) * b.x : a.x,
-          y: b.y !== 0 ? Math.floor(a.y / b.y) * b.y : a.y,
-          z: b.z !== 0 ? Math.floor(a.z / b.z) * b.z : a.z,
-        }; break;
-        case 'floor': vec = { x: Math.floor(a.x), y: Math.floor(a.y), z: Math.floor(a.z) }; break;
-        case 'ceil': vec = { x: Math.ceil(a.x), y: Math.ceil(a.y), z: Math.ceil(a.z) }; break;
-        case 'abs': vec = { x: Math.abs(a.x), y: Math.abs(a.y), z: Math.abs(a.z) }; break;
-        case 'min': vec = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), z: Math.min(a.z, b.z) }; break;
-        case 'max': vec = { x: Math.max(a.x, b.x), y: Math.max(a.y, b.y), z: Math.max(a.z, b.z) }; break;
-        case 'sine': vec = { x: Math.sin(a.x), y: Math.sin(a.y), z: Math.sin(a.z) }; break;
-        case 'cosine': vec = { x: Math.cos(a.x), y: Math.cos(a.y), z: Math.cos(a.z) }; break;
-        case 'tangent': vec = { x: Math.tan(a.x), y: Math.tan(a.y), z: Math.tan(a.z) }; break;
+      const op = values.operation;
+
+      // Core vector math operation (works on plain vectors)
+      const doVecMath = (av, bv) => {
+        // Ensure vectors (fields might produce them)
+        const va = (av && typeof av === 'object') ? av : { x: 0, y: 0, z: 0 };
+        const vb = (bv && typeof bv === 'object') ? bv : { x: 0, y: 0, z: 0 };
+        let vec = { x: 0, y: 0, z: 0 };
+        let scalar = 0;
+        switch (op) {
+          case 'add': vec = { x: va.x + vb.x, y: va.y + vb.y, z: va.z + vb.z }; break;
+          case 'subtract': vec = { x: va.x - vb.x, y: va.y - vb.y, z: va.z - vb.z }; break;
+          case 'multiply': vec = { x: va.x * vb.x, y: va.y * vb.y, z: va.z * vb.z }; break;
+          case 'divide': vec = {
+            x: vb.x !== 0 ? va.x / vb.x : 0,
+            y: vb.y !== 0 ? va.y / vb.y : 0,
+            z: vb.z !== 0 ? va.z / vb.z : 0,
+          }; break;
+          case 'cross': vec = {
+            x: va.y * vb.z - va.z * vb.y,
+            y: va.z * vb.x - va.x * vb.z,
+            z: va.x * vb.y - va.y * vb.x,
+          }; break;
+          case 'dot': scalar = va.x * vb.x + va.y * vb.y + va.z * vb.z; break;
+          case 'distance': {
+            const dx = va.x - vb.x, dy = va.y - vb.y, dz = va.z - vb.z;
+            scalar = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          } break;
+          case 'normalize': {
+            const len = Math.sqrt(va.x * va.x + va.y * va.y + va.z * va.z) || 1;
+            vec = { x: va.x / len, y: va.y / len, z: va.z / len };
+          } break;
+          case 'length': scalar = Math.sqrt(va.x * va.x + va.y * va.y + va.z * va.z); break;
+          case 'scale': vec = { x: va.x * vb.x, y: va.y * vb.x, z: va.z * vb.x }; break;
+          case 'reflect': {
+            const d = 2 * (va.x * vb.x + va.y * vb.y + va.z * vb.z);
+            vec = { x: va.x - d * vb.x, y: va.y - d * vb.y, z: va.z - d * vb.z };
+          } break;
+          case 'project': {
+            const d = (va.x * vb.x + va.y * vb.y + va.z * vb.z);
+            const bl = vb.x * vb.x + vb.y * vb.y + vb.z * vb.z;
+            const f = bl !== 0 ? d / bl : 0;
+            vec = { x: vb.x * f, y: vb.y * f, z: vb.z * f };
+          } break;
+          case 'faceforward': {
+            const d = va.x * vb.x + va.y * vb.y + va.z * vb.z;
+            vec = d < 0 ? { x: va.x, y: va.y, z: va.z } : { x: -va.x, y: -va.y, z: -va.z };
+          } break;
+          case 'snap': vec = {
+            x: vb.x !== 0 ? Math.floor(va.x / vb.x) * vb.x : va.x,
+            y: vb.y !== 0 ? Math.floor(va.y / vb.y) * vb.y : va.y,
+            z: vb.z !== 0 ? Math.floor(va.z / vb.z) * vb.z : va.z,
+          }; break;
+          case 'floor': vec = { x: Math.floor(va.x), y: Math.floor(va.y), z: Math.floor(va.z) }; break;
+          case 'ceil': vec = { x: Math.ceil(va.x), y: Math.ceil(va.y), z: Math.ceil(va.z) }; break;
+          case 'abs': vec = { x: Math.abs(va.x), y: Math.abs(va.y), z: Math.abs(va.z) }; break;
+          case 'min': vec = { x: Math.min(va.x, vb.x), y: Math.min(va.y, vb.y), z: Math.min(va.z, vb.z) }; break;
+          case 'max': vec = { x: Math.max(va.x, vb.x), y: Math.max(va.y, vb.y), z: Math.max(va.z, vb.z) }; break;
+          case 'sine': vec = { x: Math.sin(va.x), y: Math.sin(va.y), z: Math.sin(va.z) }; break;
+          case 'cosine': vec = { x: Math.cos(va.x), y: Math.cos(va.y), z: Math.cos(va.z) }; break;
+          case 'tangent': vec = { x: Math.tan(va.x), y: Math.tan(va.y), z: Math.tan(va.z) }; break;
+        }
+        return { vec, scalar };
+      };
+
+      // If either input is a field, produce derived fields
+      if (isField(a) || isField(b)) {
+        const vecField = new Field('vector', (el) => {
+          const va = isField(a) ? a.evaluateAt(el) : a;
+          const vb = isField(b) ? b.evaluateAt(el) : b;
+          return doVecMath(va, vb).vec;
+        });
+        const scalarField = new Field('float', (el) => {
+          const va = isField(a) ? a.evaluateAt(el) : a;
+          const vb = isField(b) ? b.evaluateAt(el) : b;
+          return doVecMath(va, vb).scalar;
+        });
+        return { outputs: [vecField, scalarField] };
       }
-      return { outputs: [vec, scalar] };
+
+      const result = doVecMath(a, b);
+      return { outputs: [result.vec, result.scalar] };
     },
   },
 
@@ -1854,17 +1899,23 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const a = inputs['A'] ?? values.a;
       const b = inputs['B'] ?? values.b;
-      let val = false;
-      switch (values.operation) {
-        case 'and': val = a && b; break;
-        case 'or': val = a || b; break;
-        case 'not': val = !a; break;
-        case 'nand': val = !(a && b); break;
-        case 'nor': val = !(a || b); break;
-        case 'xor': val = (a || b) && !(a && b); break;
-        case 'xnor': val = !((a || b) && !(a && b)); break;
-      }
-      return { outputs: [!!val] };
+      const op = values.operation;
+
+      const doBool = (av, bv) => {
+        switch (op) {
+          case 'and': return !!(av && bv);
+          case 'or': return !!(av || bv);
+          case 'not': return !av;
+          case 'nand': return !(av && bv);
+          case 'nor': return !(av || bv);
+          case 'xor': return !!((av || bv) && !(av && bv));
+          case 'xnor': return !((av || bv) && !(av && bv));
+          default: return false;
+        }
+      };
+
+      const result = combineFields(a, b, 'bool', doBool);
+      return { outputs: [result] };
     },
   },
 
@@ -1992,16 +2043,25 @@ registry.addNodes('geo', {
       const a = inputs['A'] ?? values.a;
       const b = inputs['B'] ?? values.b;
       const eps = values.epsilon;
-      let val = false;
-      switch (values.operation) {
-        case 'less_than': val = a < b; break;
-        case 'less_equal': val = a <= b; break;
-        case 'greater_than': val = a > b; break;
-        case 'greater_equal': val = a >= b; break;
-        case 'equal': val = Math.abs(a - b) <= eps; break;
-        case 'not_equal': val = Math.abs(a - b) > eps; break;
-      }
-      return { outputs: [val] };
+      const op = values.operation;
+
+      const doCompare = (av, bv) => {
+        const na = typeof av === 'number' ? av : 0;
+        const nb = typeof bv === 'number' ? bv : 0;
+        switch (op) {
+          case 'less_than': return na < nb;
+          case 'less_equal': return na <= nb;
+          case 'greater_than': return na > nb;
+          case 'greater_equal': return na >= nb;
+          case 'equal': return Math.abs(na - nb) <= eps;
+          case 'not_equal': return Math.abs(na - nb) > eps;
+          default: return false;
+        }
+      };
+
+      // If either input is a field, produce a derived boolean field
+      const result = combineFields(a, b, 'bool', doCompare);
+      return { outputs: [result] };
     },
   },
 
@@ -2977,14 +3037,17 @@ registry.addNodes('geo', {
     ],
     evaluate(values, inputs) {
       const v = inputs['Float'] ?? 0;
-      let r = 0;
-      switch (values.mode) {
-        case 'round': r = Math.round(v); break;
-        case 'floor': r = Math.floor(v); break;
-        case 'ceil': r = Math.ceil(v); break;
-        case 'truncate': r = Math.trunc(v); break;
-      }
-      return { outputs: [r] };
+      const mode = values.mode;
+      const doConvert = (val) => {
+        switch (mode) {
+          case 'round': return Math.round(val);
+          case 'floor': return Math.floor(val);
+          case 'ceil': return Math.ceil(val);
+          case 'truncate': return Math.trunc(val);
+          default: return Math.round(val);
+        }
+      };
+      return { outputs: [mapField(v, 'int', doConvert)] };
     },
   },
 
