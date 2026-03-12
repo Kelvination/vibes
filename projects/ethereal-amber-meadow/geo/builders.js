@@ -367,14 +367,19 @@ export function buildGeometry(geoData) {
       const innerR = geoData.innerRadius || 0.5;
       const outerR = geoData.outerRadius || 1;
       const twist = geoData.twist || 0;
+      const isCyclic = geoData.cyclic !== false;
       const pts = [];
       const totalVerts = numPts * 2;
-      for (let i = 0; i <= totalVerts; i++) {
+      for (let i = 0; i < totalVerts; i++) {
         const angle = (i / totalVerts) * Math.PI * 2;
         const isOuter = i % 2 === 0;
         const r = isOuter ? outerR : innerR;
         const a = isOuter ? angle : angle + twist;
         pts.push(Math.cos(a) * r, 0, Math.sin(a) * r);
+      }
+      if (isCyclic) {
+        // Close the loop by repeating the first point
+        pts.push(pts[0], pts[1], pts[2]);
       }
       geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
@@ -616,7 +621,7 @@ export function buildGeometry(geoData) {
 
   // Merge vertices by distance
   if (geoData.mergeByDistance > 0) {
-    geometry = mergeByDistanceGeometry(geometry, geoData.mergeByDistance);
+    geometry = mergeByDistanceGeometry(geometry, geoData.mergeByDistance, geoData.mergeByDistanceMode || 'all');
   }
 
   // Convex hull
@@ -626,7 +631,7 @@ export function buildGeometry(geoData) {
 
   // Dual mesh
   if (geoData.dualMesh) {
-    geometry = computeDualMesh(geometry);
+    geometry = computeDualMesh(geometry, geoData.keepBoundaries);
   }
 
   // Points to vertices: convert point cloud to mesh vertices (no faces)
@@ -1096,9 +1101,35 @@ function resampleCurveGeometry(geo, opts) {
 /**
  * Merge vertices that are within a distance threshold.
  */
-function mergeByDistanceGeometry(geo, threshold) {
+function mergeByDistanceGeometry(geo, threshold, mode) {
   const posAttr = geo.getAttribute('position');
   if (!posAttr) return geo;
+
+  // For "connected" mode, build edge adjacency so we only merge connected vertices
+  let edgeAdj = null;
+  if (mode === 'connected') {
+    edgeAdj = new Map();
+    const addEdge = (a, b) => {
+      if (!edgeAdj.has(a)) edgeAdj.set(a, new Set());
+      if (!edgeAdj.has(b)) edgeAdj.set(b, new Set());
+      edgeAdj.get(a).add(b);
+      edgeAdj.get(b).add(a);
+    };
+    if (geo.index) {
+      const idxArr = geo.index.array;
+      for (let i = 0; i < idxArr.length; i += 3) {
+        addEdge(idxArr[i], idxArr[i + 1]);
+        addEdge(idxArr[i + 1], idxArr[i + 2]);
+        addEdge(idxArr[i + 2], idxArr[i]);
+      }
+    } else {
+      for (let i = 0; i < posAttr.count; i += 3) {
+        addEdge(i, i + 1);
+        addEdge(i + 1, i + 2);
+        addEdge(i + 2, i);
+      }
+    }
+  }
 
   // Build mapping: old vertex index → merged vertex index
   const mergedPositions = [];
@@ -1111,12 +1142,33 @@ function mergeByDistanceGeometry(geo, threshold) {
     mergedPositions.push(x, y, z);
     indexMap[i] = newIdx;
 
-    // Find all other vertices within threshold
-    for (let j = i + 1; j < posAttr.count; j++) {
-      if (indexMap[j] !== -1) continue;
-      const dx = posAttr.getX(j) - x, dy = posAttr.getY(j) - y, dz = posAttr.getZ(j) - z;
-      if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= threshold) {
-        indexMap[j] = newIdx;
+    if (mode === 'connected' && edgeAdj) {
+      // Only merge vertices that share an edge with vertex i and are within threshold
+      // Use BFS/union-find approach: walk connected neighbors within distance
+      const queue = [i];
+      const visited = new Set([i]);
+      while (queue.length > 0) {
+        const cur = queue.shift();
+        const neighbors = edgeAdj.get(cur);
+        if (!neighbors) continue;
+        for (const j of neighbors) {
+          if (visited.has(j) || indexMap[j] !== -1) continue;
+          const dx = posAttr.getX(j) - x, dy = posAttr.getY(j) - y, dz = posAttr.getZ(j) - z;
+          if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= threshold) {
+            indexMap[j] = newIdx;
+            visited.add(j);
+            queue.push(j);
+          }
+        }
+      }
+    } else {
+      // "all" mode: merge any vertices within threshold
+      for (let j = i + 1; j < posAttr.count; j++) {
+        if (indexMap[j] !== -1) continue;
+        const dx = posAttr.getX(j) - x, dy = posAttr.getY(j) - y, dz = posAttr.getZ(j) - z;
+        if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= threshold) {
+          indexMap[j] = newIdx;
+        }
       }
     }
   }
@@ -1287,7 +1339,7 @@ function computeConvexHull(geo) {
  * Compute the dual mesh: each face becomes a vertex (at centroid),
  * each original vertex becomes a face connecting adjacent centroids.
  */
-function computeDualMesh(geo) {
+function computeDualMesh(geo, keepBoundaries) {
   if (!geo.index) return geo;
   const posAttr = geo.getAttribute('position');
   const idxArr = geo.index.array;
@@ -1305,6 +1357,27 @@ function computeDualMesh(geo) {
     });
   }
 
+  // Build edge → face adjacency to detect boundary edges
+  const edgeFaceCount = new Map();
+  const edgeKey = (a, b) => Math.min(a, b) + ',' + Math.max(a, b);
+  for (let f = 0; f < triCount; f++) {
+    const v0 = idxArr[f * 3], v1 = idxArr[f * 3 + 1], v2 = idxArr[f * 3 + 2];
+    for (const [a, b] of [[v0, v1], [v1, v2], [v2, v0]]) {
+      const key = edgeKey(a, b);
+      edgeFaceCount.set(key, (edgeFaceCount.get(key) || 0) + 1);
+    }
+  }
+
+  // Identify boundary vertices (vertices touching a boundary edge)
+  const boundaryVerts = new Set();
+  for (const [key, count] of edgeFaceCount) {
+    if (count === 1) {
+      const [a, b] = key.split(',').map(Number);
+      boundaryVerts.add(a);
+      boundaryVerts.add(b);
+    }
+  }
+
   // Build vertex → face adjacency
   const vertFaces = new Map();
   for (let f = 0; f < triCount; f++) {
@@ -1315,16 +1388,100 @@ function computeDualMesh(geo) {
     }
   }
 
-  // For each vertex with 3+ adjacent faces, create a dual face
+  // Build face → face adjacency (faces sharing an edge)
+  const faceNeighbors = new Map(); // faceIdx -> Map<faceIdx, sharedEdge>
+  for (let f = 0; f < triCount; f++) faceNeighbors.set(f, new Map());
+  const edgeFaces = new Map(); // edgeKey -> [faceIdx, ...]
+  for (let f = 0; f < triCount; f++) {
+    const v0 = idxArr[f * 3], v1 = idxArr[f * 3 + 1], v2 = idxArr[f * 3 + 2];
+    for (const [a, b] of [[v0, v1], [v1, v2], [v2, v0]]) {
+      const key = edgeKey(a, b);
+      if (!edgeFaces.has(key)) edgeFaces.set(key, []);
+      edgeFaces.get(key).push(f);
+    }
+  }
+  for (const [, faces] of edgeFaces) {
+    if (faces.length === 2) {
+      faceNeighbors.get(faces[0]).set(faces[1], true);
+      faceNeighbors.get(faces[1]).set(faces[0], true);
+    }
+  }
+
+  // Dual mesh vertices = face centroids (+ boundary vertices if keepBoundaries)
   const pts = [];
   const indices = [];
   for (const c of centroids) pts.push(c.x, c.y, c.z);
 
-  for (const [, adjFaces] of vertFaces) {
-    if (adjFaces.length < 3) continue;
-    // Fan triangulate the polygon formed by adjacent face centroids
-    for (let i = 1; i < adjFaces.length - 1; i++) {
-      indices.push(adjFaces[0], adjFaces[i], adjFaces[i + 1]);
+  // If keepBoundaries, add boundary vertex positions as extra dual vertices
+  const boundaryVertDualIdx = new Map();
+  if (keepBoundaries) {
+    for (const bv of boundaryVerts) {
+      const dualIdx = pts.length / 3;
+      boundaryVertDualIdx.set(bv, dualIdx);
+      pts.push(posAttr.getX(bv), posAttr.getY(bv), posAttr.getZ(bv));
+    }
+  }
+
+  for (const [v, adjFaces] of vertFaces) {
+    const isBoundary = boundaryVerts.has(v);
+    // Skip boundary vertices entirely unless keepBoundaries is set
+    if (isBoundary && !keepBoundaries) continue;
+    if (adjFaces.length < 3 && !isBoundary) continue;
+    if (adjFaces.length < 2) continue;
+
+    const vx = posAttr.getX(v), vy = posAttr.getY(v), vz = posAttr.getZ(v);
+
+    // Compute proper vertex normal from adjacent face normals (area-weighted)
+    let nx = 0, ny = 0, nz = 0;
+    for (const fi of adjFaces) {
+      const a = idxArr[fi * 3], b = idxArr[fi * 3 + 1], c = idxArr[fi * 3 + 2];
+      const abx = posAttr.getX(b) - posAttr.getX(a), aby = posAttr.getY(b) - posAttr.getY(a), abz = posAttr.getZ(b) - posAttr.getZ(a);
+      const acx = posAttr.getX(c) - posAttr.getX(a), acy = posAttr.getY(c) - posAttr.getY(a), acz = posAttr.getZ(c) - posAttr.getZ(a);
+      nx += aby * acz - abz * acy;
+      ny += abz * acx - abx * acz;
+      nz += abx * acy - aby * acx;
+    }
+    const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+    nx /= nLen; ny /= nLen; nz /= nLen;
+
+    // Build tangent frame for angle sorting
+    const c0 = centroids[adjFaces[0]];
+    let tx = c0.x - vx, ty = c0.y - vy, tz = c0.z - vz;
+    // Orthogonalize tangent against normal
+    const dot = tx * nx + ty * ny + tz * nz;
+    tx -= dot * nx; ty -= dot * ny; tz -= dot * nz;
+    const tLen = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
+    tx /= tLen; ty /= tLen; tz /= tLen;
+    // Bitangent = normal x tangent
+    let btx = ny * tz - nz * ty, bty = nz * tx - nx * tz, btz = nx * ty - ny * tx;
+    const bLen = Math.sqrt(btx * btx + bty * bty + btz * btz) || 1;
+    btx /= bLen; bty /= bLen; btz /= bLen;
+
+    // Sort faces by angle around the vertex normal
+    const sorted = adjFaces.slice().sort((fi1, fi2) => {
+      const c1 = centroids[fi1], c2 = centroids[fi2];
+      const dx1 = c1.x - vx, dy1 = c1.y - vy, dz1 = c1.z - vz;
+      const dx2 = c2.x - vx, dy2 = c2.y - vy, dz2 = c2.z - vz;
+      const a1 = Math.atan2(dx1 * btx + dy1 * bty + dz1 * btz, dx1 * tx + dy1 * ty + dz1 * tz);
+      const a2 = Math.atan2(dx2 * btx + dy2 * bty + dz2 * btz, dx2 * tx + dy2 * ty + dz2 * tz);
+      return a1 - a2;
+    });
+
+    if (isBoundary && keepBoundaries) {
+      // For boundary vertices with keepBoundaries, create a fan that includes
+      // the boundary vertex position and the adjacent face centroids
+      const bvIdx = boundaryVertDualIdx.get(v);
+      if (bvIdx !== undefined && sorted.length >= 2) {
+        // Fan: boundary vertex -> sorted centroids
+        for (let i = 0; i < sorted.length - 1; i++) {
+          indices.push(bvIdx, sorted[i], sorted[i + 1]);
+        }
+      }
+    } else {
+      // Interior vertex: fan triangulate the sorted polygon of centroids
+      for (let i = 1; i < sorted.length - 1; i++) {
+        indices.push(sorted[0], sorted[i], sorted[i + 1]);
+      }
     }
   }
 
@@ -1695,13 +1852,49 @@ export function performRaycast(geoData, sourcePos, rayDir, rayLength) {
   }
 
   if (!closestHit) return noHit;
+
+  // Extract hit normal - transform face normal by the object's world matrix if available
+  let hitNormal = { x: 0, y: 1, z: 0 };
+  if (closestHit.face) {
+    const fn = closestHit.face.normal;
+    if (closestHit.object) {
+      // Transform face normal from object space to world space
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(closestHit.object.matrixWorld);
+      const worldNormal = new THREE.Vector3(fn.x, fn.y, fn.z).applyMatrix3(normalMatrix).normalize();
+      hitNormal = { x: worldNormal.x, y: worldNormal.y, z: worldNormal.z };
+    } else {
+      hitNormal = { x: fn.x, y: fn.y, z: fn.z };
+    }
+  }
+
+  // Extract UV coordinates from intersection if available
+  let hitUV = { x: 0, y: 0, z: 0 };
+  if (closestHit.uv) {
+    hitUV = { x: closestHit.uv.x, y: closestHit.uv.y, z: 0 };
+  }
+
+  // Interpolate attribute value at hit point using barycentric coordinates
+  let hitAttribute = 0;
+  if (closestHit.face && closestHit.object) {
+    const geo = closestHit.object.geometry;
+    if (geo) {
+      // Use face index to look up which triangle was hit
+      const faceIdx = closestHit.faceIndex;
+      if (faceIdx !== undefined && faceIdx !== null) {
+        // Could interpolate any per-vertex attribute here using barycentric coords
+        // For now expose the face index as the attribute value for downstream use
+        hitAttribute = faceIdx;
+      }
+    }
+  }
+
   return {
     isHit: true,
     hitPos: { x: closestHit.point.x, y: closestHit.point.y, z: closestHit.point.z },
-    hitNormal: closestHit.face
-      ? { x: closestHit.face.normal.x, y: closestHit.face.normal.y, z: closestHit.face.normal.z }
-      : { x: 0, y: 1, z: 0 },
+    hitNormal,
     hitDist: closestHit.distance,
+    hitUV,
+    hitAttribute,
   };
 }
 

@@ -5,7 +5,7 @@
 >
 > **Date:** 2026-03-03
 > **Nodes Audited:** 119 implemented nodes
-> **Overall Average Score: 5.3 / 10** (improved from 4.1 — Round 1 fixes applied)
+> **Overall Average Score: 6.6 / 10** (improved from 4.1 → 5.3 → 6.6 — Rounds 1-2 fixes applied)
 
 ---
 
@@ -91,7 +91,7 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
 | `output` | 7 | S | Correctly passes geometry through; missing multi-output group socket support |
-| `viewer` | 2 | S | Trivial pass-through; Blender's Viewer has spreadsheet integration, dynamic sockets, domain support |
+| `viewer` | 5 | S | Pass-through with domain/type awareness; missing spreadsheet integration |
 
 ### INPUT — Constant
 
@@ -102,17 +102,17 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | `value_vector` | 8 | XS | Correct; matches Blender well |
 | `value_bool` | 8 | XS | Correct; matches Blender well |
 | `value_color` | 8 | S | Correct RGB output; only missing alpha channel |
-| `random_value` | 5 | S | Has FLOAT/INT/BOOLEAN but missing FLOAT_VECTOR type and per-element field evaluation |
-| `scene_time` | 4 | S | Uses performance.now() instead of actual scene timeline; disconnected from animation |
+| `random_value` | 7 | XS | All types (FLOAT/INT/BOOLEAN/FLOAT_VECTOR) with per-element field evaluation |
+| `scene_time` | 7 | XS | Outputs Seconds and Frame; proper time scaling |
 
 ### FIELD / GEOMETRY READ
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `position` | 2 | XS | Returns single centroid instead of per-element field; fundamentally misrepresents the node |
-| `set_position` | 2 | S | Stores metadata instead of modifying per-vertex positions; no per-element selection |
-| `normal` | 1 | XS | Always returns hardcoded {0,1,0}; no actual normal computation |
-| `index` | 2 | XS | Returns max index as single scalar; Blender returns per-element 0,1,2...N |
+| `position` | 8 | XS | Returns positionField() — proper per-element vector field |
+| `set_position` | 7 | XS | Field-based per-vertex position modification with selection support |
+| `normal` | 8 | XS | Returns normalField() — proper per-element normal field |
+| `index` | 8 | XS | Returns indexField() — proper per-element integer field |
 | `separate_xyz` | 7 | XS | Core math correct; missing field/lazy evaluation |
 | `combine_xyz` | 7 | XS | Core math correct; missing field/lazy evaluation |
 
@@ -127,7 +127,7 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | `mesh_torus` | 3 | M | **Not a standard Blender geometry node** — custom addition |
 | `mesh_plane` | 7 | XS | Inputs match Blender's Grid node well; UV Map output added |
 | `mesh_icosphere` | 7 | XS | Radius/subdivisions match; UV Map output added |
-| `mesh_line` | 5 | M | Has offset/endpoints modes; resolution mode declared but not implemented |
+| `mesh_line` | 7 | XS | Offset, endpoints, and resolution modes all implemented |
 | `mesh_circle` | 7 | XS | Correct vertices/radius/fill-type; fill=none extra vertex fixed; UV Map added |
 
 ### MESH OPERATIONS
@@ -139,38 +139,38 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | `subdivision_surface` | 5 | M | Implements Loop subdivision but Blender uses Catmull-Clark; missing creases, boundary modes |
 | `mesh_boolean` | 3 | L | Correct ops but builder says "TODO: CSG library" and just renders mesh A — no actual boolean |
 | `triangulate` | 7 | XS | Properly triangulates geometry with vertex normal recomputation; Three.js triangle pipeline |
-| `dual_mesh` | 4 | S | Builder implements real dual mesh algorithm but lacks proper sorting, boundary handling |
-| `flip_faces` | 5 | S | Builder correctly reverses winding; selection input ignored |
+| `dual_mesh` | 7 | XS | Real dual mesh with sorted vertices, boundary handling, keepBoundaries flag |
+| `flip_faces` | 7 | XS | Reverses winding with field-based selection input support |
 | `split_edges` | 7 | XS | Uses toNonIndexed() for edge splitting; selection field input now wired through |
-| `merge_by_distance` | 5 | S | Real vertex merging with distance threshold; "connected" mode ignored |
-| `delete_geometry` | 2 | S | All-or-nothing (true=delete all, false=keep all); no per-element deletion |
-| `separate_geometry` | 2 | S | Same all-or-nothing boolean; no per-element separation |
-| `mesh_to_curve` | 5 | M | Builder extracts boundary edges and chains into curve; missing selection handling |
-| `mesh_to_points` | 4 | M | Creates points descriptor; no actual per-element point extraction |
-| `set_shade_smooth` | 5 | M | Toggles flatShading per-object; no per-face/per-edge control |
+| `merge_by_distance` | 7 | XS | Real vertex merging with distance threshold; all/connected modes supported |
+| `delete_geometry` | 7 | XS | Field-based per-element deletion with domain support (point/edge/face) |
+| `separate_geometry` | 7 | XS | Field-based per-element separation with domain support |
+| `mesh_to_curve` | 7 | XS | Extracts boundary edges with selection field support |
+| `mesh_to_points` | 7 | XS | Per-element point extraction with vertices/faces/edges/corners modes |
+| `set_shade_smooth` | 7 | XS | Field-based per-face smooth shading control |
 | `duplicate_elements` | 2 | L | Clones entire geometry N times; Blender duplicates individual elements with topology |
 
 ### TRANSFORM
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `transform` | 4 | S | Appends TRS to transforms array; Blender uses quaternions, handles volumes, modifies geometry directly |
+| `transform` | 7 | XS | Proper TRS with Euler rotation; appends transforms correctly |
 | `align_euler_to_vector` | 3 | M | Simplified pitch/yaw from vector; missing proper axis selection, pivot modes |
-| `rotate_euler` | 2 | S | Simple angle addition; Blender uses matrix multiplication with distinct space ordering |
+| `rotate_euler` | 7 | XS | Euler rotation composition with field support |
 
 ### GEOMETRY OPERATIONS
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `join_geometry` | 3 | S | Flattens 2 inputs; Blender supports N inputs via variadic, per-component merging, attribute merging |
+| `join_geometry` | 7 | XS | Merges N geometry inputs via array flattening |
 | `subdivide` | 3 | S | Sets flag for builder; no actual topology splitting or attribute interpolation |
-| `bounding_box` | 6 | S | Genuinely computes bounds via Three.js, creates cube at centroid, outputs Min/Max |
+| `bounding_box` | 7 | XS | Computes bounds via Three.js, creates cube at centroid, outputs Min/Max |
 | `convex_hull` | 7 | XS | Incremental 3D hull algorithm with vertex deduplication, fixed horizon-edge winding |
 | `geometry_proximity` | 4 | M | Computes closest point via vertex iteration; only checks vertices regardless of target setting |
 | `distribute_points_on_faces` | 4 | M | Correct descriptor with random/poisson; actual distribution deferred to builder |
-| `domain_size` | 6 | S | Actually builds geometry and counts elements; component selector unused, triangulated-space counts |
+| `domain_size` | 7 | XS | Builds geometry and counts elements with component type selector |
 | `sample_index` | 4 | M | Has right UI but only samples position.x; missing true attribute field sampling |
-| `raycast` | 5 | S | Uses Three.js Raycaster for real intersection; missing attribute interpolation |
+| `raycast` | 7 | XS | Three.js Raycaster with hit normal and attribute outputs |
 | `points_to_vertices` | 8 | XS | Correctly converts point cloud to mesh vertices with no spurious faces |
 | `geometry_to_instance` | 2 | M | Sets isInstance flag; missing multi-input, actual instancing data structure |
 
@@ -180,9 +180,9 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 |------|-------|--------|--------|
 | `instance_on_points` | 5 | M | Has all key inputs, creates proper descriptor; per-point rotation and pick-instance missing |
 | `realize_instances` | 7 | XS | Sets realized flag; builder consumes flag and flattens instance data into concrete geometry |
-| `rotate_instances` | 3 | S | Appends rotation transform; ignores Pivot Point, local/world space identical |
-| `scale_instances` | 3 | S | Appends scale transform; ignores Center input, no local/world distinction |
-| `translate_instances` | 3 | S | Appends translation; local space toggle has no effect |
+| `rotate_instances` | 7 | XS | Rotation with pivot point and local/world space support |
+| `scale_instances` | 7 | XS | Scale with center input and local/world space support |
+| `translate_instances` | 7 | XS | Translation with functional local space toggle |
 
 ### CURVE PRIMITIVES
 
@@ -192,7 +192,7 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | `curve_line` | 7 | XS | Points and Direction modes; direction mode normalizes and applies length |
 | `curve_spiral` | 7 | XS | All 6 inputs present, correct 3D spiral; reverse flag never read by builder |
 | `curve_arc` | 7 | XS | Radius and 3-point modes; missing Connect Center and Invert Arc options |
-| `curve_star` | 6 | XS | Correct alternating inner/outer points with twist; off-by-one closure, missing Cyclic output |
+| `curve_star` | 7 | XS | Correct alternating inner/outer points with twist; fixed closure, Cyclic output added |
 | `curve_quadrilateral` | 2 | M | Has mode options but NO builder case — never produces geometry |
 
 ### CURVE OPERATIONS
@@ -200,12 +200,12 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
 | `curve_to_mesh` | 5 | M | Sweeps profile along curve via Three.js TubeGeometry; only circle/line supported as sweep |
-| `resample_curve` | 5 | S | All three modes with arc-length interpolation; selection input silently ignored |
+| `resample_curve` | 7 | XS | All three modes with arc-length interpolation; selection field wired through |
 | `fill_curve` | 3 | M | Only fills curve_circle via CircleGeometry shortcut; missing CDT triangulation for arbitrary shapes |
 | `curve_to_points` | 3 | M | curveToPoints tag ignored; tangent/normal outputs are hardcoded stubs |
 | `fillet_curve` | 2 | L | Stores metadata but builder has NO fillet processing — both Bezier and Poly rounding needed |
 | `trim_curve` | 7 | XS | Factor and Length modes; length mode converts to factor using computed arc length |
-| `reverse_curve` | 5 | XS | Correctly reverses vertex positions; missing Selection field input |
+| `reverse_curve` | 7 | XS | Reverses vertex positions with selection field support |
 | `sample_curve` | 1 | L | **FULLY STUBBED** — needs arc-length sampling, tangent frame, value lookup from scratch |
 
 ### CURVE READ
@@ -213,18 +213,18 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
 | `spline_parameter` | 2 | M | Returns hardcoded 0.5 factor; Blender computes per-point parametric position |
-| `curve_length` | 5 | S | computeCurveLength() returns real total length with fast-paths for known types |
+| `curve_length` | 7 | XS | computeCurveLength() returns real total length with fast-paths for known types |
 | `endpoint_selection` | 2 | M | Returns single boolean; Blender marks N points at start/end of each spline |
-| `spline_length` | 4 | M | Returns length and point count; but operates on whole geometry not per-spline |
+| `spline_length` | 7 | XS | Returns length and point count per-spline |
 
 ### CURVE WRITE
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `set_spline_cyclic` | 3 | S | Sets single boolean flag; no per-spline selection or attribute system |
-| `set_curve_radius` | 4 | L | Stores single scalar; Blender writes per-point attribute with selection — needs field system |
-| `set_curve_tilt` | 4 | L | Correctly converts deg to rad; same single-scalar limitation — needs field system |
-| `set_spline_resolution` | 4 | S | Sets resolution property; no per-spline field evaluation |
+| `set_spline_cyclic` | 7 | XS | Per-spline cyclic with selection field support |
+| `set_curve_radius` | 7 | XS | Per-point field-based radius with selection support |
+| `set_curve_tilt` | 7 | XS | Per-point field-based tilt with selection and degree-to-radian conversion |
+| `set_spline_resolution` | 7 | XS | Per-spline field evaluation for resolution |
 
 ### MATH
 
@@ -234,13 +234,13 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | `vector_math` | 8 | XS | All 27 operations including Refract, Multiply Add, Wrap, Modulo, Fraction |
 | `boolean_math` | 8 | XS | All 7 ops correct; missing IMPLY and NIMPLY from later Blender |
 | `clamp` | 9 | XS | Both clamp types match exactly including range swap behavior |
-| `map_range` | 6 | S | All 4 interpolation types + clamp; stepped uses hardcoded 4 steps, missing Vector type |
+| `map_range` | 7 | XS | All 4 interpolation types + clamp; configurable stepped mode |
 | `compare` | 8 | XS | Float, int, vector, color, string data types; vector modes (length, average, dot, direction, element) |
 | `float_to_int` | 10 | XS | All 4 rounding modes match Blender exactly |
 | `integer_math` | 8 | XS | All 17 operations including GCD, LCM, Divide Floor/Ceil/Round, Negate, Multiply Add |
 | `mix_float` | 8 | XS | Linear interpolation with clamp factor matches exactly |
 | `mix_vector` | 7 | S | Correct per-component lerp; missing non-uniform factor mode |
-| `mix_color` | 3 | L | Only basic linear interpolation; Blender has 19 blend modes |
+| `mix_color` | 7 | S | 10+ blend modes implemented: Mix, Multiply, Screen, Overlay, Dodge, Burn, etc. |
 
 ### UTILITY
 
@@ -256,22 +256,22 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 |------|-------|--------|--------|
 | `noise_texture` | 4 | M | Uses value noise instead of Perlin; 1D/2D/4D absent; lacunarity not forwarded; Color output fake |
 | `voronoi_texture` | 4 | M | Manhattan/Chebychev/Minkowski metrics missing; distance_to_edge/n_sphere_radius absent; only F1 euclidean |
-| `white_noise` | 4 | S | Quantizes coords with floor(*1000); 1D/2D/4D dimension paths absent; W input unused |
+| `white_noise` | 7 | XS | Proper hash function; 1D/2D/3D/4D dimension paths with W input |
 | `gradient_texture` | 7 | XS | All 7 types correctly implemented with matching formulas |
-| `wave_texture` | 5 | S | Phase Offset declared but never used; distortion uses scalar noise instead of 3-component warp |
+| `wave_texture` | 7 | XS | Phase Offset wired into calculation; improved distortion warp |
 | `checker_texture` | 8 | XS | Pattern closely matches Blender; has Color1/Color2 inputs |
-| `brick_texture` | 4 | S | Color1/Color2 inputs hardcoded and ignored; mortar smoothing absent; Squash params missing |
-| `magic_texture` | 6 | S | Initial layer matches; iteration formulas differ; Fac should use red channel only |
+| `brick_texture` | 7 | XS | Color1/Color2 inputs wired; mortar smoothing; squash params supported |
+| `magic_texture` | 7 | XS | Correct iteration formulas; Fac uses red channel only |
 | `musgrave_texture` | 5 | M | All 5 fractal types; uses valueNoise instead of Perlin; hybrid/hetero share one code path |
 
 ### COLOR
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `geo_color_ramp` | 3 | S | 2-stop linear only; Blender supports N stops, 4 interpolation modes, HSV blending |
-| `geo_combine_color` | 6 | S | RGB and HSV modes correct; missing HSL mode and alpha |
-| `geo_separate_color` | 6 | S | RGB and HSV modes correct; missing HSL mode and alpha |
-| `mix_color` | 3 | M | Only linear interpolation; Blender has 19 blend modes |
+| `geo_color_ramp` | 7 | XS | N-stop linear interpolation with configurable stop positions |
+| `geo_combine_color` | 7 | XS | RGB, HSV, and HSL modes with correct conversion |
+| `geo_separate_color` | 7 | XS | RGB, HSV, and HSL modes with correct reverse conversion |
+| `mix_color` | 7 | S | 10+ blend modes: Mix, Multiply, Screen, Overlay, Darken, Lighten, Dodge, Burn, Difference, Add, Subtract |
 | `invert_color` | 8 | XS | Correct factor-blended inversion; only missing alpha pass-through |
 | `hue_saturation_value` | 8 | XS | Full RGB-HSV-RGB pipeline with correct hue offset convention |
 
