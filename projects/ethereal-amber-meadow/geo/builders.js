@@ -182,26 +182,56 @@ export function buildGeometry(geoData) {
             }
 
             const density = geoData.density || 1;
-            const numPoints = Math.min(500, Math.max(1, Math.round(density * totalArea * 10)));
+            const densityFactor = geoData.densityFactor ?? 1;
+            const effectiveDensity = density * densityFactor;
+            const numPoints = Math.min(2000, Math.max(1, Math.round(effectiveDensity * totalArea * 10)));
             const seed = geoData.seed || 0;
+            const distanceMin = geoData.distanceMin || 0;
+            const distMin2 = distanceMin * distanceMin;
 
-            for (let i = 0; i < numPoints; i++) {
+            // Generate candidate points using area-weighted triangle sampling with barycentric coords
+            const candidates = [];
+            // Over-generate if we need to apply minimum distance filtering
+            const genCount = distanceMin > 0 ? Math.min(4000, numPoints * 3) : numPoints;
+
+            for (let i = 0; i < genCount; i++) {
               const s = seed * 1000 + i;
+              // Binary search for triangle selection (weighted by area)
               const r = seededRandom(s) * totalArea;
-              let triIdx = 0;
-              for (let f = 0; f < triCount; f++) {
-                if (areas[f] >= r) { triIdx = f; break; }
+              let lo = 0, hi = triCount - 1;
+              while (lo < hi) {
+                const mid = (lo + hi) >> 1;
+                if (areas[mid] < r) lo = mid + 1; else hi = mid;
               }
+              const triIdx = lo;
+              // Random barycentric coordinates
               let u = seededRandom(s + 7777);
               let v = seededRandom(s + 13333);
               if (u + v > 1) { u = 1 - u; v = 1 - v; }
               const w = 1 - u - v;
               const a = getIdx(triIdx * 3), b = getIdx(triIdx * 3 + 1), c = getIdx(triIdx * 3 + 2);
-              pts.push(
+              candidates.push(
                 posAttr.getX(a) * w + posAttr.getX(b) * u + posAttr.getX(c) * v,
                 posAttr.getY(a) * w + posAttr.getY(b) * u + posAttr.getY(c) * v,
                 posAttr.getZ(a) * w + posAttr.getZ(b) * u + posAttr.getZ(c) * v,
               );
+            }
+
+            // Apply minimum distance filtering if needed
+            if (distanceMin > 0) {
+              const accepted = [];
+              for (let i = 0; i < candidates.length && accepted.length < numPoints * 3; i += 3) {
+                const cx = candidates[i], cy = candidates[i + 1], cz = candidates[i + 2];
+                let tooClose = false;
+                for (let j = 0; j < accepted.length; j += 3) {
+                  const dx = cx - accepted[j], dy = cy - accepted[j + 1], dz = cz - accepted[j + 2];
+                  if (dx * dx + dy * dy + dz * dz < distMin2) { tooClose = true; break; }
+                }
+                if (!tooClose) accepted.push(cx, cy, cz);
+              }
+              pts.push(...accepted);
+            } else {
+              pts.push(...candidates);
             }
           }
 
@@ -253,57 +283,183 @@ export function buildGeometry(geoData) {
     }
 
     case 'curve_to_mesh': {
-      // Build a tube along the curve with the profile shape
+      // Build a mesh by sweeping a profile curve along a path curve
       const curveData = geoData.curve;
       if (!curveData) return null;
 
-      if (curveData.type === 'curve_circle' || curveData.type === 'spiral') {
-        // Build a tube along the curve
-        const profile = geoData.profile;
-        const profileRadius = profile?.radius || 0.1;
-        const res = curveData.resolution || 16;
-        const tubeSeg = 8;
-
-        // Generate curve points
-        const curvePts = [];
-        if (curveData.type === 'curve_circle') {
-          const r = curveData.radius || 1;
+      // Helper: extract path points from any curve type
+      const extractPathPoints = (cData) => {
+        const pts = [];
+        if (cData.type === 'curve_circle') {
+          const r = cData.radius || 1;
+          const res = cData.resolution || 16;
           for (let i = 0; i <= res; i++) {
             const angle = (i / res) * Math.PI * 2;
-            curvePts.push(new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r));
+            pts.push(new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r));
           }
-        } else {
-          // Spiral
+        } else if (cData.type === 'spiral') {
+          const res = cData.resolution || 64;
           for (let i = 0; i <= res; i++) {
             const t = i / res;
-            const angle = t * curveData.turns * Math.PI * 2;
-            const r = curveData.startRadius + (curveData.endRadius - curveData.startRadius) * t;
-            const y = t * curveData.height;
-            curvePts.push(new THREE.Vector3(Math.cos(angle) * r, y, Math.sin(angle) * r));
+            const angle = t * cData.turns * Math.PI * 2;
+            const r = cData.startRadius + (cData.endRadius - cData.startRadius) * t;
+            const y = t * cData.height;
+            pts.push(new THREE.Vector3(Math.cos(angle) * r, y, Math.sin(angle) * r));
+          }
+        } else if (cData.type === 'curve_line') {
+          const s = cData.start || { x: 0, y: 0, z: 0 };
+          const e = cData.end || { x: 0, y: 0, z: 1 };
+          pts.push(new THREE.Vector3(s.x, s.y, s.z));
+          pts.push(new THREE.Vector3(e.x, e.y, e.z));
+        } else {
+          // Generic: build geometry and extract vertices
+          const builtGeo = buildGeometry(cData);
+          if (builtGeo) {
+            const posAttr = builtGeo.getAttribute('position');
+            for (let i = 0; i < posAttr.count; i++) {
+              pts.push(new THREE.Vector3(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i)));
+            }
+            builtGeo.dispose();
+          }
+        }
+        return pts;
+      };
+
+      // Extract profile points (2D cross-section)
+      const extractProfilePoints = (pData) => {
+        if (!pData) return null;
+        if (pData.type === 'curve_circle') {
+          // Return circle profile as array of 2D offsets
+          const r = pData.radius || 0.1;
+          const res = pData.resolution || 8;
+          const pts = [];
+          for (let i = 0; i <= res; i++) {
+            const angle = (i / res) * Math.PI * 2;
+            pts.push(new THREE.Vector2(Math.cos(angle) * r, Math.sin(angle) * r));
+          }
+          return pts;
+        }
+        // Generic profile: build geometry and extract XZ as 2D points
+        const builtGeo = buildGeometry(pData);
+        if (builtGeo) {
+          const posAttr = builtGeo.getAttribute('position');
+          const pts = [];
+          for (let i = 0; i < posAttr.count; i++) {
+            pts.push(new THREE.Vector2(posAttr.getX(i), posAttr.getZ(i)));
+          }
+          builtGeo.dispose();
+          return pts;
+        }
+        return null;
+      };
+
+      const pathPts = extractPathPoints(curveData);
+      const profile = geoData.profile;
+      const profilePts = extractProfilePoints(profile);
+      const isClosed = curveData.type === 'curve_circle';
+
+      if (pathPts.length >= 2 && profilePts && profilePts.length >= 2) {
+        // Sweep profile along path using Frenet frames
+        const verts = [];
+        const indices = [];
+        const profLen = profilePts.length;
+        const pathLen = pathPts.length;
+
+        for (let pi = 0; pi < pathLen; pi++) {
+          // Compute tangent
+          const prev = pathPts[Math.max(0, pi - 1)];
+          const next = pathPts[Math.min(pathLen - 1, pi + 1)];
+          const tangent = new THREE.Vector3().subVectors(next, prev).normalize();
+
+          // Compute normal and binormal using up vector
+          const up = new THREE.Vector3(0, 1, 0);
+          if (Math.abs(tangent.dot(up)) > 0.99) up.set(1, 0, 0);
+          const normal = new THREE.Vector3().crossVectors(up, tangent).normalize();
+          const binormal = new THREE.Vector3().crossVectors(tangent, normal).normalize();
+
+          // Place profile points in the frame
+          for (let fi = 0; fi < profLen; fi++) {
+            const px = profilePts[fi].x;
+            const py = profilePts[fi].y;
+            verts.push(
+              pathPts[pi].x + normal.x * px + binormal.x * py,
+              pathPts[pi].y + normal.y * px + binormal.y * py,
+              pathPts[pi].z + normal.z * px + binormal.z * py
+            );
           }
         }
 
-        const path = new THREE.CatmullRomCurve3(curvePts, curveData.type === 'curve_circle');
-        geometry = new THREE.TubeGeometry(path, res, profileRadius, tubeSeg, curveData.type === 'curve_circle');
-      } else {
-        // For a curve line, make a thin cylinder
-        const s = curveData.start || { x: 0, y: 0, z: 0 };
-        const e = curveData.end || { x: 0, y: 0, z: 1 };
-        const profile = geoData.profile;
+        // Build faces
+        for (let pi = 0; pi < pathLen - 1; pi++) {
+          for (let fi = 0; fi < profLen - 1; fi++) {
+            const a = pi * profLen + fi;
+            const b = pi * profLen + fi + 1;
+            const c = (pi + 1) * profLen + fi;
+            const d = (pi + 1) * profLen + fi + 1;
+            indices.push(a, b, d);
+            indices.push(a, d, c);
+          }
+        }
+
+        geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+      } else if (pathPts.length >= 2) {
+        // Fallback: use TubeGeometry with a radius from profile
         const profileRadius = profile?.radius || 0.05;
-        const start = new THREE.Vector3(s.x, s.y, s.z);
-        const end = new THREE.Vector3(e.x, e.y, e.z);
-        const path = new THREE.LineCurve3(start, end);
-        geometry = new THREE.TubeGeometry(path, 1, profileRadius, 8, false);
+        const path = new THREE.CatmullRomCurve3(pathPts, isClosed);
+        geometry = new THREE.TubeGeometry(path, pathPts.length - 1, profileRadius, 8, isClosed);
+      } else {
+        return null;
       }
       break;
     }
 
     case 'fill_curve': {
-      // Create a flat disc or shape from curve
+      // Create a flat mesh from curve using fan triangulation
       const curveData = geoData.curve;
       if (curveData && curveData.type === 'curve_circle') {
         geometry = new THREE.CircleGeometry(curveData.radius || 1, curveData.resolution || 16);
+      } else if (curveData) {
+        // Build the source curve geometry to get its vertices
+        const curveGeo = buildGeometry(curveData);
+        if (curveGeo) {
+          const posAttr = curveGeo.getAttribute('position');
+          const vertCount = posAttr.count;
+          if (vertCount >= 3) {
+            // Compute centroid
+            let cx = 0, cy = 0, cz = 0;
+            for (let i = 0; i < vertCount; i++) {
+              cx += posAttr.getX(i);
+              cy += posAttr.getY(i);
+              cz += posAttr.getZ(i);
+            }
+            cx /= vertCount; cy /= vertCount; cz /= vertCount;
+
+            // Fan triangulation from centroid to each consecutive pair
+            const verts = [];
+            const indices = [];
+            // First vertex is centroid
+            verts.push(cx, cy, cz);
+            for (let i = 0; i < vertCount; i++) {
+              verts.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+            }
+            // Create triangles: centroid(0) -> i+1 -> i+2
+            for (let i = 0; i < vertCount - 1; i++) {
+              indices.push(0, i + 1, i + 2);
+            }
+            geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals();
+          } else {
+            geometry = new THREE.BufferGeometry();
+          }
+          curveGeo.dispose();
+        } else {
+          geometry = new THREE.CircleGeometry(1, 16);
+        }
       } else {
         geometry = new THREE.CircleGeometry(1, 16);
       }
@@ -332,7 +488,7 @@ export function buildGeometry(geoData) {
       if (fill === 'none') {
         // Just the edge ring
         const pts = [];
-        for (let i = 0; i <= verts; i++) {
+        for (let i = 0; i < verts; i++) {
           const angle = (i / verts) * Math.PI * 2;
           pts.push(Math.cos(angle) * r, 0, Math.sin(angle) * r);
         }
@@ -367,14 +523,19 @@ export function buildGeometry(geoData) {
       const innerR = geoData.innerRadius || 0.5;
       const outerR = geoData.outerRadius || 1;
       const twist = geoData.twist || 0;
+      const isCyclic = geoData.cyclic !== false;
       const pts = [];
       const totalVerts = numPts * 2;
-      for (let i = 0; i <= totalVerts; i++) {
+      for (let i = 0; i < totalVerts; i++) {
         const angle = (i / totalVerts) * Math.PI * 2;
         const isOuter = i % 2 === 0;
         const r = isOuter ? outerR : innerR;
         const a = isOuter ? angle : angle + twist;
         pts.push(Math.cos(a) * r, 0, Math.sin(a) * r);
+      }
+      if (isCyclic) {
+        // Close the loop by repeating the first point
+        pts.push(pts[0], pts[1], pts[2]);
       }
       geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
@@ -382,11 +543,137 @@ export function buildGeometry(geoData) {
     }
 
     case 'boolean': {
-      // Build mesh A (we can't do true CSG without a library, so show both)
       const a = geoData.meshA;
       if (!a) return null;
-      geometry = buildGeometry(a);
-      // TODO: Could integrate a CSG library for real booleans
+      const geoA = buildGeometry(a);
+      if (!geoA) return null;
+      const geoB = geoData.meshB ? buildGeometry(geoData.meshB) : null;
+      const operation = geoData.operation || 'union';
+
+      if (!geoB) {
+        geometry = geoA;
+        break;
+      }
+
+      switch (operation) {
+        case 'union': {
+          // Merge both geometries into one
+          const posA = geoA.getAttribute('position');
+          const posB = geoB.getAttribute('position');
+          const newPositions = [];
+          const newIndices = [];
+
+          // Copy positions from A
+          for (let i = 0; i < posA.count; i++) {
+            newPositions.push(posA.getX(i), posA.getY(i), posA.getZ(i));
+          }
+          const offsetB = posA.count;
+          // Copy positions from B
+          for (let i = 0; i < posB.count; i++) {
+            newPositions.push(posB.getX(i), posB.getY(i), posB.getZ(i));
+          }
+
+          // Copy indices from A
+          if (geoA.index) {
+            const idxA = geoA.index.array;
+            for (let i = 0; i < idxA.length; i++) newIndices.push(idxA[i]);
+          } else {
+            for (let i = 0; i < posA.count; i++) newIndices.push(i);
+          }
+          // Copy indices from B with offset
+          if (geoB.index) {
+            const idxB = geoB.index.array;
+            for (let i = 0; i < idxB.length; i++) newIndices.push(idxB[i] + offsetB);
+          } else {
+            for (let i = 0; i < posB.count; i++) newIndices.push(i + offsetB);
+          }
+
+          geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+          geometry.setIndex(newIndices);
+          geometry.computeVertexNormals();
+          geoA.dispose();
+          geoB.dispose();
+          break;
+        }
+        case 'intersect': {
+          // Bounding box approximation: keep only A's triangles whose centroids are inside B's bbox
+          geoB.computeBoundingBox();
+          const bbox = geoB.boundingBox;
+          const nonIdxA = geoA.index ? geoA.toNonIndexed() : geoA;
+          const posA2 = nonIdxA.getAttribute('position');
+          const triCount = Math.floor(posA2.count / 3);
+          const keptPositions = [];
+
+          for (let f = 0; f < triCount; f++) {
+            const i0 = f * 3, i1 = f * 3 + 1, i2 = f * 3 + 2;
+            const cx = (posA2.getX(i0) + posA2.getX(i1) + posA2.getX(i2)) / 3;
+            const cy = (posA2.getY(i0) + posA2.getY(i1) + posA2.getY(i2)) / 3;
+            const cz = (posA2.getZ(i0) + posA2.getZ(i1) + posA2.getZ(i2)) / 3;
+            if (cx >= bbox.min.x && cx <= bbox.max.x &&
+                cy >= bbox.min.y && cy <= bbox.max.y &&
+                cz >= bbox.min.z && cz <= bbox.max.z) {
+              keptPositions.push(
+                posA2.getX(i0), posA2.getY(i0), posA2.getZ(i0),
+                posA2.getX(i1), posA2.getY(i1), posA2.getZ(i1),
+                posA2.getX(i2), posA2.getY(i2), posA2.getZ(i2)
+              );
+            }
+          }
+
+          if (keptPositions.length > 0) {
+            geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(keptPositions, 3));
+            geometry.computeVertexNormals();
+          } else {
+            geometry = new THREE.BufferGeometry();
+          }
+          if (nonIdxA !== geoA) nonIdxA.dispose();
+          geoA.dispose();
+          geoB.dispose();
+          break;
+        }
+        case 'difference': {
+          // Bounding box approximation: keep only A's triangles whose centroids are outside B's bbox
+          geoB.computeBoundingBox();
+          const bbox = geoB.boundingBox;
+          const nonIdxA = geoA.index ? geoA.toNonIndexed() : geoA;
+          const posA2 = nonIdxA.getAttribute('position');
+          const triCount = Math.floor(posA2.count / 3);
+          const keptPositions = [];
+
+          for (let f = 0; f < triCount; f++) {
+            const i0 = f * 3, i1 = f * 3 + 1, i2 = f * 3 + 2;
+            const cx = (posA2.getX(i0) + posA2.getX(i1) + posA2.getX(i2)) / 3;
+            const cy = (posA2.getY(i0) + posA2.getY(i1) + posA2.getY(i2)) / 3;
+            const cz = (posA2.getZ(i0) + posA2.getZ(i1) + posA2.getZ(i2)) / 3;
+            if (cx < bbox.min.x || cx > bbox.max.x ||
+                cy < bbox.min.y || cy > bbox.max.y ||
+                cz < bbox.min.z || cz > bbox.max.z) {
+              keptPositions.push(
+                posA2.getX(i0), posA2.getY(i0), posA2.getZ(i0),
+                posA2.getX(i1), posA2.getY(i1), posA2.getZ(i1),
+                posA2.getX(i2), posA2.getY(i2), posA2.getZ(i2)
+              );
+            }
+          }
+
+          if (keptPositions.length > 0) {
+            geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(keptPositions, 3));
+            geometry.computeVertexNormals();
+          } else {
+            geometry = new THREE.BufferGeometry();
+          }
+          if (nonIdxA !== geoA) nonIdxA.dispose();
+          geoA.dispose();
+          geoB.dispose();
+          break;
+        }
+        default:
+          geometry = geoA;
+          geoB.dispose();
+      }
       break;
     }
 
@@ -409,18 +696,36 @@ export function buildGeometry(geoData) {
       const merged = [];
       const sc = geoData.scale || { x: 1, y: 1, z: 1 };
       const rot = geoData.rotation || { x: 0, y: 0, z: 0 };
-      const hasRotation = (rot.x || 0) !== 0 || (rot.y || 0) !== 0 || (rot.z || 0) !== 0;
+      const rotIsField = rot && rot.isField;
+      const pickInstance = geoData.pickInstance || false;
+      const instanceIndex = geoData.instanceIndex ?? 0;
 
-      // Pre-compute rotation matrix if needed
+      // Build array of instance geometries for pick-instance support
+      const instanceGeos = [instanceGeo];
+      if (pickInstance && Array.isArray(geoData.instance)) {
+        // If instance input is an array (collection), build each one
+        instanceGeos.length = 0;
+        const instArr = Array.isArray(geoData.instance) ? geoData.instance : [geoData.instance];
+        for (const instItem of instArr) {
+          const g = buildGeometry(instItem);
+          if (g) instanceGeos.push(g);
+        }
+        if (instanceGeos.length === 0) instanceGeos.push(instanceGeo);
+      }
+
+      // Pre-compute rotation matrix for uniform rotation
       let rotMatrix = null;
-      if (hasRotation) {
-        rotMatrix = new THREE.Matrix4().makeRotationFromEuler(
-          new THREE.Euler(
-            (rot.x || 0) * Math.PI / 180,
-            (rot.y || 0) * Math.PI / 180,
-            (rot.z || 0) * Math.PI / 180
-          )
-        );
+      if (!rotIsField) {
+        const hasRotation = (rot.x || 0) !== 0 || (rot.y || 0) !== 0 || (rot.z || 0) !== 0;
+        if (hasRotation) {
+          rotMatrix = new THREE.Matrix4().makeRotationFromEuler(
+            new THREE.Euler(
+              (rot.x || 0) * Math.PI / 180,
+              (rot.y || 0) * Math.PI / 180,
+              (rot.z || 0) * Math.PI / 180
+            )
+          );
+        }
       }
 
       for (let i = 0; i < posAttr.count; i++) {
@@ -428,9 +733,33 @@ export function buildGeometry(geoData) {
         const py = posAttr.getY(i);
         const pz = posAttr.getZ(i);
 
-        const clone = instanceGeo.clone();
+        // Pick which instance geometry to use
+        let srcGeo = instanceGeos[0];
+        if (pickInstance && instanceGeos.length > 1) {
+          const idx = (typeof instanceIndex === 'number')
+            ? instanceIndex
+            : (Array.isArray(instanceIndex) ? (instanceIndex[i] ?? 0) : 0);
+          srcGeo = instanceGeos[Math.abs(idx) % instanceGeos.length];
+        }
+
+        const clone = srcGeo.clone();
         clone.scale(sc.x, sc.y, sc.z);
-        if (rotMatrix) clone.applyMatrix4(rotMatrix);
+
+        // Per-point rotation support
+        if (rotIsField && rot.evaluateAt) {
+          const pr = rot.evaluateAt(i);
+          const perPointMatrix = new THREE.Matrix4().makeRotationFromEuler(
+            new THREE.Euler(
+              (pr.x || 0) * Math.PI / 180,
+              (pr.y || 0) * Math.PI / 180,
+              (pr.z || 0) * Math.PI / 180
+            )
+          );
+          clone.applyMatrix4(perPointMatrix);
+        } else if (rotMatrix) {
+          clone.applyMatrix4(rotMatrix);
+        }
+
         clone.translate(px, py, pz);
         merged.push(clone);
       }
@@ -472,6 +801,39 @@ export function buildGeometry(geoData) {
       if (normals.length === 0) geometry.computeVertexNormals();
 
       instanceGeo.dispose();
+      break;
+    }
+
+    case 'curve_quadrilateral': {
+      const mode = geoData.mode || 'rectangle';
+      const w = geoData.width || 2;
+      const h = geoData.height || 2;
+      const pts = [];
+      switch (mode) {
+        case 'rectangle':
+          pts.push(-w/2, 0, -h/2, w/2, 0, -h/2, w/2, 0, h/2, -w/2, 0, h/2, -w/2, 0, -h/2);
+          break;
+        case 'diamond':
+          pts.push(0, 0, -h/2, w/2, 0, 0, 0, 0, h/2, -w/2, 0, 0, 0, 0, -h/2);
+          break;
+        case 'kite': {
+          const topW = geoData.topWidth || w * 0.5;
+          pts.push(0, 0, -h/2, topW/2, 0, 0, 0, 0, h/2, -topW/2, 0, 0, 0, 0, -h/2);
+          break;
+        }
+        case 'parallelogram': {
+          const offset = geoData.offset || w * 0.25;
+          pts.push(-w/2+offset, 0, -h/2, w/2+offset, 0, -h/2, w/2-offset, 0, h/2, -w/2-offset, 0, h/2, -w/2+offset, 0, -h/2);
+          break;
+        }
+        case 'trapezoid': {
+          const topScale = geoData.topWidth || w * 0.5;
+          pts.push(-w/2, 0, -h/2, w/2, 0, -h/2, topScale/2, 0, h/2, -topScale/2, 0, h/2, -w/2, 0, -h/2);
+          break;
+        }
+      }
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
       break;
     }
 
@@ -521,8 +883,28 @@ export function buildGeometry(geoData) {
   if (geoData.trim) {
     const posAttr = geometry.getAttribute('position');
     if (posAttr && posAttr.count >= 2) {
-      const start = Math.max(0, Math.min(1, geoData.trim.start || 0));
-      const end = Math.max(0, Math.min(1, geoData.trim.end ?? 1));
+      let { start, end, mode } = geoData.trim;
+      start = start || 0;
+      end = end ?? 1;
+      // Convert length mode to factor
+      if (mode === 'length') {
+        const pos = geometry.getAttribute('position');
+        if (pos && pos.count > 1) {
+          let totalLen = 0;
+          for (let i = 1; i < pos.count; i++) {
+            const dx = pos.getX(i) - pos.getX(i-1);
+            const dy = pos.getY(i) - pos.getY(i-1);
+            const dz = pos.getZ(i) - pos.getZ(i-1);
+            totalLen += Math.sqrt(dx*dx + dy*dy + dz*dz);
+          }
+          if (totalLen > 0) {
+            start = start / totalLen;
+            end = end / totalLen;
+          }
+        }
+      }
+      start = Math.max(0, Math.min(1, start));
+      end = Math.max(0, Math.min(1, end));
       if (start > 0 || end < 1) {
         const count = posAttr.count;
         const startIdx = Math.floor(start * (count - 1));
@@ -558,30 +940,46 @@ export function buildGeometry(geoData) {
 
   // ── Mesh post-processing ───────────────────────────────────────────────
 
-  // Apply subdivision (flat or smooth)
+  // Apply subdivision (flat or smooth/Catmull-Clark approximation)
   if (geoData.subdivide > 0 || geoData.subdivisionSurface > 0) {
     const levels = geoData.subdivisionSurface || geoData.subdivide || 0;
     const smooth = !!geoData.subdivisionSurface;
-    geometry = subdivideGeometry(geometry, Math.min(levels, 4), smooth);
+    const edgeCrease = geoData.edgeCrease ?? 0;
+    geometry = subdivideGeometry(geometry, Math.min(levels, 4), smooth, edgeCrease);
   }
 
-  // Triangulate (Three.js already uses triangles, so this ensures non-indexed → indexed)
-  if (geoData.triangulate && !geometry.index) {
-    const count = geometry.getAttribute('position')?.count || 0;
-    const idx = [];
-    for (let i = 0; i < count; i++) idx.push(i);
-    geometry.setIndex(idx);
+  // Triangulate
+  if (geoData.triangulate) {
+    // Three.js already uses triangles internally, so indexed geometry
+    // with 3-vertex faces is already triangulated.
+    // For non-indexed geometry, create proper triangle index buffer.
+    if (!geometry.index) {
+      const count = geometry.getAttribute('position')?.count || 0;
+      const triCount = Math.floor(count / 3);
+      const idx = [];
+      for (let i = 0; i < triCount * 3; i++) idx.push(i);
+      if (idx.length > 0) geometry.setIndex(idx);
+    }
+    // Ensure we have proper vertex normals after triangulation
+    geometry.computeVertexNormals();
   }
 
   // Split edges: convert to non-indexed so each face has its own vertices
   if (geoData.splitEdges && geometry.index) {
-    geometry = geometry.toNonIndexed();
-    geometry.computeVertexNormals();
+    if (geoData._splitEdgesSelection && isField(geoData._splitEdgesSelection)) {
+      // Build elements, evaluate selection field, split only selected edges
+      // For now, still split all (proper per-edge selection would need edge element context)
+      geometry = geometry.toNonIndexed();
+      geometry.computeVertexNormals();
+    } else {
+      geometry = geometry.toNonIndexed();
+      geometry.computeVertexNormals();
+    }
   }
 
   // Merge vertices by distance
   if (geoData.mergeByDistance > 0) {
-    geometry = mergeByDistanceGeometry(geometry, geoData.mergeByDistance);
+    geometry = mergeByDistanceGeometry(geometry, geoData.mergeByDistance, geoData.mergeByDistanceMode || 'all');
   }
 
   // Convex hull
@@ -591,22 +989,32 @@ export function buildGeometry(geoData) {
 
   // Dual mesh
   if (geoData.dualMesh) {
-    geometry = computeDualMesh(geometry);
+    geometry = computeDualMesh(geometry, geoData.keepBoundaries);
   }
 
-  // Points to vertices (tag for mesh rendering instead of points)
+  // Points to vertices: convert point cloud to mesh vertices (no faces)
   if (geoData.pointsToVertices) {
-    // Convert points to a mesh by connecting nearby points with faces
-    // For now, just ensure the geometry has normals so it renders as mesh
-    if (!geometry.index) {
-      const count = geometry.getAttribute('position')?.count || 0;
-      const idx = [];
-      for (let i = 0; i + 2 < count; i += 3) {
-        idx.push(i, i + 1, i + 2);
-      }
-      if (idx.length > 0) geometry.setIndex(idx);
+    // Just ensure geometry has normals for rendering; no index/faces needed
+    if (geometry.index) {
+      // Remove any existing index to make it vertex-only
+      geometry.setIndex(null);
     }
-    if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+    if (!geometry.getAttribute('normal')) {
+      // Set default up normals for point rendering
+      const count = geometry.getAttribute('position')?.count || 0;
+      const normals = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        normals[i * 3 + 1] = 1; // Y-up normal
+      }
+      geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    }
+  }
+
+  // Realize instances flag is consumed by the builder - instances are always
+  // realized into concrete geometry during buildGeometry
+  // (No additional action needed - just consume the flag so it doesn't warn)
+  if (geoData.realized) {
+    // Already realized during instance_on_points build above
   }
 
   // Mesh to curve: extract boundary/edge loop as line geometry
@@ -813,34 +1221,320 @@ export function buildGeometry(geoData) {
     }
   }
 
-  // Apply extrude by scaling geometry
-  if (geoData.extrude) {
-    const offset = geoData.extrude.offset || 0;
-    if (offset !== 0) {
-      geometry.scale(1 + Math.abs(offset) * 0.5, 1 + Math.abs(offset) * 0.5, 1 + Math.abs(offset) * 0.5);
+  // Apply extrude mesh - actual face extrusion along normals
+  if (geoData.extrudeMesh) {
+    const { offset, domain } = geoData.extrudeMesh;
+    const offsetVal = typeof offset === 'number' ? offset : 0.1;
+
+    if (geometry.index && domain !== 'edges') {
+      // Face extrusion
+      const posAttr = geometry.getAttribute('position');
+      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      const idxArr = geometry.index.array;
+      const triCount = Math.floor(idxArr.length / 3);
+
+      const newPositions = [];
+      const newIndices = [];
+
+      // Copy existing positions
+      for (let i = 0; i < posAttr.count; i++) {
+        newPositions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+      }
+
+      // For each face, create extruded copy
+      for (let f = 0; f < triCount; f++) {
+        const a = idxArr[f * 3], b = idxArr[f * 3 + 1], c = idxArr[f * 3 + 2];
+
+        // Compute face normal via cross product
+        const abx = posAttr.getX(b) - posAttr.getX(a), aby = posAttr.getY(b) - posAttr.getY(a), abz = posAttr.getZ(b) - posAttr.getZ(a);
+        const acx = posAttr.getX(c) - posAttr.getX(a), acy = posAttr.getY(c) - posAttr.getY(a), acz = posAttr.getZ(c) - posAttr.getZ(a);
+        const nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
+        const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        const fnx = nx / len, fny = ny / len, fnz = nz / len;
+
+        // Create 3 new vertices (extruded along face normal)
+        const na = newPositions.length / 3;
+        newPositions.push(
+          posAttr.getX(a) + fnx * offsetVal, posAttr.getY(a) + fny * offsetVal, posAttr.getZ(a) + fnz * offsetVal,
+          posAttr.getX(b) + fnx * offsetVal, posAttr.getY(b) + fny * offsetVal, posAttr.getZ(b) + fnz * offsetVal,
+          posAttr.getX(c) + fnx * offsetVal, posAttr.getY(c) + fny * offsetVal, posAttr.getZ(c) + fnz * offsetVal
+        );
+        const nb = na + 1, nc = na + 2;
+
+        // Top face (extruded)
+        newIndices.push(na, nb, nc);
+
+        // Side faces (connecting original to extruded)
+        newIndices.push(a, b, nb, a, nb, na);    // side 1
+        newIndices.push(b, c, nc, b, nc, nb);    // side 2
+        newIndices.push(c, a, na, c, na, nc);    // side 3
+      }
+
+      // Keep original bottom faces (flipped for closed geometry)
+      for (let f = 0; f < triCount; f++) {
+        newIndices.push(idxArr[f * 3 + 2], idxArr[f * 3 + 1], idxArr[f * 3]); // flipped
+      }
+
+      geometry.dispose();
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+      geometry.setIndex(newIndices);
+      geometry.computeVertexNormals();
     }
   }
 
-  // Apply scale elements
+  // Apply scale elements - per-element scaling around centroids
   if (geoData.scaleElements) {
     const s = geoData.scaleElements.scale;
-    geometry.scale(s, s, s);
+    const domain = geoData.scaleElements.domain || 'faces';
+    const posAttr = geometry.getAttribute('position');
+    if (posAttr && domain === 'faces') {
+      // For face domain: scale each face's vertices toward/away from the face centroid
+      // First, ensure non-indexed so each face has its own vertices
+      if (geometry.index) {
+        geometry = geometry.toNonIndexed();
+      }
+      const pos = geometry.getAttribute('position');
+      const count = pos.count;
+      const triCount = Math.floor(count / 3);
+      for (let f = 0; f < triCount; f++) {
+        const i0 = f * 3, i1 = f * 3 + 1, i2 = f * 3 + 2;
+        // Compute face centroid
+        const cx = (pos.getX(i0) + pos.getX(i1) + pos.getX(i2)) / 3;
+        const cy = (pos.getY(i0) + pos.getY(i1) + pos.getY(i2)) / 3;
+        const cz = (pos.getZ(i0) + pos.getZ(i1) + pos.getZ(i2)) / 3;
+        // Scale each vertex toward/away from centroid
+        for (const vi of [i0, i1, i2]) {
+          pos.setXYZ(vi,
+            cx + (pos.getX(vi) - cx) * s,
+            cy + (pos.getY(vi) - cy) * s,
+            cz + (pos.getZ(vi) - cz) * s
+          );
+        }
+      }
+      pos.needsUpdate = true;
+      geometry.computeVertexNormals();
+    } else if (posAttr && domain === 'edges') {
+      // For edge domain: scale each edge's vertices toward/away from edge midpoint
+      if (geometry.index) {
+        geometry = geometry.toNonIndexed();
+      }
+      const pos = geometry.getAttribute('position');
+      const count = pos.count;
+      const triCount = Math.floor(count / 3);
+      // Process each edge of each triangle
+      const processed = new Set();
+      for (let f = 0; f < triCount; f++) {
+        const indices = [f * 3, f * 3 + 1, f * 3 + 2];
+        const edges = [[indices[0], indices[1]], [indices[1], indices[2]], [indices[2], indices[0]]];
+        for (const [ei0, ei1] of edges) {
+          const key = Math.min(ei0, ei1) + ',' + Math.max(ei0, ei1);
+          if (processed.has(key)) continue;
+          processed.add(key);
+          const mx = (pos.getX(ei0) + pos.getX(ei1)) / 2;
+          const my = (pos.getY(ei0) + pos.getY(ei1)) / 2;
+          const mz = (pos.getZ(ei0) + pos.getZ(ei1)) / 2;
+          for (const vi of [ei0, ei1]) {
+            pos.setXYZ(vi,
+              mx + (pos.getX(vi) - mx) * s,
+              my + (pos.getY(vi) - my) * s,
+              mz + (pos.getZ(vi) - mz) * s
+            );
+          }
+        }
+      }
+      pos.needsUpdate = true;
+      geometry.computeVertexNormals();
+    } else {
+      // Fallback: global scale
+      geometry.scale(s, s, s);
+    }
+  }
+
+  // Apply duplicate elements - per-element duplication with normal offset
+  if (geoData.duplicateElements) {
+    const { amount, domain } = geoData.duplicateElements;
+    if (amount > 0 && domain === 'faces' && geometry.index) {
+      // Face domain: duplicate each triangle, offsetting copies along face normal
+      const posAttr = geometry.getAttribute('position');
+      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      const idxArr = geometry.index.array;
+      const triCount = Math.floor(idxArr.length / 3);
+
+      const newPositions = [];
+      const newIndices = [];
+
+      // Copy original positions
+      for (let i = 0; i < posAttr.count; i++) {
+        newPositions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+      }
+      // Copy original indices
+      for (let i = 0; i < idxArr.length; i++) {
+        newIndices.push(idxArr[i]);
+      }
+
+      // For each duplicate, offset each face along its normal
+      for (let d = 1; d <= amount; d++) {
+        const offsetDist = d * 0.01; // Small offset per duplicate to avoid z-fighting
+        for (let f = 0; f < triCount; f++) {
+          const a = idxArr[f * 3], b = idxArr[f * 3 + 1], c = idxArr[f * 3 + 2];
+
+          // Compute face normal
+          const abx = posAttr.getX(b) - posAttr.getX(a), aby = posAttr.getY(b) - posAttr.getY(a), abz = posAttr.getZ(b) - posAttr.getZ(a);
+          const acx = posAttr.getX(c) - posAttr.getX(a), acy = posAttr.getY(c) - posAttr.getY(a), acz = posAttr.getZ(c) - posAttr.getZ(a);
+          const nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
+          const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+          const fnx = nx / len, fny = ny / len, fnz = nz / len;
+
+          const baseIdx = newPositions.length / 3;
+          newPositions.push(
+            posAttr.getX(a) + fnx * offsetDist, posAttr.getY(a) + fny * offsetDist, posAttr.getZ(a) + fnz * offsetDist,
+            posAttr.getX(b) + fnx * offsetDist, posAttr.getY(b) + fny * offsetDist, posAttr.getZ(b) + fnz * offsetDist,
+            posAttr.getX(c) + fnx * offsetDist, posAttr.getY(c) + fny * offsetDist, posAttr.getZ(c) + fnz * offsetDist
+          );
+          newIndices.push(baseIdx, baseIdx + 1, baseIdx + 2);
+        }
+      }
+
+      geometry.dispose();
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+      geometry.setIndex(newIndices);
+      geometry.computeVertexNormals();
+    } else if (amount > 0 && domain === 'points') {
+      // Vertex domain: duplicate each vertex position with slight offsets
+      const posAttr = geometry.getAttribute('position');
+      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      const normAttr = geometry.getAttribute('normal');
+      const newPositions = [];
+
+      for (let i = 0; i < posAttr.count; i++) {
+        newPositions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+      }
+      for (let d = 1; d <= amount; d++) {
+        const offsetDist = d * 0.01;
+        for (let i = 0; i < posAttr.count; i++) {
+          const nx = normAttr ? normAttr.getX(i) : 0;
+          const ny = normAttr ? normAttr.getY(i) : 1;
+          const nz = normAttr ? normAttr.getZ(i) : 0;
+          newPositions.push(
+            posAttr.getX(i) + nx * offsetDist,
+            posAttr.getY(i) + ny * offsetDist,
+            posAttr.getZ(i) + nz * offsetDist
+          );
+        }
+      }
+
+      geometry.dispose();
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+    } else if (amount > 0) {
+      // Fallback for edges/instances: duplicate the whole geometry with offsets
+      const posAttr = geometry.getAttribute('position');
+      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      const normAttr = geometry.getAttribute('normal');
+      const origCount = posAttr.count;
+      const newPositions = [];
+      const newIndices = [];
+
+      for (let i = 0; i < origCount; i++) {
+        newPositions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+      }
+      if (geometry.index) {
+        const idxArr = geometry.index.array;
+        for (let i = 0; i < idxArr.length; i++) newIndices.push(idxArr[i]);
+
+        for (let d = 1; d <= amount; d++) {
+          const off = d * 0.01;
+          const base = newPositions.length / 3;
+          for (let i = 0; i < origCount; i++) {
+            const nx = normAttr ? normAttr.getX(i) : 0;
+            const ny = normAttr ? normAttr.getY(i) : 1;
+            const nz = normAttr ? normAttr.getZ(i) : 0;
+            newPositions.push(posAttr.getX(i) + nx * off, posAttr.getY(i) + ny * off, posAttr.getZ(i) + nz * off);
+          }
+          for (let i = 0; i < idxArr.length; i++) newIndices.push(idxArr[i] + base);
+        }
+
+        geometry.dispose();
+        geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+        geometry.setIndex(newIndices);
+        geometry.computeVertexNormals();
+      }
+    }
+  }
+
+  // Apply fillet curve - round corners by inserting arc segments
+  if (geoData.filletRadius > 0) {
+    const radius = geoData.filletRadius;
+    const count = geoData.filletCount || 4;
+    const posAttr = geometry.getAttribute('position');
+    if (posAttr && posAttr.count > 2) {
+      const pts = [];
+      // First point
+      pts.push(posAttr.getX(0), posAttr.getY(0), posAttr.getZ(0));
+
+      for (let i = 1; i < posAttr.count - 1; i++) {
+        // Get three consecutive points
+        const prev = { x: posAttr.getX(i - 1), y: posAttr.getY(i - 1), z: posAttr.getZ(i - 1) };
+        const curr = { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) };
+        const next = { x: posAttr.getX(i + 1), y: posAttr.getY(i + 1), z: posAttr.getZ(i + 1) };
+
+        // Direction vectors
+        const d1 = { x: curr.x - prev.x, y: curr.y - prev.y, z: curr.z - prev.z };
+        const d2 = { x: next.x - curr.x, y: next.y - curr.y, z: next.z - curr.z };
+        const l1 = Math.sqrt(d1.x * d1.x + d1.y * d1.y + d1.z * d1.z) || 1;
+        const l2 = Math.sqrt(d2.x * d2.x + d2.y * d2.y + d2.z * d2.z) || 1;
+
+        // Normalized directions
+        const n1 = { x: d1.x / l1, y: d1.y / l1, z: d1.z / l1 };
+        const n2 = { x: d2.x / l2, y: d2.y / l2, z: d2.z / l2 };
+
+        // Offset distance (limited by edge lengths)
+        const offset = Math.min(radius, l1 * 0.4, l2 * 0.4);
+
+        // Start and end of fillet
+        const fStart = { x: curr.x - n1.x * offset, y: curr.y - n1.y * offset, z: curr.z - n1.z * offset };
+        const fEnd = { x: curr.x + n2.x * offset, y: curr.y + n2.y * offset, z: curr.z + n2.z * offset };
+
+        // Interpolate arc segments
+        for (let j = 0; j <= count; j++) {
+          const t = j / count;
+          pts.push(
+            fStart.x + t * (fEnd.x - fStart.x) + (1 - Math.abs(2 * t - 1)) * (curr.x - (fStart.x + fEnd.x) / 2) * 0.5,
+            fStart.y + t * (fEnd.y - fStart.y) + (1 - Math.abs(2 * t - 1)) * (curr.y - (fStart.y + fEnd.y) / 2) * 0.5,
+            fStart.z + t * (fEnd.z - fStart.z) + (1 - Math.abs(2 * t - 1)) * (curr.z - (fStart.z + fEnd.z) / 2) * 0.5
+          );
+        }
+      }
+
+      // Last point
+      const last = posAttr.count - 1;
+      pts.push(posAttr.getX(last), posAttr.getY(last), posAttr.getZ(last));
+
+      geometry.dispose();
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    }
   }
 
   return geometry;
 }
 
 /**
- * Subdivide a BufferGeometry using Loop subdivision.
- * Each triangle is split into 4 sub-triangles. If smooth is true,
- * original vertex positions are adjusted (Loop's averaging rule).
+ * Subdivide a BufferGeometry. When smooth is true, uses Catmull-Clark-like
+ * averaging (face points + edge points) for better Blender compatibility.
+ * When smooth is false, performs flat subdivision (midpoint splitting only).
+ * Edge crease controls how much smoothing is applied (0 = full smooth, 1 = sharp).
  *
  * @param {THREE.BufferGeometry} inputGeo
  * @param {number} levels - Number of subdivision iterations
  * @param {boolean} smooth - Apply position smoothing (true = subdivision surface)
+ * @param {number} [edgeCrease=0] - Edge crease factor (0=smooth, 1=sharp)
  * @returns {THREE.BufferGeometry}
  */
-function subdivideGeometry(inputGeo, levels, smooth) {
+function subdivideGeometry(inputGeo, levels, smooth, edgeCrease) {
   if (levels <= 0) return inputGeo;
 
   // Ensure we have an indexed geometry to work with
@@ -897,61 +1591,106 @@ function subdivideGeometry(inputGeo, levels, smooth) {
       }
     }
 
-    // Smooth: adjust edge midpoints and original vertices (Loop subdivision rules)
-    if (smooth) {
-      // Adjust edge midpoints: for interior edges, use 3/8*(v0+v1) + 1/8*(v2+v3)
-      // where v2,v3 are the opposite vertices of the two adjacent triangles
+    // Smooth: Catmull-Clark-like averaging using face points for better Blender compat.
+    // Edge crease blends between smooth (0) and sharp/flat (1) positions.
+    const crease = edgeCrease ?? 0;
+    if (smooth && crease < 1) {
+      const smoothFactor = 1 - crease; // 1 = full smooth, 0 = sharp (no smoothing)
+
+      // Compute face points (average of each face's vertices) - Catmull-Clark step 1
+      const facePoints = [];
+      for (let f = 0; f < triCount; f++) {
+        const a = indexArr[f * 3], b = indexArr[f * 3 + 1], c = indexArr[f * 3 + 2];
+        facePoints.push([
+          (positions[a][0] + positions[b][0] + positions[c][0]) / 3,
+          (positions[a][1] + positions[b][1] + positions[c][1]) / 3,
+          (positions[a][2] + positions[b][2] + positions[c][2]) / 3,
+        ]);
+      }
+
+      // Adjust edge midpoints using Catmull-Clark-like rule:
+      // edge_point = (v0 + v1 + fp0 + fp1) / 4 for interior edges
       for (const [key, midIdx] of edgeMidMap) {
         const [sv0, sv1] = key.split(',').map(Number);
         const faces = edgeToFaces.get(key);
+        const simpleMid = [
+          (positions[sv0][0] + positions[sv1][0]) / 2,
+          (positions[sv0][1] + positions[sv1][1]) / 2,
+          (positions[sv0][2] + positions[sv1][2]) / 2,
+        ];
         if (faces.length === 2) {
-          // Interior edge: find opposite vertices
-          const oppVerts = [];
-          for (const fi of faces) {
-            const fa = indexArr[fi * 3], fb = indexArr[fi * 3 + 1], fc = indexArr[fi * 3 + 2];
-            for (const v of [fa, fb, fc]) {
-              if (v !== sv0 && v !== sv1) { oppVerts.push(v); break; }
-            }
-          }
-          if (oppVerts.length === 2) {
-            positions[midIdx] = [
-              (positions[sv0][0] + positions[sv1][0]) * 3 / 8 + (positions[oppVerts[0]][0] + positions[oppVerts[1]][0]) / 8,
-              (positions[sv0][1] + positions[sv1][1]) * 3 / 8 + (positions[oppVerts[0]][1] + positions[oppVerts[1]][1]) / 8,
-              (positions[sv0][2] + positions[sv1][2]) * 3 / 8 + (positions[oppVerts[0]][2] + positions[oppVerts[1]][2]) / 8,
-            ];
-          }
+          // Interior edge: use Catmull-Clark edge point formula
+          const fp0 = facePoints[faces[0]], fp1 = facePoints[faces[1]];
+          const smoothMid = [
+            (positions[sv0][0] + positions[sv1][0] + fp0[0] + fp1[0]) / 4,
+            (positions[sv0][1] + positions[sv1][1] + fp0[1] + fp1[1]) / 4,
+            (positions[sv0][2] + positions[sv1][2] + fp0[2] + fp1[2]) / 4,
+          ];
+          // Blend between simple midpoint (sharp) and smooth edge point based on crease
+          positions[midIdx] = [
+            simpleMid[0] + (smoothMid[0] - simpleMid[0]) * smoothFactor,
+            simpleMid[1] + (smoothMid[1] - simpleMid[1]) * smoothFactor,
+            simpleMid[2] + (smoothMid[2] - simpleMid[2]) * smoothFactor,
+          ];
         }
         // Boundary edges keep simple midpoint (already set)
       }
 
-      // Adjust original vertices using Loop's vertex rule
+      // Adjust original vertices using Catmull-Clark-like vertex rule:
+      // new_v = (F + 2R + (n-3)*v) / n
+      // where F = avg of face points, R = avg of edge midpoints, n = valence
       const newPositions = positions.map(p => [...p]); // copy
+      // Build vertex → face mapping
+      const vertFaces = new Map();
+      for (let f = 0; f < triCount; f++) {
+        for (let j = 0; j < 3; j++) {
+          const vi = indexArr[f * 3 + j];
+          if (!vertFaces.has(vi)) vertFaces.set(vi, []);
+          vertFaces.get(vi).push(f);
+        }
+      }
+
       for (let vi = 0; vi < origVertCount; vi++) {
         const edges = vertEdges.get(vi);
         if (!edges) continue;
         const n = edges.size; // valence
         if (n < 3) continue;
 
-        // Loop's beta: 1/n * (5/8 - (3/8 + 1/4*cos(2*PI/n))^2)
-        const beta = n === 3
-          ? 3 / 16
-          : (1 / n) * (5 / 8 - Math.pow(3 / 8 + (1 / 4) * Math.cos(2 * Math.PI / n), 2));
-
-        // Gather neighbor vertices (the other end of each edge)
-        let nx = 0, ny = 0, nz = 0;
-        for (const eKey of edges) {
-          const [ev0, ev1] = eKey.split(',').map(Number);
-          const neighbor = ev0 === vi ? ev1 : ev0;
-          nx += positions[neighbor][0];
-          ny += positions[neighbor][1];
-          nz += positions[neighbor][2];
+        // F: average of adjacent face points
+        const adjFaces = vertFaces.get(vi) || [];
+        let fx = 0, fy = 0, fz = 0;
+        for (const fi of adjFaces) {
+          fx += facePoints[fi][0];
+          fy += facePoints[fi][1];
+          fz += facePoints[fi][2];
         }
+        const nf = adjFaces.length || 1;
+        fx /= nf; fy /= nf; fz /= nf;
 
-        const w = 1 - n * beta;
+        // R: average of edge midpoints
+        let rx = 0, ry = 0, rz = 0;
+        for (const eKey of edges) {
+          const midIdx = edgeMidMap.get(eKey);
+          // Use simple midpoints for R (original positions, not smoothed)
+          const [ev0, ev1] = eKey.split(',').map(Number);
+          rx += (positions[ev0][0] + positions[ev1][0]) / 2;
+          ry += (positions[ev0][1] + positions[ev1][1]) / 2;
+          rz += (positions[ev0][2] + positions[ev1][2]) / 2;
+        }
+        rx /= n; ry /= n; rz /= n;
+
+        // Catmull-Clark vertex rule: (F + 2R + (n-3)*V) / n
+        const smoothPos = [
+          (fx + 2 * rx + (n - 3) * positions[vi][0]) / n,
+          (fy + 2 * ry + (n - 3) * positions[vi][1]) / n,
+          (fz + 2 * rz + (n - 3) * positions[vi][2]) / n,
+        ];
+
+        // Blend between original (sharp) and smoothed based on crease
         newPositions[vi] = [
-          w * positions[vi][0] + beta * nx,
-          w * positions[vi][1] + beta * ny,
-          w * positions[vi][2] + beta * nz,
+          positions[vi][0] + (smoothPos[0] - positions[vi][0]) * smoothFactor,
+          positions[vi][1] + (smoothPos[1] - positions[vi][1]) * smoothFactor,
+          positions[vi][2] + (smoothPos[2] - positions[vi][2]) * smoothFactor,
         ];
       }
 
@@ -1051,9 +1790,35 @@ function resampleCurveGeometry(geo, opts) {
 /**
  * Merge vertices that are within a distance threshold.
  */
-function mergeByDistanceGeometry(geo, threshold) {
+function mergeByDistanceGeometry(geo, threshold, mode) {
   const posAttr = geo.getAttribute('position');
   if (!posAttr) return geo;
+
+  // For "connected" mode, build edge adjacency so we only merge connected vertices
+  let edgeAdj = null;
+  if (mode === 'connected') {
+    edgeAdj = new Map();
+    const addEdge = (a, b) => {
+      if (!edgeAdj.has(a)) edgeAdj.set(a, new Set());
+      if (!edgeAdj.has(b)) edgeAdj.set(b, new Set());
+      edgeAdj.get(a).add(b);
+      edgeAdj.get(b).add(a);
+    };
+    if (geo.index) {
+      const idxArr = geo.index.array;
+      for (let i = 0; i < idxArr.length; i += 3) {
+        addEdge(idxArr[i], idxArr[i + 1]);
+        addEdge(idxArr[i + 1], idxArr[i + 2]);
+        addEdge(idxArr[i + 2], idxArr[i]);
+      }
+    } else {
+      for (let i = 0; i < posAttr.count; i += 3) {
+        addEdge(i, i + 1);
+        addEdge(i + 1, i + 2);
+        addEdge(i + 2, i);
+      }
+    }
+  }
 
   // Build mapping: old vertex index → merged vertex index
   const mergedPositions = [];
@@ -1066,12 +1831,33 @@ function mergeByDistanceGeometry(geo, threshold) {
     mergedPositions.push(x, y, z);
     indexMap[i] = newIdx;
 
-    // Find all other vertices within threshold
-    for (let j = i + 1; j < posAttr.count; j++) {
-      if (indexMap[j] !== -1) continue;
-      const dx = posAttr.getX(j) - x, dy = posAttr.getY(j) - y, dz = posAttr.getZ(j) - z;
-      if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= threshold) {
-        indexMap[j] = newIdx;
+    if (mode === 'connected' && edgeAdj) {
+      // Only merge vertices that share an edge with vertex i and are within threshold
+      // Use BFS/union-find approach: walk connected neighbors within distance
+      const queue = [i];
+      const visited = new Set([i]);
+      while (queue.length > 0) {
+        const cur = queue.shift();
+        const neighbors = edgeAdj.get(cur);
+        if (!neighbors) continue;
+        for (const j of neighbors) {
+          if (visited.has(j) || indexMap[j] !== -1) continue;
+          const dx = posAttr.getX(j) - x, dy = posAttr.getY(j) - y, dz = posAttr.getZ(j) - z;
+          if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= threshold) {
+            indexMap[j] = newIdx;
+            visited.add(j);
+            queue.push(j);
+          }
+        }
+      }
+    } else {
+      // "all" mode: merge any vertices within threshold
+      for (let j = i + 1; j < posAttr.count; j++) {
+        if (indexMap[j] !== -1) continue;
+        const dx = posAttr.getX(j) - x, dy = posAttr.getY(j) - y, dz = posAttr.getZ(j) - z;
+        if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= threshold) {
+          indexMap[j] = newIdx;
+        }
       }
     }
   }
@@ -1111,11 +1897,19 @@ function computeConvexHull(geo) {
   const posAttr = geo.getAttribute('position');
   if (!posAttr || posAttr.count < 4) return geo;
 
-  // Collect unique vertices
-  const verts = [];
+  // Deduplicate vertices
+  const uniqueVerts = [];
+  const seen = new Set();
   for (let i = 0; i < posAttr.count; i++) {
-    verts.push({ x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) });
+    const x = posAttr.getX(i), y = posAttr.getY(i), z = posAttr.getZ(i);
+    const key = `${x.toFixed(8)},${y.toFixed(8)},${z.toFixed(8)}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueVerts.push({ x, y, z });
+    }
   }
+  const verts = uniqueVerts;
+  if (verts.length < 4) return geo;
 
   // Find initial tetrahedron (4 non-coplanar points)
   let p0 = 0, p1 = -1, p2 = -1, p3 = -1;
@@ -1181,15 +1975,20 @@ function computeConvexHull(geo) {
     if (visible.length === 0) continue;
     used.add(i);
 
-    // Find horizon edges (edges shared by exactly one visible face)
+    // Find horizon edges — edges with exactly one visible face
     const edgeCount = new Map();
     for (const fi of visible) {
       const f = faces[fi];
       for (let j = 0; j < 3; j++) {
         const a = f[j], b = f[(j + 1) % 3];
-        const key = Math.min(a, b) + ',' + Math.max(a, b);
-        const dir = a < b ? 1 : -1;
-        edgeCount.set(key, (edgeCount.get(key) || 0) + dir);
+        // Store directed edge a→b
+        const key = a + ',' + b;
+        const reverseKey = b + ',' + a;
+        if (edgeCount.has(reverseKey)) {
+          edgeCount.delete(reverseKey); // shared edge, remove both
+        } else {
+          edgeCount.set(key, [a, b]);
+        }
       }
     }
 
@@ -1198,12 +1997,8 @@ function computeConvexHull(geo) {
     for (const fi of visible) faces.splice(fi, 1);
 
     // Create new faces from horizon edges to new point
-    for (const fi of [...Array(faces.length + visible.length).keys()].slice(faces.length - faces.length)) { /* skip */ }
-    for (const [key, count] of edgeCount) {
-      if (Math.abs(count) !== 1) continue; // only horizon edges
-      const [a, b] = key.split(',').map(Number);
-      if (count > 0) faces.push([a, b, i]);
-      else faces.push([b, a, i]);
+    for (const [, [a, b]] of edgeCount) {
+      faces.push([b, a, i]); // reverse winding to face outward
     }
   }
 
@@ -1233,7 +2028,7 @@ function computeConvexHull(geo) {
  * Compute the dual mesh: each face becomes a vertex (at centroid),
  * each original vertex becomes a face connecting adjacent centroids.
  */
-function computeDualMesh(geo) {
+function computeDualMesh(geo, keepBoundaries) {
   if (!geo.index) return geo;
   const posAttr = geo.getAttribute('position');
   const idxArr = geo.index.array;
@@ -1251,6 +2046,27 @@ function computeDualMesh(geo) {
     });
   }
 
+  // Build edge → face adjacency to detect boundary edges
+  const edgeFaceCount = new Map();
+  const edgeKey = (a, b) => Math.min(a, b) + ',' + Math.max(a, b);
+  for (let f = 0; f < triCount; f++) {
+    const v0 = idxArr[f * 3], v1 = idxArr[f * 3 + 1], v2 = idxArr[f * 3 + 2];
+    for (const [a, b] of [[v0, v1], [v1, v2], [v2, v0]]) {
+      const key = edgeKey(a, b);
+      edgeFaceCount.set(key, (edgeFaceCount.get(key) || 0) + 1);
+    }
+  }
+
+  // Identify boundary vertices (vertices touching a boundary edge)
+  const boundaryVerts = new Set();
+  for (const [key, count] of edgeFaceCount) {
+    if (count === 1) {
+      const [a, b] = key.split(',').map(Number);
+      boundaryVerts.add(a);
+      boundaryVerts.add(b);
+    }
+  }
+
   // Build vertex → face adjacency
   const vertFaces = new Map();
   for (let f = 0; f < triCount; f++) {
@@ -1261,16 +2077,100 @@ function computeDualMesh(geo) {
     }
   }
 
-  // For each vertex with 3+ adjacent faces, create a dual face
+  // Build face → face adjacency (faces sharing an edge)
+  const faceNeighbors = new Map(); // faceIdx -> Map<faceIdx, sharedEdge>
+  for (let f = 0; f < triCount; f++) faceNeighbors.set(f, new Map());
+  const edgeFaces = new Map(); // edgeKey -> [faceIdx, ...]
+  for (let f = 0; f < triCount; f++) {
+    const v0 = idxArr[f * 3], v1 = idxArr[f * 3 + 1], v2 = idxArr[f * 3 + 2];
+    for (const [a, b] of [[v0, v1], [v1, v2], [v2, v0]]) {
+      const key = edgeKey(a, b);
+      if (!edgeFaces.has(key)) edgeFaces.set(key, []);
+      edgeFaces.get(key).push(f);
+    }
+  }
+  for (const [, faces] of edgeFaces) {
+    if (faces.length === 2) {
+      faceNeighbors.get(faces[0]).set(faces[1], true);
+      faceNeighbors.get(faces[1]).set(faces[0], true);
+    }
+  }
+
+  // Dual mesh vertices = face centroids (+ boundary vertices if keepBoundaries)
   const pts = [];
   const indices = [];
   for (const c of centroids) pts.push(c.x, c.y, c.z);
 
-  for (const [, adjFaces] of vertFaces) {
-    if (adjFaces.length < 3) continue;
-    // Fan triangulate the polygon formed by adjacent face centroids
-    for (let i = 1; i < adjFaces.length - 1; i++) {
-      indices.push(adjFaces[0], adjFaces[i], adjFaces[i + 1]);
+  // If keepBoundaries, add boundary vertex positions as extra dual vertices
+  const boundaryVertDualIdx = new Map();
+  if (keepBoundaries) {
+    for (const bv of boundaryVerts) {
+      const dualIdx = pts.length / 3;
+      boundaryVertDualIdx.set(bv, dualIdx);
+      pts.push(posAttr.getX(bv), posAttr.getY(bv), posAttr.getZ(bv));
+    }
+  }
+
+  for (const [v, adjFaces] of vertFaces) {
+    const isBoundary = boundaryVerts.has(v);
+    // Skip boundary vertices entirely unless keepBoundaries is set
+    if (isBoundary && !keepBoundaries) continue;
+    if (adjFaces.length < 3 && !isBoundary) continue;
+    if (adjFaces.length < 2) continue;
+
+    const vx = posAttr.getX(v), vy = posAttr.getY(v), vz = posAttr.getZ(v);
+
+    // Compute proper vertex normal from adjacent face normals (area-weighted)
+    let nx = 0, ny = 0, nz = 0;
+    for (const fi of adjFaces) {
+      const a = idxArr[fi * 3], b = idxArr[fi * 3 + 1], c = idxArr[fi * 3 + 2];
+      const abx = posAttr.getX(b) - posAttr.getX(a), aby = posAttr.getY(b) - posAttr.getY(a), abz = posAttr.getZ(b) - posAttr.getZ(a);
+      const acx = posAttr.getX(c) - posAttr.getX(a), acy = posAttr.getY(c) - posAttr.getY(a), acz = posAttr.getZ(c) - posAttr.getZ(a);
+      nx += aby * acz - abz * acy;
+      ny += abz * acx - abx * acz;
+      nz += abx * acy - aby * acx;
+    }
+    const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+    nx /= nLen; ny /= nLen; nz /= nLen;
+
+    // Build tangent frame for angle sorting
+    const c0 = centroids[adjFaces[0]];
+    let tx = c0.x - vx, ty = c0.y - vy, tz = c0.z - vz;
+    // Orthogonalize tangent against normal
+    const dot = tx * nx + ty * ny + tz * nz;
+    tx -= dot * nx; ty -= dot * ny; tz -= dot * nz;
+    const tLen = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
+    tx /= tLen; ty /= tLen; tz /= tLen;
+    // Bitangent = normal x tangent
+    let btx = ny * tz - nz * ty, bty = nz * tx - nx * tz, btz = nx * ty - ny * tx;
+    const bLen = Math.sqrt(btx * btx + bty * bty + btz * btz) || 1;
+    btx /= bLen; bty /= bLen; btz /= bLen;
+
+    // Sort faces by angle around the vertex normal
+    const sorted = adjFaces.slice().sort((fi1, fi2) => {
+      const c1 = centroids[fi1], c2 = centroids[fi2];
+      const dx1 = c1.x - vx, dy1 = c1.y - vy, dz1 = c1.z - vz;
+      const dx2 = c2.x - vx, dy2 = c2.y - vy, dz2 = c2.z - vz;
+      const a1 = Math.atan2(dx1 * btx + dy1 * bty + dz1 * btz, dx1 * tx + dy1 * ty + dz1 * tz);
+      const a2 = Math.atan2(dx2 * btx + dy2 * bty + dz2 * btz, dx2 * tx + dy2 * ty + dz2 * tz);
+      return a1 - a2;
+    });
+
+    if (isBoundary && keepBoundaries) {
+      // For boundary vertices with keepBoundaries, create a fan that includes
+      // the boundary vertex position and the adjacent face centroids
+      const bvIdx = boundaryVertDualIdx.get(v);
+      if (bvIdx !== undefined && sorted.length >= 2) {
+        // Fan: boundary vertex -> sorted centroids
+        for (let i = 0; i < sorted.length - 1; i++) {
+          indices.push(bvIdx, sorted[i], sorted[i + 1]);
+        }
+      }
+    } else {
+      // Interior vertex: fan triangulate the sorted polygon of centroids
+      for (let i = 1; i < sorted.length - 1; i++) {
+        indices.push(sorted[0], sorted[i], sorted[i + 1]);
+      }
     }
   }
 
@@ -1575,12 +2475,70 @@ export function computeCurveLength(geoData) {
 /**
  * Find the closest point on geometry to a source position.
  */
-export function computeClosestPoint(geoData, sourcePos) {
+export function computeClosestPoint(geoData, sourcePos, targetElement) {
   if (!geoData) return { position: { x: 0, y: 0, z: 0 }, distance: 0 };
   const items = Array.isArray(geoData) ? geoData : [geoData];
   let closestPos = { x: 0, y: 0, z: 0 };
   let closestDist = Infinity;
   const sx = sourcePos?.x || 0, sy = sourcePos?.y || 0, sz = sourcePos?.z || 0;
+  const mode = targetElement || 'points';
+
+  // Helper: closest point on line segment ab to point p
+  function closestPointOnSegment(ax, ay, az, bx, by, bz, px, py, pz) {
+    const abx = bx - ax, aby = by - ay, abz = bz - az;
+    const apx = px - ax, apy = py - ay, apz = pz - az;
+    const ab2 = abx * abx + aby * aby + abz * abz;
+    if (ab2 < 1e-12) return { x: ax, y: ay, z: az };
+    let t = (apx * abx + apy * aby + apz * abz) / ab2;
+    t = Math.max(0, Math.min(1, t));
+    return { x: ax + abx * t, y: ay + aby * t, z: az + abz * t };
+  }
+
+  // Helper: closest point on triangle to point p (Ericson's real-time collision detection)
+  function closestPointOnTriangle(ax, ay, az, bx, by, bz, cx, cy, cz, px, py, pz) {
+    const abx = bx - ax, aby = by - ay, abz = bz - az;
+    const acx = cx - ax, acy = cy - ay, acz = cz - az;
+    const apx = px - ax, apy = py - ay, apz = pz - az;
+    const d1 = abx * apx + aby * apy + abz * apz;
+    const d2 = acx * apx + acy * apy + acz * apz;
+    if (d1 <= 0 && d2 <= 0) return { x: ax, y: ay, z: az };
+    const bpx = px - bx, bpy = py - by, bpz = pz - bz;
+    const d3 = abx * bpx + aby * bpy + abz * bpz;
+    const d4 = acx * bpx + acy * bpy + acz * bpz;
+    if (d3 >= 0 && d4 <= d3) return { x: bx, y: by, z: bz };
+    const vc = d1 * d4 - d3 * d2;
+    if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+      const v = d1 / (d1 - d3);
+      return { x: ax + abx * v, y: ay + aby * v, z: az + abz * v };
+    }
+    const cpx = px - cx, cpy = py - cy, cpz = pz - cz;
+    const d5 = abx * cpx + aby * cpy + abz * cpz;
+    const d6 = acx * cpx + acy * cpy + acz * cpz;
+    if (d6 >= 0 && d5 <= d6) return { x: cx, y: cy, z: cz };
+    const vb = d5 * d2 - d1 * d6;
+    if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+      const w = d2 / (d2 - d6);
+      return { x: ax + acx * w, y: ay + acy * w, z: az + acz * w };
+    }
+    const va = d3 * d6 - d5 * d4;
+    if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) {
+      const w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+      return { x: bx + (cx - bx) * w, y: by + (cy - by) * w, z: bz + (cz - bz) * w };
+    }
+    const denom = 1 / (va + vb + vc);
+    const v = vb * denom;
+    const w = vc * denom;
+    return { x: ax + abx * v + acx * w, y: ay + aby * v + acy * w, z: az + abz * v + acz * w };
+  }
+
+  function updateClosest(pt) {
+    const dx = pt.x - sx, dy = pt.y - sy, dz = pt.z - sz;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closestPos = pt;
+    }
+  }
 
   for (const item of items) {
     if (!item) continue;
@@ -1589,13 +2547,40 @@ export function computeClosestPoint(geoData, sourcePos) {
     const posAttr = geo.getAttribute('position');
     if (!posAttr) { geo.dispose(); continue; }
 
-    for (let i = 0; i < posAttr.count; i++) {
-      const px = posAttr.getX(i), py = posAttr.getY(i), pz = posAttr.getZ(i);
-      const dx = px - sx, dy = py - sy, dz = pz - sz;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closestPos = { x: px, y: py, z: pz };
+    if (mode === 'points') {
+      for (let i = 0; i < posAttr.count; i++) {
+        updateClosest({ x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) });
+      }
+    } else if (mode === 'edges') {
+      const getIdx = geo.index ? (i) => geo.index.getX(i) : (i) => i;
+      const triCount = geo.index ? Math.floor(geo.index.count / 3) : Math.floor(posAttr.count / 3);
+      const seen = new Set();
+      for (let f = 0; f < triCount; f++) {
+        const ai = getIdx(f * 3), bi = getIdx(f * 3 + 1), ci = getIdx(f * 3 + 2);
+        const edges = [[ai, bi], [bi, ci], [ci, ai]];
+        for (const [e0, e1] of edges) {
+          const key = Math.min(e0, e1) + ',' + Math.max(e0, e1);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          updateClosest(closestPointOnSegment(
+            posAttr.getX(e0), posAttr.getY(e0), posAttr.getZ(e0),
+            posAttr.getX(e1), posAttr.getY(e1), posAttr.getZ(e1),
+            sx, sy, sz
+          ));
+        }
+      }
+    } else {
+      // 'faces' mode: closest point on each triangle
+      const getIdx = geo.index ? (i) => geo.index.getX(i) : (i) => i;
+      const triCount = geo.index ? Math.floor(geo.index.count / 3) : Math.floor(posAttr.count / 3);
+      for (let f = 0; f < triCount; f++) {
+        const ai = getIdx(f * 3), bi = getIdx(f * 3 + 1), ci = getIdx(f * 3 + 2);
+        updateClosest(closestPointOnTriangle(
+          posAttr.getX(ai), posAttr.getY(ai), posAttr.getZ(ai),
+          posAttr.getX(bi), posAttr.getY(bi), posAttr.getZ(bi),
+          posAttr.getX(ci), posAttr.getY(ci), posAttr.getZ(ci),
+          sx, sy, sz
+        ));
       }
     }
     geo.dispose();
@@ -1641,20 +2626,57 @@ export function performRaycast(geoData, sourcePos, rayDir, rayLength) {
   }
 
   if (!closestHit) return noHit;
+
+  // Extract hit normal - transform face normal by the object's world matrix if available
+  let hitNormal = { x: 0, y: 1, z: 0 };
+  if (closestHit.face) {
+    const fn = closestHit.face.normal;
+    if (closestHit.object) {
+      // Transform face normal from object space to world space
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(closestHit.object.matrixWorld);
+      const worldNormal = new THREE.Vector3(fn.x, fn.y, fn.z).applyMatrix3(normalMatrix).normalize();
+      hitNormal = { x: worldNormal.x, y: worldNormal.y, z: worldNormal.z };
+    } else {
+      hitNormal = { x: fn.x, y: fn.y, z: fn.z };
+    }
+  }
+
+  // Extract UV coordinates from intersection if available
+  let hitUV = { x: 0, y: 0, z: 0 };
+  if (closestHit.uv) {
+    hitUV = { x: closestHit.uv.x, y: closestHit.uv.y, z: 0 };
+  }
+
+  // Interpolate attribute value at hit point using barycentric coordinates
+  let hitAttribute = 0;
+  if (closestHit.face && closestHit.object) {
+    const geo = closestHit.object.geometry;
+    if (geo) {
+      // Use face index to look up which triangle was hit
+      const faceIdx = closestHit.faceIndex;
+      if (faceIdx !== undefined && faceIdx !== null) {
+        // Could interpolate any per-vertex attribute here using barycentric coords
+        // For now expose the face index as the attribute value for downstream use
+        hitAttribute = faceIdx;
+      }
+    }
+  }
+
   return {
     isHit: true,
     hitPos: { x: closestHit.point.x, y: closestHit.point.y, z: closestHit.point.z },
-    hitNormal: closestHit.face
-      ? { x: closestHit.face.normal.x, y: closestHit.face.normal.y, z: closestHit.face.normal.z }
-      : { x: 0, y: 1, z: 0 },
+    hitNormal,
     hitDist: closestHit.distance,
+    hitUV,
+    hitAttribute,
   };
 }
 
 /**
- * Sample vertex position at a specific index from geometry.
+ * Sample all attributes at a specific index from geometry.
+ * Returns position vector, normal vector, UV, and color when available.
  */
-export function sampleAtIndex(geoData, index) {
+export function sampleAtIndex(geoData, index, clamp) {
   if (!geoData) return null;
   const item = Array.isArray(geoData) ? geoData[0] : geoData;
   if (!item) return null;
@@ -1662,11 +2684,35 @@ export function sampleAtIndex(geoData, index) {
   if (!geo) return null;
   const posAttr = geo.getAttribute('position');
   if (!posAttr) { geo.dispose(); return null; }
-  const idx = Math.max(0, Math.min(index, posAttr.count - 1));
+  const idx = clamp
+    ? Math.max(0, Math.min(index, posAttr.count - 1))
+    : Math.max(0, Math.min(index, posAttr.count - 1));
   const result = {
     position: { x: posAttr.getX(idx), y: posAttr.getY(idx), z: posAttr.getZ(idx) },
     count: posAttr.count,
   };
+  // Sample normal if available
+  const normAttr = geo.getAttribute('normal');
+  if (normAttr && idx < normAttr.count) {
+    result.normal = { x: normAttr.getX(idx), y: normAttr.getY(idx), z: normAttr.getZ(idx) };
+  } else {
+    result.normal = { x: 0, y: 1, z: 0 };
+  }
+  // Sample UV if available
+  const uvAttr = geo.getAttribute('uv');
+  if (uvAttr && idx < uvAttr.count) {
+    result.uv = { x: uvAttr.getX(idx), y: uvAttr.getY(idx), z: 0 };
+  }
+  // Sample color if available
+  const colorAttr = geo.getAttribute('color');
+  if (colorAttr && idx < colorAttr.count) {
+    result.color = {
+      r: colorAttr.getX(idx),
+      g: colorAttr.getY(idx),
+      b: colorAttr.getZ(idx),
+      a: colorAttr.itemSize > 3 ? colorAttr.getW(idx) : 1,
+    };
+  }
   geo.dispose();
   return result;
 }
@@ -1794,6 +2840,160 @@ export function computeMeshAnalysis(geoData) {
 
   geo.dispose();
   return result;
+}
+
+/**
+ * Compute mesh topology analysis returning per-element arrays (Fields-compatible).
+ * Unlike computeMeshAnalysis which returns averages, this returns typed arrays
+ * indexed by element index for use with the Field system.
+ */
+export function computeMeshAnalysisField(geoData) {
+  if (!geoData) return null;
+  const item = Array.isArray(geoData) ? geoData[0] : geoData;
+  if (!item) return null;
+  const geo = buildGeometry(item);
+  if (!geo) return null;
+  const posAttr = geo.getAttribute('position');
+  if (!posAttr) { geo.dispose(); return null; }
+
+  const vertexCount = posAttr.count;
+
+  // Non-indexed geometry: simpler path
+  if (!geo.index) {
+    const faceCount = Math.floor(posAttr.count / 3);
+    const edgeCount = faceCount * 3; // non-unique edges for non-indexed
+
+    const faceAreas = new Float32Array(faceCount);
+    const faceVertexCounts = new Int32Array(faceCount);
+    const faceNeighborFaces = new Int32Array(faceCount);
+
+    for (let f = 0; f < faceCount; f++) {
+      const ai = f * 3, bi = f * 3 + 1, ci = f * 3 + 2;
+      const abx = posAttr.getX(bi) - posAttr.getX(ai), aby = posAttr.getY(bi) - posAttr.getY(ai), abz = posAttr.getZ(bi) - posAttr.getZ(ai);
+      const acx = posAttr.getX(ci) - posAttr.getX(ai), acy = posAttr.getY(ci) - posAttr.getY(ai), acz = posAttr.getZ(ci) - posAttr.getZ(ai);
+      const nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
+      faceAreas[f] = Math.sqrt(nx * nx + ny * ny + nz * nz) * 0.5;
+      faceVertexCounts[f] = 3;
+      faceNeighborFaces[f] = 0; // no adjacency info for non-indexed
+    }
+
+    // For non-indexed geometry, edges/vertices have no shared topology
+    const edgeAngles = new Float32Array(edgeCount).fill(Math.PI);
+    const signedEdgeAngles = new Float32Array(edgeCount).fill(Math.PI);
+    const edgeNeighborFaces = new Int32Array(edgeCount).fill(1);
+    const vertexNeighborVerts = new Int32Array(vertexCount).fill(0);
+    const vertexNeighborFaces = new Int32Array(vertexCount).fill(0);
+
+    geo.dispose();
+    return {
+      edgeAngles, signedEdgeAngles, edgeNeighborFaces, edgeCount,
+      faceAreas, faceVertexCounts, faceNeighborFaces, faceCount,
+      vertexNeighborVerts, vertexNeighborFaces, vertexCount,
+    };
+  }
+
+  // Indexed geometry
+  const idxCount = geo.index.count;
+  const triCount = Math.floor(idxCount / 3);
+
+  // Per-face data
+  const faceAreas = new Float32Array(triCount);
+  const faceVertexCounts = new Int32Array(triCount);
+  const faceNormals = [];
+
+  for (let f = 0; f < triCount; f++) {
+    const a = geo.index.getX(f * 3), b = geo.index.getX(f * 3 + 1), c = geo.index.getX(f * 3 + 2);
+    const abx = posAttr.getX(b) - posAttr.getX(a), aby = posAttr.getY(b) - posAttr.getY(a), abz = posAttr.getZ(b) - posAttr.getZ(a);
+    const acx = posAttr.getX(c) - posAttr.getX(a), acy = posAttr.getY(c) - posAttr.getY(a), acz = posAttr.getZ(c) - posAttr.getZ(a);
+    const nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
+    const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    faceAreas[f] = len * 0.5;
+    faceVertexCounts[f] = 3;
+    faceNormals.push(len > 0 ? { x: nx / len, y: ny / len, z: nz / len } : { x: 0, y: 1, z: 0 });
+  }
+
+  // Build edge map: edge → [face indices]
+  const edgeMap = new Map();
+  for (let f = 0; f < triCount; f++) {
+    const a = geo.index.getX(f * 3), b = geo.index.getX(f * 3 + 1), c = geo.index.getX(f * 3 + 2);
+    for (const [v0, v1] of [[a, b], [b, c], [a, c]]) {
+      const key = Math.min(v0, v1) + ',' + Math.max(v0, v1);
+      if (!edgeMap.has(key)) edgeMap.set(key, []);
+      edgeMap.get(key).push(f);
+    }
+  }
+  const edgeCount = edgeMap.size;
+
+  // Per-edge data
+  const edgeAngles = new Float32Array(edgeCount);
+  const signedEdgeAngles = new Float32Array(edgeCount);
+  const edgeNeighborFaces = new Int32Array(edgeCount);
+
+  let edgeIdx = 0;
+  for (const faces of edgeMap.values()) {
+    edgeNeighborFaces[edgeIdx] = faces.length;
+    if (faces.length === 2) {
+      const n1 = faceNormals[faces[0]], n2 = faceNormals[faces[1]];
+      const dot = n1.x * n2.x + n1.y * n2.y + n1.z * n2.z;
+      const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+      edgeAngles[edgeIdx] = angle;
+      signedEdgeAngles[edgeIdx] = angle; // signed = unsigned for now
+    } else {
+      edgeAngles[edgeIdx] = Math.PI;
+      signedEdgeAngles[edgeIdx] = Math.PI;
+    }
+    edgeIdx++;
+  }
+
+  // Vertex neighbor counts
+  const vertNeighborVertsMap = new Map();
+  const vertNeighborFacesMap = new Map();
+  for (let f = 0; f < triCount; f++) {
+    const a = geo.index.getX(f * 3), b = geo.index.getX(f * 3 + 1), c = geo.index.getX(f * 3 + 2);
+    for (const v of [a, b, c]) {
+      if (!vertNeighborFacesMap.has(v)) vertNeighborFacesMap.set(v, new Set());
+      vertNeighborFacesMap.get(v).add(f);
+      if (!vertNeighborVertsMap.has(v)) vertNeighborVertsMap.set(v, new Set());
+    }
+    vertNeighborVertsMap.get(a).add(b); vertNeighborVertsMap.get(a).add(c);
+    vertNeighborVertsMap.get(b).add(a); vertNeighborVertsMap.get(b).add(c);
+    vertNeighborVertsMap.get(c).add(a); vertNeighborVertsMap.get(c).add(b);
+  }
+
+  const vertexNeighborVerts = new Int32Array(vertexCount);
+  const vertexNeighborFaces = new Int32Array(vertexCount);
+  for (let v = 0; v < vertexCount; v++) {
+    const vs = vertNeighborVertsMap.get(v);
+    const fs = vertNeighborFacesMap.get(v);
+    vertexNeighborVerts[v] = vs ? vs.size : 0;
+    vertexNeighborFaces[v] = fs ? fs.size : 0;
+  }
+
+  // Face adjacency (faces sharing an edge)
+  const faceAdjMap = new Map();
+  for (const faces of edgeMap.values()) {
+    for (let i = 0; i < faces.length; i++) {
+      for (let j = i + 1; j < faces.length; j++) {
+        if (!faceAdjMap.has(faces[i])) faceAdjMap.set(faces[i], new Set());
+        if (!faceAdjMap.has(faces[j])) faceAdjMap.set(faces[j], new Set());
+        faceAdjMap.get(faces[i]).add(faces[j]);
+        faceAdjMap.get(faces[j]).add(faces[i]);
+      }
+    }
+  }
+
+  const faceNeighborFaces = new Int32Array(triCount);
+  for (let f = 0; f < triCount; f++) {
+    const adj = faceAdjMap.get(f);
+    faceNeighborFaces[f] = adj ? adj.size : 0;
+  }
+
+  geo.dispose();
+  return {
+    edgeAngles, signedEdgeAngles, edgeNeighborFaces, edgeCount,
+    faceAreas, faceVertexCounts, faceNeighborFaces, faceCount: triCount,
+    vertexNeighborVerts, vertexNeighborFaces, vertexCount,
+  };
 }
 
 /**
