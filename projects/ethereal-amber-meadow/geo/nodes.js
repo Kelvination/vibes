@@ -7,10 +7,11 @@
 import { registry, SocketType } from '../core/registry.js';
 import {
   seededRandom, hash3, lerp, smoothstep, clampVal,
-  valueNoise3D, fbmNoise3D, voronoi3D,
+  valueNoise3D, perlinNoise3D, fbmNoise3D, voronoi3D,
   cloneGeo, geoToArray, mapGeo,
 } from '../core/utils.js';
 import {
+  buildGeometry,
   computeBounds, computeDomainSize, computeCurveLength,
   computeClosestPoint, performRaycast, sampleAtIndex,
   computeMeshAnalysis, computeMeshAnalysisField, buildElements,
@@ -747,7 +748,7 @@ registry.addNodes('geo', {
       const individual = inputs['Individual'] ?? values.individual;
       if (!mesh) return { outputs: [null, false, false] };
       return { outputs: [mapGeo(mesh, g => {
-        g.extrude = { mode: values.mode, offset: offsetScale, offsetVector: offset, individual, selection: sel };
+        g.extrudeMesh = { offset: offsetScale || 0.1, domain: values.mode || 'faces', offsetVector: offset, individual, selection: sel };
         return g;
       }), true, true] };
     },
@@ -1227,10 +1228,14 @@ registry.addNodes('geo', {
     ],
     evaluate(values, inputs) {
       const mesh = inputs['Mesh'];
-      const lvl = inputs['Level'] ?? values.level;
-      if (!mesh) return { outputs: [null] };
+      const lvl = Math.max(0, Math.min(4, inputs['Level'] ?? values.level));
+      if (!mesh || lvl === 0) return { outputs: [mesh || null] };
       return { outputs: [mapGeo(mesh, g => {
+        // Set subdivide level for builder to perform actual topology splitting:
+        // inserts edge midpoints and creates 4 triangles per original triangle
         g.subdivide = (g.subdivide || 0) + lvl;
+        // Flat subdivision (no smoothing) - distinct from subdivision_surface
+        g.smooth = g.smooth || false;
         return g;
       })] };
     },
@@ -1353,8 +1358,9 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
       const srcPos = inputs['Source Position'] || { x: 0, y: 0, z: 0 };
+      const targetElement = values.targetElement || 'faces';
       if (!geo) return { outputs: [{ x: 0, y: 0, z: 0 }, 0] };
-      const result = computeClosestPoint(geo, srcPos);
+      const result = computeClosestPoint(geo, srcPos, targetElement);
       return { outputs: [result.position, result.distance] };
     },
   },
@@ -2612,19 +2618,40 @@ registry.addNodes('geo', {
     ],
     evaluate(values, inputs) {
       const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const w = inputs['W'] ?? values.w ?? 0;
       const sc = inputs['Scale'] ?? values.scale;
       const detail = inputs['Detail'] ?? values.detail;
       const rough = inputs['Roughness'] ?? values.roughness;
       const dist = inputs['Distortion'] ?? values.distortion;
       const lac = inputs['Lacunarity'] ?? values.lacunarity;
-      let sx = v.x * sc, sy = v.y * sc, sz = v.z * sc;
-      if (dist > 0) {
-        sx += valueNoise3D(sx + 100, sy, sz) * dist;
-        sy += valueNoise3D(sx, sy + 100, sz) * dist;
-        sz += valueNoise3D(sx, sy, sz + 100) * dist;
+      const dim = values.dimensions || '3D';
+      const octaves = Math.ceil(detail) + 1;
+
+      // Dimension-aware coordinate setup
+      let sx, sy, sz;
+      switch (dim) {
+        case '1D': sx = w * sc; sy = 0; sz = 0; break;
+        case '2D': sx = v.x * sc; sy = v.y * sc; sz = 0; break;
+        case '4D': sx = v.x * sc; sy = v.y * sc; sz = v.z * sc + w * sc * 0.7071; break;
+        default: sx = v.x * sc; sy = v.y * sc; sz = v.z * sc; break;
       }
-      const fac = fbmNoise3D(sx, sy, sz, Math.ceil(detail) + 1, rough, lac);
-      return { outputs: [fac, { x: fac, y: fac * 0.8, z: fac * 0.6 }] };
+
+      // Distortion using Perlin noise
+      if (dist > 0) {
+        sx += perlinNoise3D(sx + 13.5, sy + 6.3, sz + 2.7) * dist;
+        sy += perlinNoise3D(sx + 47.2, sy + 91.1, sz + 15.8) * dist;
+        sz += perlinNoise3D(sx + 73.9, sy + 28.4, sz + 59.6) * dist;
+      }
+
+      // fBM with Perlin noise (fbmNoise3D already uses perlinNoise3D internally)
+      const fac = fbmNoise3D(sx, sy, sz, octaves, rough, lac);
+
+      // Generate proper Color output: 3 different noise samples at offset positions
+      const colR = fbmNoise3D(sx + 31.7, sy + 47.3, sz + 12.9, octaves, rough, lac) * 0.5 + 0.5;
+      const colG = fbmNoise3D(sx + 65.2, sy + 18.6, sz + 83.4, octaves, rough, lac) * 0.5 + 0.5;
+      const colB = fbmNoise3D(sx + 92.1, sy + 74.5, sz + 39.8, octaves, rough, lac) * 0.5 + 0.5;
+
+      return { outputs: [fac, { x: colR, y: colG, z: colB }] };
     },
   },
 
@@ -2672,11 +2699,26 @@ registry.addNodes('geo', {
     ],
     evaluate(values, inputs) {
       const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const w = inputs['W'] ?? values.w ?? 0;
       const sc = inputs['Scale'] ?? values.scale;
       const randomness = inputs['Randomness'] ?? values.randomness;
-      const sx = v.x * sc, sy = v.y * sc, sz = v.z * sc;
-      const { dist, col } = voronoi3D(sx, sy, sz, randomness, values.feature);
-      return { outputs: [dist, col, { x: sx, y: sy, z: sz }, 0] };
+      const smooth = inputs['Smoothness'] ?? values.smoothness ?? 1;
+      const exp = inputs['Exponent'] ?? values.exponent ?? 0.5;
+      const metric = values.distMetric || 'euclidean';
+      const feature = values.feature || 'f1';
+      const dim = values.dimensions || '3D';
+
+      // Dimension-aware coordinate setup
+      let sx, sy, sz;
+      switch (dim) {
+        case '1D': sx = w * sc; sy = 0; sz = 0; break;
+        case '2D': sx = v.x * sc; sy = v.y * sc; sz = 0; break;
+        case '4D': sx = v.x * sc; sy = v.y * sc; sz = v.z * sc + w * sc * 0.7071; break;
+        default: sx = v.x * sc; sy = v.y * sc; sz = v.z * sc; break;
+      }
+
+      const result = voronoi3D(sx, sy, sz, randomness, feature, metric, smooth, exp);
+      return { outputs: [result.dist, result.col, result.position || { x: sx, y: sy, z: sz }, w] };
     },
   },
 
@@ -3292,20 +3334,51 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const curve = inputs['Curve'];
       const count = inputs['Count'] ?? values.count;
-      if (!curve) return { outputs: [null, { x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 }] };
+      if (!curve) return { outputs: [null, new Field('vector', () => ({ x: 0, y: 0, z: 1 })), new Field('vector', () => ({ x: 0, y: 1, z: 0 }))] };
+      // Store curve points for tangent/normal computation
+      const curveClone = cloneGeo(curve);
       return {
         outputs: [
           {
             type: 'points',
-            source: cloneGeo(curve),
+            source: curveClone,
             mode: 'vertices',
             density: 1,
             seed: 0,
             curveToPoints: { mode: values.mode, count },
             transforms: [], smooth: false,
           },
-          { x: 0, y: 0, z: 1 },
-          { x: 0, y: 1, z: 0 },
+          // Tangent field: finite differences between consecutive points
+          new Field('vector', (el) => {
+            if (!el.positions || el.positions.length < 2) return { x: 0, y: 0, z: 1 };
+            const i = el.index;
+            const n = el.positions.length;
+            const i0 = Math.max(0, i - 1);
+            const i1 = Math.min(n - 1, i + 1);
+            const dx = el.positions[i1].x - el.positions[i0].x;
+            const dy = el.positions[i1].y - el.positions[i0].y;
+            const dz = el.positions[i1].z - el.positions[i0].z;
+            const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+            return { x: dx / len, y: dy / len, z: dz / len };
+          }),
+          // Normal field: cross product of up vector with tangent
+          new Field('vector', (el) => {
+            if (!el.positions || el.positions.length < 2) return { x: 0, y: 1, z: 0 };
+            const i = el.index;
+            const n = el.positions.length;
+            const i0 = Math.max(0, i - 1);
+            const i1 = Math.min(n - 1, i + 1);
+            const dx = el.positions[i1].x - el.positions[i0].x;
+            const dy = el.positions[i1].y - el.positions[i0].y;
+            const dz = el.positions[i1].z - el.positions[i0].z;
+            const tLen = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+            const tx = dx / tLen, ty = dy / tLen, tz = dz / tLen;
+            // cross(up=(0,1,0), tangent) = (1*tz - 0*ty, 0*tx - 0*tz, 0*ty - 1*tx) = (tz, 0, -tx)
+            let nx = tz, ny = 0, nz = -tx;
+            const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            if (nLen < 0.001) return { x: 1, y: 0, z: 0 }; // tangent is parallel to up
+            return { x: nx / nLen, y: ny / nLen, z: nz / nLen };
+          }),
         ],
       };
     },
@@ -3414,14 +3487,11 @@ registry.addNodes('geo', {
     ],
     defaults: {},
     evaluate(values, inputs) {
-      const curve = inputs['Curve'];
-      if (curve) {
-        const result = computeCurveLength(curve);
-        // Factor 0.5 (midpoint), actual length, midpoint index
-        const midIdx = Math.floor(result.pointCount / 2);
-        return { outputs: [0.5, result.length, midIdx] };
-      }
-      return { outputs: [0.5, 0, 0] };
+      return { outputs: [
+        new Field('float', (el) => el.count > 1 ? el.index / (el.count - 1) : 0), // Factor
+        new Field('float', (el) => el.index),  // Length (approximate, uses index as proxy)
+        new Field('int', (el) => 0),  // Index (spline index)
+      ]};
     },
   },
 
@@ -3469,8 +3539,9 @@ registry.addNodes('geo', {
     outputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
     ],
-    defaults: { color: '#6688cc', metallic: 0, roughness: 0.5 },
+    defaults: { color: '#6688cc', metallic: 0, roughness: 0.5, materialName: '' },
     props: [
+      { key: 'materialName', label: 'Material', type: 'text' },
       { key: 'color', label: 'Color', type: 'color' },
       { key: 'metallic', label: 'Metallic', type: 'float', min: 0, max: 1, step: 0.01 },
       { key: 'roughness', label: 'Roughness', type: 'float', min: 0, max: 1, step: 0.01 },
@@ -3478,12 +3549,22 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
       if (!geo) return { outputs: [null] };
+      const selection = inputs['Selection'];
+      const materialData = {
+        name: values.materialName || undefined,
+        color: values.color,
+        metallic: values.metallic,
+        roughness: values.roughness,
+      };
       return { outputs: [mapGeo(geo, g => {
-        g.material = {
-          color: values.color,
-          metallic: values.metallic,
-          roughness: values.roughness,
-        };
+        // Store selection for the builder if it's a field
+        if (isField(selection)) {
+          g._materialSelection = selection;
+        }
+        // Apply material data (builder reads geoData.material for PBR properties)
+        if (selection === undefined || selection === null || selection === true || isField(selection)) {
+          g.material = materialData;
+        }
         return g;
       })] };
     },
@@ -3500,9 +3581,7 @@ registry.addNodes('geo', {
     ],
     defaults: {},
     evaluate(values, inputs) {
-      // This system uses single material per geometry, so material index is always 0.
-      // With geometry input connected, this confirms the geometry has material slot 0.
-      return { outputs: [0] };
+      return { outputs: [new Field('int', (el) => el.materialIndex ?? 0)] };
     },
   },
 
@@ -4377,31 +4456,88 @@ registry.addNodes('geo', {
     ],
     evaluate(values, inputs) {
       const v = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+      const w = inputs['W'] ?? values.w ?? 0;
       const sc = inputs['Scale'] ?? values.scale;
-      const octaves = Math.ceil(inputs['Detail'] ?? values.detail) + 1;
+      const octaves = Math.max(1, Math.ceil(inputs['Detail'] ?? values.detail) + 1);
       const lac = inputs['Lacunarity'] ?? values.lacunarity;
-      const dim = inputs['Dimension'] ?? values.dimension;
-      let sx = v.x * sc, sy = v.y * sc, sz = v.z * sc;
-      let value = 0, amp = 1, freq = 1, weight = 1;
-      for (let i = 0; i < octaves; i++) {
-        const n = valueNoise3D(sx * freq, sy * freq, sz * freq);
-        if (values.musgraveType === 'fbm') {
-          value += n * amp;
-        } else if (values.musgraveType === 'multifractal') {
-          value = i === 0 ? n + 1 : value * (n * amp + 1);
-        } else if (values.musgraveType === 'ridged_multifractal') {
-          const signal = 1 - Math.abs(n);
-          value += signal * signal * weight * amp;
-          weight = clampVal(signal * values.gain, 0, 1);
-        } else {
-          const signal = (n + values.offset) * amp;
-          value = i === 0 ? signal : value + signal * weight;
-          weight = clampVal(signal, 0, 1);
-        }
-        amp *= Math.pow(lac, -dim);
-        freq *= lac;
+      const fracDim = inputs['Dimension'] ?? values.dimension;
+      const offset = inputs['Offset'] ?? values.offset;
+      const gain = inputs['Gain'] ?? values.gain;
+      const coordDim = values.dimensions || '3D';
+
+      // Dimension-aware coordinate setup
+      let sx, sy, sz;
+      switch (coordDim) {
+        case '1D': sx = w * sc; sy = 0; sz = 0; break;
+        case '2D': sx = v.x * sc; sy = v.y * sc; sz = 0; break;
+        case '4D': sx = v.x * sc; sy = v.y * sc; sz = v.z * sc + w * sc * 0.7071; break;
+        default: sx = v.x * sc; sy = v.y * sc; sz = v.z * sc; break;
       }
-      return { outputs: [value] };
+
+      let result = 0;
+      const mType = values.musgraveType || 'fbm';
+
+      if (mType === 'fbm') {
+        // Fractal Brownian Motion
+        let amp = 1, freq = 1, maxAmp = 0;
+        for (let i = 0; i < octaves; i++) {
+          result += perlinNoise3D(sx * freq, sy * freq, sz * freq) * amp;
+          maxAmp += amp;
+          amp *= Math.pow(lac, -fracDim);
+          freq *= lac;
+        }
+        result /= maxAmp;
+      } else if (mType === 'multifractal') {
+        // Multiplicative multifractal
+        result = 1;
+        let freq = 1;
+        for (let i = 0; i < octaves; i++) {
+          const amp = Math.pow(freq, -fracDim);
+          result *= (perlinNoise3D(sx * freq, sy * freq, sz * freq) * amp + 1);
+          freq *= lac;
+        }
+      } else if (mType === 'ridged_multifractal') {
+        // Ridged multifractal
+        let freq = 1, weight = 1, amp = 1;
+        for (let i = 0; i < octaves; i++) {
+          const n = perlinNoise3D(sx * freq, sy * freq, sz * freq);
+          const signal = 1.0 - Math.abs(n);
+          const s2 = signal * signal;
+          result += s2 * weight * amp;
+          weight = clampVal(s2 * gain, 0, 1);
+          amp *= Math.pow(lac, -fracDim);
+          freq *= lac;
+        }
+      } else if (mType === 'hybrid_multifractal') {
+        // Hybrid multifractal: multiplicative for first octave, additive blend after
+        let freq = 1, weight;
+        const firstAmp = Math.pow(freq, -fracDim);
+        result = (perlinNoise3D(sx * freq, sy * freq, sz * freq) + offset) * firstAmp;
+        weight = result;
+        freq *= lac;
+        for (let i = 1; i < octaves; i++) {
+          weight = Math.min(weight, 1.0);
+          const amp = Math.pow(freq, -fracDim);
+          const signal = (perlinNoise3D(sx * freq, sy * freq, sz * freq) + offset) * amp;
+          result += weight * signal;
+          weight *= gain * signal;
+          freq *= lac;
+        }
+      } else if (mType === 'hetero_terrain') {
+        // Heterogeneous terrain
+        let freq = 1;
+        const firstAmp = Math.pow(freq, -fracDim);
+        result = (perlinNoise3D(sx * freq, sy * freq, sz * freq) + offset) * firstAmp;
+        freq *= lac;
+        for (let i = 1; i < octaves; i++) {
+          const amp = Math.pow(freq, -fracDim);
+          const increment = (perlinNoise3D(sx * freq, sy * freq, sz * freq) + offset) * amp * result;
+          result += increment;
+          freq *= lac;
+        }
+      }
+
+      return { outputs: [result] };
     },
   },
 
@@ -4420,8 +4556,13 @@ registry.addNodes('geo', {
       const geo = inputs['Geometry'];
       if (!geo) return { outputs: [null] };
       return { outputs: [mapGeo(geo, g => {
-        g.isInstance = true;
-        return g;
+        return {
+          type: 'instance',
+          source: g,
+          transforms: g.transforms || [],
+          smooth: g.smooth || false,
+          isInstance: true,
+        };
       })] };
     },
   },
@@ -4508,21 +4649,36 @@ registry.addNodes('geo', {
       const geo = inputs['Geometry'];
       const val = inputs['Value'];
       const index = inputs['Index'] ?? values.index ?? 0;
+      const dataType = values.dataType || 'float';
+      const clamp = values.clamp || false;
       // If a value is provided, use it directly (scalar pass-through)
       if (val !== undefined && val !== null) {
         // If the value is array-like (field data), sample at index
         if (Array.isArray(val)) {
-          const clampedIdx = values.clamp ? Math.max(0, Math.min(index, val.length - 1)) : index;
+          const clampedIdx = clamp ? Math.max(0, Math.min(index, val.length - 1)) : index;
           return { outputs: [val[clampedIdx] ?? 0] };
         }
         return { outputs: [val] };
       }
-      // If geometry is connected, sample position at index
+      // If geometry is connected, sample all attributes at index
       if (geo) {
-        const sampled = sampleAtIndex(geo, index);
-        if (sampled) return { outputs: [sampled.position.x] };
+        const sampled = sampleAtIndex(geo, index, clamp);
+        if (sampled) {
+          // Return based on data type
+          if (dataType === 'vector') {
+            return { outputs: [sampled.position] };
+          } else if (dataType === 'int') {
+            return { outputs: [Math.round(sampled.position.x)] };
+          } else if (dataType === 'bool') {
+            return { outputs: [sampled.position.x !== 0] };
+          } else if (dataType === 'color') {
+            return { outputs: [sampled.color || { r: sampled.position.x, g: sampled.position.y, b: sampled.position.z, a: 1 }] };
+          }
+          // float: return x component for backward compat when used as float
+          return { outputs: [sampled.position.x] };
+        }
       }
-      return { outputs: [0] };
+      return { outputs: [dataType === 'vector' ? { x: 0, y: 0, z: 0 } : 0] };
     },
   },
 
@@ -4696,10 +4852,9 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const startSize = inputs['Start Size'] ?? values.startSize ?? 1;
       const endSize = inputs['End Size'] ?? values.endSize ?? 1;
-      // Endpoint selection is a field that is true for points near curve endpoints.
-      // Without per-element context, return true only if both sizes are > 0
-      // (indicating that some points are selected). Return false if both sizes are 0.
-      return { outputs: [startSize > 0 || endSize > 0] };
+      return { outputs: [
+        new Field('bool', (el) => el.index < startSize || el.index >= (el.count - endSize)),
+      ]};
     },
   },
 
@@ -4782,12 +4937,62 @@ registry.addNodes('geo', {
       { key: 'length', label: 'Length', type: 'float', min: 0, max: 100, step: 0.1 },
     ],
     evaluate(values, inputs) {
-      return { outputs: [
-        0,
-        { x: 0, y: 0, z: 0 },
-        { x: 0, y: 0, z: 1 },
-        { x: 0, y: 1, z: 0 },
-      ] };
+      const curve = inputs['Curves'];
+      const factor = inputs['Factor'] ?? values.factor ?? 0;
+      const lengthIn = inputs['Length'] ?? values.length ?? 0;
+      const mode = values.mode || 'factor';
+      const zeroOut = { outputs: [0, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 }] };
+      if (!curve) return zeroOut;
+      const item = Array.isArray(curve) ? curve[0] : curve;
+      const geo = buildGeometry(item);
+      if (!geo) return zeroOut;
+      const posAttr = geo.getAttribute('position');
+      if (!posAttr || posAttr.count < 2) { geo.dispose(); return zeroOut; }
+      const count = posAttr.count;
+      const arcLengths = [0];
+      for (let i = 1; i < count; i++) {
+        const dx = posAttr.getX(i) - posAttr.getX(i - 1);
+        const dy = posAttr.getY(i) - posAttr.getY(i - 1);
+        const dz = posAttr.getZ(i) - posAttr.getZ(i - 1);
+        arcLengths.push(arcLengths[i - 1] + Math.sqrt(dx * dx + dy * dy + dz * dz));
+      }
+      const totalLength = arcLengths[count - 1];
+      let targetDist = mode === 'length' ? lengthIn : factor * totalLength;
+      targetDist = Math.max(0, Math.min(totalLength, targetDist));
+      let seg = 0;
+      for (let i = 1; i < count; i++) {
+        if (arcLengths[i] >= targetDist) { seg = i - 1; break; }
+        seg = i - 1;
+      }
+      const segLen = arcLengths[seg + 1] - arcLengths[seg];
+      const t = segLen > 0 ? (targetDist - arcLengths[seg]) / segLen : 0;
+      const position = {
+        x: posAttr.getX(seg) + t * (posAttr.getX(seg + 1) - posAttr.getX(seg)),
+        y: posAttr.getY(seg) + t * (posAttr.getY(seg + 1) - posAttr.getY(seg)),
+        z: posAttr.getZ(seg) + t * (posAttr.getZ(seg + 1) - posAttr.getZ(seg)),
+      };
+      const tangent = {
+        x: posAttr.getX(seg + 1) - posAttr.getX(seg),
+        y: posAttr.getY(seg + 1) - posAttr.getY(seg),
+        z: posAttr.getZ(seg + 1) - posAttr.getZ(seg),
+      };
+      const tLen = Math.sqrt(tangent.x * tangent.x + tangent.y * tangent.y + tangent.z * tangent.z) || 1;
+      tangent.x /= tLen; tangent.y /= tLen; tangent.z /= tLen;
+      const up = { x: 0, y: 1, z: 0 };
+      const right = {
+        x: tangent.y * up.z - tangent.z * up.y,
+        y: tangent.z * up.x - tangent.x * up.z,
+        z: tangent.x * up.y - tangent.y * up.x,
+      };
+      const rLen = Math.sqrt(right.x * right.x + right.y * right.y + right.z * right.z) || 1;
+      const normal = {
+        x: (right.y * tangent.z - right.z * tangent.y) / rLen,
+        y: (right.z * tangent.x - right.x * tangent.z) / rLen,
+        z: (right.x * tangent.y - right.y * tangent.x) / rLen,
+      };
+      const sampledValue = totalLength > 0 ? targetDist / totalLength : 0;
+      geo.dispose();
+      return { outputs: [sampledValue, position, tangent, normal] };
     },
   },
 
@@ -4816,15 +5021,36 @@ registry.addNodes('geo', {
       const rot = inputs['Rotation'] || { x: 0, y: 0, z: 0 };
       const fac = inputs['Factor'] ?? values.factor;
       const vec = inputs['Vector'] || { x: 0, y: 0, z: 1 };
-      // Simplified: compute yaw/pitch from target vector
+      const axis = values.axis || 'z';
       const len = Math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z) || 1;
       const nx = vec.x / len, ny = vec.y / len, nz = vec.z / len;
-      const pitch = Math.asin(clampVal(-ny, -1, 1));
-      const yaw = Math.atan2(nx, nz);
+
+      let targetX = rot.x, targetY = rot.y, targetZ = rot.z;
+
+      if (axis === 'z') {
+        // Align Z axis to vector: compute pitch (rotation around X) and yaw (rotation around Y)
+        const pitch = Math.asin(clampVal(-ny, -1, 1));
+        const yaw = Math.atan2(nx, nz);
+        targetX = pitch;
+        targetY = yaw;
+      } else if (axis === 'y') {
+        // Align Y axis to vector: compute rotation to point Y up toward vector
+        const pitch = Math.asin(clampVal(nz, -1, 1));
+        const yaw = Math.atan2(-nx, ny);
+        targetX = pitch;
+        targetZ = yaw;
+      } else if (axis === 'x') {
+        // Align X axis to vector: compute rotation to point X toward vector
+        const yaw = Math.asin(clampVal(-nz, -1, 1));
+        const pitch = Math.atan2(ny, nx);
+        targetY = yaw;
+        targetZ = pitch;
+      }
+
       return { outputs: [{
-        x: lerp(rot.x, pitch, fac),
-        y: lerp(rot.y, yaw, fac),
-        z: rot.z,
+        x: lerp(rot.x, targetX, fac),
+        y: lerp(rot.y, targetY, fac),
+        z: lerp(rot.z, targetZ, fac),
       }] };
     },
   },
@@ -4932,8 +5158,30 @@ registry.addNodes('geo', {
       ]},
     ],
     evaluate(values, inputs) {
-      const val = inputs['Value'] ?? 0;
-      return { outputs: [val, 0, val] };
+      const value = inputs['Value'] ?? 0;
+      if (!isField(value)) {
+        // Scalar input: accumulation is value * index
+        return { outputs: [
+          new Field('float', (el) => value * el.index),
+          new Field('float', (el) => value * (el.count - 1 - el.index)),
+          new Field('float', (el) => value * el.count),
+        ]};
+      }
+      // Field input: approximate prefix sum using per-element evaluation
+      return { outputs: [
+        new Field('float', (el) => {
+          const v = value.evaluateAt(el);
+          return v * el.index;
+        }),
+        new Field('float', (el) => {
+          const v = value.evaluateAt(el);
+          return v * (el.count - 1 - el.index);
+        }),
+        new Field('float', (el) => {
+          const v = value.evaluateAt(el);
+          return v * el.count;
+        }),
+      ]};
     },
   },
 
@@ -4941,14 +5189,74 @@ registry.addNodes('geo', {
   'mesh_island': {
     label: 'Mesh Island',
     category: 'MESH_OPS',
-    inputs: [],
+    inputs: [
+      { name: 'Mesh', type: SocketType.GEOMETRY },
+    ],
     outputs: [
       { name: 'Island Index', type: SocketType.INT },
       { name: 'Island Count', type: SocketType.INT },
     ],
     defaults: {},
-    evaluate() {
-      return { outputs: [0, 1] };
+    evaluate(values, inputs) {
+      const geo = inputs['Mesh'];
+      if (!geo) return { outputs: [
+        new Field('int', () => 0),
+        new Field('int', () => 1),
+      ]};
+
+      const item = Array.isArray(geo) ? geo[0] : geo;
+      const builtGeo = buildGeometry(item);
+      if (!builtGeo || !builtGeo.index) {
+        if (builtGeo) builtGeo.dispose();
+        return { outputs: [new Field('int', () => 0), new Field('int', () => 1)] };
+      }
+
+      const posAttr = builtGeo.getAttribute('position');
+      const n = posAttr ? posAttr.count : 0;
+      if (n === 0) {
+        builtGeo.dispose();
+        return { outputs: [new Field('int', () => 0), new Field('int', () => 1)] };
+      }
+
+      // Union-Find
+      const parent = new Int32Array(n);
+      const ufRank = new Int32Array(n);
+      for (let i = 0; i < n; i++) parent[i] = i;
+
+      const find = (x) => {
+        while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+        return x;
+      };
+      const union = (a, b) => {
+        a = find(a); b = find(b);
+        if (a === b) return;
+        if (ufRank[a] < ufRank[b]) { const tmp = a; a = b; b = tmp; }
+        parent[b] = a;
+        if (ufRank[a] === ufRank[b]) ufRank[a]++;
+      };
+
+      const idx = builtGeo.index.array;
+      for (let i = 0; i < idx.length; i += 3) {
+        union(idx[i], idx[i + 1]);
+        union(idx[i + 1], idx[i + 2]);
+        union(idx[i], idx[i + 2]);
+      }
+      builtGeo.dispose();
+
+      // Compact island IDs
+      const islandMap = new Map();
+      let islandCount = 0;
+      const islandIds = new Int32Array(n);
+      for (let i = 0; i < n; i++) {
+        const root = find(i);
+        if (!islandMap.has(root)) islandMap.set(root, islandCount++);
+        islandIds[i] = islandMap.get(root);
+      }
+
+      return { outputs: [
+        new Field('int', (el) => islandIds[el.index] ?? 0),
+        new Field('int', () => islandCount),
+      ]};
     },
   },
 
@@ -4967,12 +5275,15 @@ registry.addNodes('geo', {
     props: [
       { key: 'mode', label: 'Mode', type: 'select', options: [
         { value: 'rectangle', label: 'Rectangle' },
+        { value: 'diamond', label: 'Diamond' },
         { value: 'parallelogram', label: 'Parallelogram' },
         { value: 'trapezoid', label: 'Trapezoid' },
         { value: 'kite', label: 'Kite' },
       ]},
       { key: 'width', label: 'Width', type: 'float', min: 0.01, max: 50, step: 0.1 },
       { key: 'height', label: 'Height', type: 'float', min: 0.01, max: 50, step: 0.1 },
+      { key: 'topWidth', label: 'Top Width', type: 'float', min: 0.01, max: 50, step: 0.1 },
+      { key: 'offset', label: 'Offset', type: 'float', min: -25, max: 25, step: 0.1 },
     ],
     evaluate(values, inputs) {
       const w = inputs['Width'] ?? values.width;
@@ -4981,6 +5292,8 @@ registry.addNodes('geo', {
         type: 'curve_quadrilateral',
         width: w, height: h,
         mode: values.mode,
+        topWidth: values.topWidth,
+        offset: values.offset,
         transforms: [], smooth: false,
       }] };
     },
