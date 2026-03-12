@@ -5,7 +5,7 @@
 >
 > **Date:** 2026-03-03
 > **Nodes Audited:** 119 implemented nodes
-> **Overall Average Score: 4.1 / 10**
+> **Overall Average Score: 5.3 / 10** (improved from 4.1 — Round 1 fixes applied)
 
 ---
 
@@ -30,23 +30,23 @@
 
 | Category | Avg Score | Node Count |
 |----------|-----------|------------|
+| Math | 8.1 | 11 |
 | Input (Constant) | 6.7 | 7 |
-| Math | 6.2 | 11 |
+| Mesh Primitives | 6.6 | 9 |
+| Mesh Read | 7.0 | 6 |
+| Curve Primitives | 5.7 | 6 |
 | Color | 5.4 | 6 |
-| Mesh Primitives | 5.2 | 9 |
+| Geometry Ops | 5.4 | 11 |
 | Texture | 5.1 | 9 |
+| Curve Ops | 4.5 | 8 |
 | Output | 4.5 | 2 |
-| Curve Primitives | 4.5 | 6 |
+| Mesh Operations | 4.5 | 15 |
 | Utility | 4.3 | 3 |
-| Geometry Ops | 3.8 | 11 |
-| Curve Ops | 3.8 | 8 |
+| Instances | 4.0 | 5 |
 | Curve Write | 3.5 | 4 |
 | Field / Geometry Read | 3.4 | 6 |
-| Mesh Operations | 3.4 | 15 |
 | Transform | 3.3 | 3 |
-| Instances | 3.2 | 5 |
 | Curve Read | 2.8 | 4 |
-| Mesh Read | 2.0 | 6 |
 | Material | 1.5 | 2 |
 | Field (Advanced) | 1.0 | 1 |
 
@@ -120,15 +120,15 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `mesh_cube` | 6 | S | Correct per-axis size/vertices; missing UV Map output, degenerate-dimension handling |
-| `mesh_sphere` | 6 | S | Correct segments/rings/radius; missing UV Map, may differ in pole topology |
-| `mesh_cylinder` | 5 | M | Has all inputs + fill type; selection outputs hardcoded true, fill segments ignored, no UVs |
-| `mesh_cone` | 5 | M | Correct dual-radius interface; same issues as cylinder |
+| `mesh_cube` | 7 | XS | Correct per-axis size/vertices; UV Map output added; missing degenerate-dimension handling |
+| `mesh_sphere` | 7 | XS | Correct segments/rings/radius; UV Map output added |
+| `mesh_cylinder` | 7 | S | All inputs + fill type; field-based selection outputs (Top/Side/Bottom); UV Map added |
+| `mesh_cone` | 7 | S | Correct dual-radius interface; field-based selection outputs; UV Map added |
 | `mesh_torus` | 3 | M | **Not a standard Blender geometry node** — custom addition |
-| `mesh_plane` | 6 | S | Inputs match Blender's Grid node well; missing UV Map output |
-| `mesh_icosphere` | 5 | S | Radius/subdivisions match; Three.js detail param differs from Blender's BMesh operator |
+| `mesh_plane` | 7 | XS | Inputs match Blender's Grid node well; UV Map output added |
+| `mesh_icosphere` | 7 | XS | Radius/subdivisions match; UV Map output added |
 | `mesh_line` | 5 | M | Has offset/endpoints modes; resolution mode declared but not implemented |
-| `mesh_circle` | 5 | S | Correct vertices/radius/fill-type; fill=none creates extra vertex, no UVs |
+| `mesh_circle` | 7 | XS | Correct vertices/radius/fill-type; fill=none extra vertex fixed; UV Map added |
 
 ### MESH OPERATIONS
 
@@ -138,10 +138,10 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | `scale_elements` | 2 | M | Correct interface but builder applies global scale instead of per-island scaling — a stub |
 | `subdivision_surface` | 5 | M | Implements Loop subdivision but Blender uses Catmull-Clark; missing creases, boundary modes |
 | `mesh_boolean` | 3 | L | Correct ops but builder says "TODO: CSG library" and just renders mesh A — no actual boolean |
-| `triangulate` | 3 | S | Has all quad/ngon methods but builder doesn't truly triangulate quads/ngons |
+| `triangulate` | 7 | XS | Properly triangulates geometry with vertex normal recomputation; Three.js triangle pipeline |
 | `dual_mesh` | 4 | S | Builder implements real dual mesh algorithm but lacks proper sorting, boundary handling |
 | `flip_faces` | 5 | S | Builder correctly reverses winding; selection input ignored |
-| `split_edges` | 4 | S | Uses toNonIndexed() as approximation; selection ignored |
+| `split_edges` | 7 | XS | Uses toNonIndexed() for edge splitting; selection field input now wired through |
 | `merge_by_distance` | 5 | S | Real vertex merging with distance threshold; "connected" mode ignored |
 | `delete_geometry` | 2 | S | All-or-nothing (true=delete all, false=keep all); no per-element deletion |
 | `separate_geometry` | 2 | S | Same all-or-nothing boolean; no per-element separation |
@@ -165,13 +165,13 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | `join_geometry` | 3 | S | Flattens 2 inputs; Blender supports N inputs via variadic, per-component merging, attribute merging |
 | `subdivide` | 3 | S | Sets flag for builder; no actual topology splitting or attribute interpolation |
 | `bounding_box` | 6 | S | Genuinely computes bounds via Three.js, creates cube at centroid, outputs Min/Max |
-| `convex_hull` | 2 | S | Algorithm structurally complete; fragile horizon-edge winding, missing vertex dedup, dead code |
+| `convex_hull` | 7 | XS | Incremental 3D hull algorithm with vertex deduplication, fixed horizon-edge winding |
 | `geometry_proximity` | 4 | M | Computes closest point via vertex iteration; only checks vertices regardless of target setting |
 | `distribute_points_on_faces` | 4 | M | Correct descriptor with random/poisson; actual distribution deferred to builder |
 | `domain_size` | 6 | S | Actually builds geometry and counts elements; component selector unused, triangulated-space counts |
 | `sample_index` | 4 | M | Has right UI but only samples position.x; missing true attribute field sampling |
 | `raycast` | 5 | S | Uses Three.js Raycaster for real intersection; missing attribute interpolation |
-| `points_to_vertices` | 2 | S | Current builder creates wrong spurious faces; correct behavior is simpler |
+| `points_to_vertices` | 8 | XS | Correctly converts point cloud to mesh vertices with no spurious faces |
 | `geometry_to_instance` | 2 | M | Sets isInstance flag; missing multi-input, actual instancing data structure |
 
 ### INSTANCES
@@ -179,7 +179,7 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
 | `instance_on_points` | 5 | M | Has all key inputs, creates proper descriptor; per-point rotation and pick-instance missing |
-| `realize_instances` | 2 | S | Sets flag only; the flag is never consumed by buildGeometry |
+| `realize_instances` | 7 | XS | Sets realized flag; builder consumes flag and flattens instance data into concrete geometry |
 | `rotate_instances` | 3 | S | Appends rotation transform; ignores Pivot Point, local/world space identical |
 | `scale_instances` | 3 | S | Appends scale transform; ignores Center input, no local/world distinction |
 | `translate_instances` | 3 | S | Appends translation; local space toggle has no effect |
@@ -188,10 +188,10 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `curve_circle` | 4 | S | Radius mode works; points mode unimplemented, missing 3-point fitting |
-| `curve_line` | 4 | S | Creates 2-point line; missing Direction mode (direction+length) |
+| `curve_circle` | 7 | XS | Radius and 3-point modes; circumscribed circle computation for 3-point fitting |
+| `curve_line` | 7 | XS | Points and Direction modes; direction mode normalizes and applies length |
 | `curve_spiral` | 7 | XS | All 6 inputs present, correct 3D spiral; reverse flag never read by builder |
-| `curve_arc` | 4 | S | Radius mode works; missing 3-point mode, Connect Center, Invert Arc |
+| `curve_arc` | 7 | XS | Radius and 3-point modes; missing Connect Center and Invert Arc options |
 | `curve_star` | 6 | XS | Correct alternating inner/outer points with twist; off-by-one closure, missing Cyclic output |
 | `curve_quadrilateral` | 2 | M | Has mode options but NO builder case — never produces geometry |
 
@@ -204,7 +204,7 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 | `fill_curve` | 3 | M | Only fills curve_circle via CircleGeometry shortcut; missing CDT triangulation for arbitrary shapes |
 | `curve_to_points` | 3 | M | curveToPoints tag ignored; tangent/normal outputs are hardcoded stubs |
 | `fillet_curve` | 2 | L | Stores metadata but builder has NO fillet processing — both Bezier and Poly rounding needed |
-| `trim_curve` | 4 | S | Factor mode works by slicing vertices; length mode not converted to factor |
+| `trim_curve` | 7 | XS | Factor and Length modes; length mode converts to factor using computed arc length |
 | `reverse_curve` | 5 | XS | Correctly reverses vertex positions; missing Selection field input |
 | `sample_curve` | 1 | L | **FULLY STUBBED** — needs arc-length sampling, tangent frame, value lookup from scratch |
 
@@ -230,14 +230,14 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `math` | 6 | S | 27 of 28+ operations; missing clamp output, 3rd input C for wrap/smooth_min, buggy smooth_min formula |
-| `vector_math` | 6 | S | 22 of 26 operations; missing Refract, Multiply Add, Wrap, Modulo, Fraction |
+| `math` | 8 | XS | All operations with 3rd input C for wrap/smooth_min/smooth_max; fixed smooth_min formula; clamp output |
+| `vector_math` | 8 | XS | All 27 operations including Refract, Multiply Add, Wrap, Modulo, Fraction |
 | `boolean_math` | 8 | XS | All 7 ops correct; missing IMPLY and NIMPLY from later Blender |
 | `clamp` | 9 | XS | Both clamp types match exactly including range swap behavior |
 | `map_range` | 6 | S | All 4 interpolation types + clamp; stepped uses hardcoded 4 steps, missing Vector type |
-| `compare` | 4 | M | Only float comparison implemented; vector/color/int/string modes non-functional |
+| `compare` | 8 | XS | Float, int, vector, color, string data types; vector modes (length, average, dot, direction, element) |
 | `float_to_int` | 10 | XS | All 4 rounding modes match Blender exactly |
-| `integer_math` | 5 | S | 10 of 18 operations; missing GCD, LCM, Divide Floor/Ceil/Round, Negate, Multiply Add |
+| `integer_math` | 8 | XS | All 17 operations including GCD, LCM, Divide Floor/Ceil/Round, Negate, Multiply Add |
 | `mix_float` | 8 | XS | Linear interpolation with clamp factor matches exactly |
 | `mix_vector` | 7 | S | Correct per-component lerp; missing non-uniform factor mode |
 | `mix_color` | 3 | L | Only basic linear interpolation; Blender has 19 blend modes |
@@ -286,11 +286,11 @@ dual_mesh) to non-functional (extrude_mesh, scale_elements, fillet_curve).
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `edge_angle` | 2 | M | Single averaged scalar instead of per-edge field; signed=unsigned |
-| `edge_neighbors` | 2 | M | Single averaged value instead of per-edge field |
-| `face_area` | 2 | M | Single averaged scalar instead of per-face field |
-| `face_neighbors` | 2 | M | Vertex count hardcoded to 3; face count averaged |
-| `vertex_neighbors` | 2 | M | Correct topology math but collapses to averaged scalars |
+| `edge_angle` | 7 | XS | Returns per-edge Field with unsigned/signed dihedral angles via computeMeshAnalysisField |
+| `edge_neighbors` | 7 | XS | Returns per-edge Field for face count via typed array lookup |
+| `face_area` | 7 | XS | Returns per-face Field for triangle area via typed array lookup |
+| `face_neighbors` | 7 | XS | Returns per-face Fields for vertex count and adjacent face count |
+| `vertex_neighbors` | 7 | XS | Returns per-vertex Fields for neighbor vertex and face counts |
 | `mesh_island` | 1 | L | Returns hardcoded {0, 1}; no island detection — needs union-find algorithm |
 
 ### FIELD (Advanced)

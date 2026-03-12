@@ -332,7 +332,7 @@ export function buildGeometry(geoData) {
       if (fill === 'none') {
         // Just the edge ring
         const pts = [];
-        for (let i = 0; i <= verts; i++) {
+        for (let i = 0; i < verts; i++) {
           const angle = (i / verts) * Math.PI * 2;
           pts.push(Math.cos(angle) * r, 0, Math.sin(angle) * r);
         }
@@ -521,8 +521,28 @@ export function buildGeometry(geoData) {
   if (geoData.trim) {
     const posAttr = geometry.getAttribute('position');
     if (posAttr && posAttr.count >= 2) {
-      const start = Math.max(0, Math.min(1, geoData.trim.start || 0));
-      const end = Math.max(0, Math.min(1, geoData.trim.end ?? 1));
+      let { start, end, mode } = geoData.trim;
+      start = start || 0;
+      end = end ?? 1;
+      // Convert length mode to factor
+      if (mode === 'length') {
+        const pos = geometry.getAttribute('position');
+        if (pos && pos.count > 1) {
+          let totalLen = 0;
+          for (let i = 1; i < pos.count; i++) {
+            const dx = pos.getX(i) - pos.getX(i-1);
+            const dy = pos.getY(i) - pos.getY(i-1);
+            const dz = pos.getZ(i) - pos.getZ(i-1);
+            totalLen += Math.sqrt(dx*dx + dy*dy + dz*dz);
+          }
+          if (totalLen > 0) {
+            start = start / totalLen;
+            end = end / totalLen;
+          }
+        }
+      }
+      start = Math.max(0, Math.min(1, start));
+      end = Math.max(0, Math.min(1, end));
       if (start > 0 || end < 1) {
         const count = posAttr.count;
         const startIdx = Math.floor(start * (count - 1));
@@ -565,18 +585,33 @@ export function buildGeometry(geoData) {
     geometry = subdivideGeometry(geometry, Math.min(levels, 4), smooth);
   }
 
-  // Triangulate (Three.js already uses triangles, so this ensures non-indexed → indexed)
-  if (geoData.triangulate && !geometry.index) {
-    const count = geometry.getAttribute('position')?.count || 0;
-    const idx = [];
-    for (let i = 0; i < count; i++) idx.push(i);
-    geometry.setIndex(idx);
+  // Triangulate
+  if (geoData.triangulate) {
+    // Three.js already uses triangles internally, so indexed geometry
+    // with 3-vertex faces is already triangulated.
+    // For non-indexed geometry, create proper triangle index buffer.
+    if (!geometry.index) {
+      const count = geometry.getAttribute('position')?.count || 0;
+      const triCount = Math.floor(count / 3);
+      const idx = [];
+      for (let i = 0; i < triCount * 3; i++) idx.push(i);
+      if (idx.length > 0) geometry.setIndex(idx);
+    }
+    // Ensure we have proper vertex normals after triangulation
+    geometry.computeVertexNormals();
   }
 
   // Split edges: convert to non-indexed so each face has its own vertices
   if (geoData.splitEdges && geometry.index) {
-    geometry = geometry.toNonIndexed();
-    geometry.computeVertexNormals();
+    if (geoData._splitEdgesSelection && isField(geoData._splitEdgesSelection)) {
+      // Build elements, evaluate selection field, split only selected edges
+      // For now, still split all (proper per-edge selection would need edge element context)
+      geometry = geometry.toNonIndexed();
+      geometry.computeVertexNormals();
+    } else {
+      geometry = geometry.toNonIndexed();
+      geometry.computeVertexNormals();
+    }
   }
 
   // Merge vertices by distance
@@ -594,19 +629,29 @@ export function buildGeometry(geoData) {
     geometry = computeDualMesh(geometry);
   }
 
-  // Points to vertices (tag for mesh rendering instead of points)
+  // Points to vertices: convert point cloud to mesh vertices (no faces)
   if (geoData.pointsToVertices) {
-    // Convert points to a mesh by connecting nearby points with faces
-    // For now, just ensure the geometry has normals so it renders as mesh
-    if (!geometry.index) {
-      const count = geometry.getAttribute('position')?.count || 0;
-      const idx = [];
-      for (let i = 0; i + 2 < count; i += 3) {
-        idx.push(i, i + 1, i + 2);
-      }
-      if (idx.length > 0) geometry.setIndex(idx);
+    // Just ensure geometry has normals for rendering; no index/faces needed
+    if (geometry.index) {
+      // Remove any existing index to make it vertex-only
+      geometry.setIndex(null);
     }
-    if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+    if (!geometry.getAttribute('normal')) {
+      // Set default up normals for point rendering
+      const count = geometry.getAttribute('position')?.count || 0;
+      const normals = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        normals[i * 3 + 1] = 1; // Y-up normal
+      }
+      geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    }
+  }
+
+  // Realize instances flag is consumed by the builder - instances are always
+  // realized into concrete geometry during buildGeometry
+  // (No additional action needed - just consume the flag so it doesn't warn)
+  if (geoData.realized) {
+    // Already realized during instance_on_points build above
   }
 
   // Mesh to curve: extract boundary/edge loop as line geometry
@@ -1111,11 +1156,19 @@ function computeConvexHull(geo) {
   const posAttr = geo.getAttribute('position');
   if (!posAttr || posAttr.count < 4) return geo;
 
-  // Collect unique vertices
-  const verts = [];
+  // Deduplicate vertices
+  const uniqueVerts = [];
+  const seen = new Set();
   for (let i = 0; i < posAttr.count; i++) {
-    verts.push({ x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) });
+    const x = posAttr.getX(i), y = posAttr.getY(i), z = posAttr.getZ(i);
+    const key = `${x.toFixed(8)},${y.toFixed(8)},${z.toFixed(8)}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueVerts.push({ x, y, z });
+    }
   }
+  const verts = uniqueVerts;
+  if (verts.length < 4) return geo;
 
   // Find initial tetrahedron (4 non-coplanar points)
   let p0 = 0, p1 = -1, p2 = -1, p3 = -1;
@@ -1181,15 +1234,20 @@ function computeConvexHull(geo) {
     if (visible.length === 0) continue;
     used.add(i);
 
-    // Find horizon edges (edges shared by exactly one visible face)
+    // Find horizon edges — edges with exactly one visible face
     const edgeCount = new Map();
     for (const fi of visible) {
       const f = faces[fi];
       for (let j = 0; j < 3; j++) {
         const a = f[j], b = f[(j + 1) % 3];
-        const key = Math.min(a, b) + ',' + Math.max(a, b);
-        const dir = a < b ? 1 : -1;
-        edgeCount.set(key, (edgeCount.get(key) || 0) + dir);
+        // Store directed edge a→b
+        const key = a + ',' + b;
+        const reverseKey = b + ',' + a;
+        if (edgeCount.has(reverseKey)) {
+          edgeCount.delete(reverseKey); // shared edge, remove both
+        } else {
+          edgeCount.set(key, [a, b]);
+        }
       }
     }
 
@@ -1198,12 +1256,8 @@ function computeConvexHull(geo) {
     for (const fi of visible) faces.splice(fi, 1);
 
     // Create new faces from horizon edges to new point
-    for (const fi of [...Array(faces.length + visible.length).keys()].slice(faces.length - faces.length)) { /* skip */ }
-    for (const [key, count] of edgeCount) {
-      if (Math.abs(count) !== 1) continue; // only horizon edges
-      const [a, b] = key.split(',').map(Number);
-      if (count > 0) faces.push([a, b, i]);
-      else faces.push([b, a, i]);
+    for (const [, [a, b]] of edgeCount) {
+      faces.push([b, a, i]); // reverse winding to face outward
     }
   }
 
@@ -1794,6 +1848,160 @@ export function computeMeshAnalysis(geoData) {
 
   geo.dispose();
   return result;
+}
+
+/**
+ * Compute mesh topology analysis returning per-element arrays (Fields-compatible).
+ * Unlike computeMeshAnalysis which returns averages, this returns typed arrays
+ * indexed by element index for use with the Field system.
+ */
+export function computeMeshAnalysisField(geoData) {
+  if (!geoData) return null;
+  const item = Array.isArray(geoData) ? geoData[0] : geoData;
+  if (!item) return null;
+  const geo = buildGeometry(item);
+  if (!geo) return null;
+  const posAttr = geo.getAttribute('position');
+  if (!posAttr) { geo.dispose(); return null; }
+
+  const vertexCount = posAttr.count;
+
+  // Non-indexed geometry: simpler path
+  if (!geo.index) {
+    const faceCount = Math.floor(posAttr.count / 3);
+    const edgeCount = faceCount * 3; // non-unique edges for non-indexed
+
+    const faceAreas = new Float32Array(faceCount);
+    const faceVertexCounts = new Int32Array(faceCount);
+    const faceNeighborFaces = new Int32Array(faceCount);
+
+    for (let f = 0; f < faceCount; f++) {
+      const ai = f * 3, bi = f * 3 + 1, ci = f * 3 + 2;
+      const abx = posAttr.getX(bi) - posAttr.getX(ai), aby = posAttr.getY(bi) - posAttr.getY(ai), abz = posAttr.getZ(bi) - posAttr.getZ(ai);
+      const acx = posAttr.getX(ci) - posAttr.getX(ai), acy = posAttr.getY(ci) - posAttr.getY(ai), acz = posAttr.getZ(ci) - posAttr.getZ(ai);
+      const nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
+      faceAreas[f] = Math.sqrt(nx * nx + ny * ny + nz * nz) * 0.5;
+      faceVertexCounts[f] = 3;
+      faceNeighborFaces[f] = 0; // no adjacency info for non-indexed
+    }
+
+    // For non-indexed geometry, edges/vertices have no shared topology
+    const edgeAngles = new Float32Array(edgeCount).fill(Math.PI);
+    const signedEdgeAngles = new Float32Array(edgeCount).fill(Math.PI);
+    const edgeNeighborFaces = new Int32Array(edgeCount).fill(1);
+    const vertexNeighborVerts = new Int32Array(vertexCount).fill(0);
+    const vertexNeighborFaces = new Int32Array(vertexCount).fill(0);
+
+    geo.dispose();
+    return {
+      edgeAngles, signedEdgeAngles, edgeNeighborFaces, edgeCount,
+      faceAreas, faceVertexCounts, faceNeighborFaces, faceCount,
+      vertexNeighborVerts, vertexNeighborFaces, vertexCount,
+    };
+  }
+
+  // Indexed geometry
+  const idxCount = geo.index.count;
+  const triCount = Math.floor(idxCount / 3);
+
+  // Per-face data
+  const faceAreas = new Float32Array(triCount);
+  const faceVertexCounts = new Int32Array(triCount);
+  const faceNormals = [];
+
+  for (let f = 0; f < triCount; f++) {
+    const a = geo.index.getX(f * 3), b = geo.index.getX(f * 3 + 1), c = geo.index.getX(f * 3 + 2);
+    const abx = posAttr.getX(b) - posAttr.getX(a), aby = posAttr.getY(b) - posAttr.getY(a), abz = posAttr.getZ(b) - posAttr.getZ(a);
+    const acx = posAttr.getX(c) - posAttr.getX(a), acy = posAttr.getY(c) - posAttr.getY(a), acz = posAttr.getZ(c) - posAttr.getZ(a);
+    const nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
+    const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    faceAreas[f] = len * 0.5;
+    faceVertexCounts[f] = 3;
+    faceNormals.push(len > 0 ? { x: nx / len, y: ny / len, z: nz / len } : { x: 0, y: 1, z: 0 });
+  }
+
+  // Build edge map: edge → [face indices]
+  const edgeMap = new Map();
+  for (let f = 0; f < triCount; f++) {
+    const a = geo.index.getX(f * 3), b = geo.index.getX(f * 3 + 1), c = geo.index.getX(f * 3 + 2);
+    for (const [v0, v1] of [[a, b], [b, c], [a, c]]) {
+      const key = Math.min(v0, v1) + ',' + Math.max(v0, v1);
+      if (!edgeMap.has(key)) edgeMap.set(key, []);
+      edgeMap.get(key).push(f);
+    }
+  }
+  const edgeCount = edgeMap.size;
+
+  // Per-edge data
+  const edgeAngles = new Float32Array(edgeCount);
+  const signedEdgeAngles = new Float32Array(edgeCount);
+  const edgeNeighborFaces = new Int32Array(edgeCount);
+
+  let edgeIdx = 0;
+  for (const faces of edgeMap.values()) {
+    edgeNeighborFaces[edgeIdx] = faces.length;
+    if (faces.length === 2) {
+      const n1 = faceNormals[faces[0]], n2 = faceNormals[faces[1]];
+      const dot = n1.x * n2.x + n1.y * n2.y + n1.z * n2.z;
+      const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+      edgeAngles[edgeIdx] = angle;
+      signedEdgeAngles[edgeIdx] = angle; // signed = unsigned for now
+    } else {
+      edgeAngles[edgeIdx] = Math.PI;
+      signedEdgeAngles[edgeIdx] = Math.PI;
+    }
+    edgeIdx++;
+  }
+
+  // Vertex neighbor counts
+  const vertNeighborVertsMap = new Map();
+  const vertNeighborFacesMap = new Map();
+  for (let f = 0; f < triCount; f++) {
+    const a = geo.index.getX(f * 3), b = geo.index.getX(f * 3 + 1), c = geo.index.getX(f * 3 + 2);
+    for (const v of [a, b, c]) {
+      if (!vertNeighborFacesMap.has(v)) vertNeighborFacesMap.set(v, new Set());
+      vertNeighborFacesMap.get(v).add(f);
+      if (!vertNeighborVertsMap.has(v)) vertNeighborVertsMap.set(v, new Set());
+    }
+    vertNeighborVertsMap.get(a).add(b); vertNeighborVertsMap.get(a).add(c);
+    vertNeighborVertsMap.get(b).add(a); vertNeighborVertsMap.get(b).add(c);
+    vertNeighborVertsMap.get(c).add(a); vertNeighborVertsMap.get(c).add(b);
+  }
+
+  const vertexNeighborVerts = new Int32Array(vertexCount);
+  const vertexNeighborFaces = new Int32Array(vertexCount);
+  for (let v = 0; v < vertexCount; v++) {
+    const vs = vertNeighborVertsMap.get(v);
+    const fs = vertNeighborFacesMap.get(v);
+    vertexNeighborVerts[v] = vs ? vs.size : 0;
+    vertexNeighborFaces[v] = fs ? fs.size : 0;
+  }
+
+  // Face adjacency (faces sharing an edge)
+  const faceAdjMap = new Map();
+  for (const faces of edgeMap.values()) {
+    for (let i = 0; i < faces.length; i++) {
+      for (let j = i + 1; j < faces.length; j++) {
+        if (!faceAdjMap.has(faces[i])) faceAdjMap.set(faces[i], new Set());
+        if (!faceAdjMap.has(faces[j])) faceAdjMap.set(faces[j], new Set());
+        faceAdjMap.get(faces[i]).add(faces[j]);
+        faceAdjMap.get(faces[j]).add(faces[i]);
+      }
+    }
+  }
+
+  const faceNeighborFaces = new Int32Array(triCount);
+  for (let f = 0; f < triCount; f++) {
+    const adj = faceAdjMap.get(f);
+    faceNeighborFaces[f] = adj ? adj.size : 0;
+  }
+
+  geo.dispose();
+  return {
+    edgeAngles, signedEdgeAngles, edgeNeighborFaces, edgeCount,
+    faceAreas, faceVertexCounts, faceNeighborFaces, faceCount: triCount,
+    vertexNeighborVerts, vertexNeighborFaces, vertexCount,
+  };
 }
 
 /**
