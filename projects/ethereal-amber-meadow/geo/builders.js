@@ -1351,6 +1351,174 @@ export function buildGeometry(geoData) {
     }
   }
 
+  // Apply duplicate elements - per-element duplication with normal offset
+  if (geoData.duplicateElements) {
+    const { amount, domain } = geoData.duplicateElements;
+    if (amount > 0 && domain === 'faces' && geometry.index) {
+      // Face domain: duplicate each triangle, offsetting copies along face normal
+      const posAttr = geometry.getAttribute('position');
+      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      const idxArr = geometry.index.array;
+      const triCount = Math.floor(idxArr.length / 3);
+
+      const newPositions = [];
+      const newIndices = [];
+
+      // Copy original positions
+      for (let i = 0; i < posAttr.count; i++) {
+        newPositions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+      }
+      // Copy original indices
+      for (let i = 0; i < idxArr.length; i++) {
+        newIndices.push(idxArr[i]);
+      }
+
+      // For each duplicate, offset each face along its normal
+      for (let d = 1; d <= amount; d++) {
+        const offsetDist = d * 0.01; // Small offset per duplicate to avoid z-fighting
+        for (let f = 0; f < triCount; f++) {
+          const a = idxArr[f * 3], b = idxArr[f * 3 + 1], c = idxArr[f * 3 + 2];
+
+          // Compute face normal
+          const abx = posAttr.getX(b) - posAttr.getX(a), aby = posAttr.getY(b) - posAttr.getY(a), abz = posAttr.getZ(b) - posAttr.getZ(a);
+          const acx = posAttr.getX(c) - posAttr.getX(a), acy = posAttr.getY(c) - posAttr.getY(a), acz = posAttr.getZ(c) - posAttr.getZ(a);
+          const nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
+          const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+          const fnx = nx / len, fny = ny / len, fnz = nz / len;
+
+          const baseIdx = newPositions.length / 3;
+          newPositions.push(
+            posAttr.getX(a) + fnx * offsetDist, posAttr.getY(a) + fny * offsetDist, posAttr.getZ(a) + fnz * offsetDist,
+            posAttr.getX(b) + fnx * offsetDist, posAttr.getY(b) + fny * offsetDist, posAttr.getZ(b) + fnz * offsetDist,
+            posAttr.getX(c) + fnx * offsetDist, posAttr.getY(c) + fny * offsetDist, posAttr.getZ(c) + fnz * offsetDist
+          );
+          newIndices.push(baseIdx, baseIdx + 1, baseIdx + 2);
+        }
+      }
+
+      geometry.dispose();
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+      geometry.setIndex(newIndices);
+      geometry.computeVertexNormals();
+    } else if (amount > 0 && domain === 'points') {
+      // Vertex domain: duplicate each vertex position with slight offsets
+      const posAttr = geometry.getAttribute('position');
+      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      const normAttr = geometry.getAttribute('normal');
+      const newPositions = [];
+
+      for (let i = 0; i < posAttr.count; i++) {
+        newPositions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+      }
+      for (let d = 1; d <= amount; d++) {
+        const offsetDist = d * 0.01;
+        for (let i = 0; i < posAttr.count; i++) {
+          const nx = normAttr ? normAttr.getX(i) : 0;
+          const ny = normAttr ? normAttr.getY(i) : 1;
+          const nz = normAttr ? normAttr.getZ(i) : 0;
+          newPositions.push(
+            posAttr.getX(i) + nx * offsetDist,
+            posAttr.getY(i) + ny * offsetDist,
+            posAttr.getZ(i) + nz * offsetDist
+          );
+        }
+      }
+
+      geometry.dispose();
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+    } else if (amount > 0) {
+      // Fallback for edges/instances: duplicate the whole geometry with offsets
+      const posAttr = geometry.getAttribute('position');
+      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      const normAttr = geometry.getAttribute('normal');
+      const origCount = posAttr.count;
+      const newPositions = [];
+      const newIndices = [];
+
+      for (let i = 0; i < origCount; i++) {
+        newPositions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+      }
+      if (geometry.index) {
+        const idxArr = geometry.index.array;
+        for (let i = 0; i < idxArr.length; i++) newIndices.push(idxArr[i]);
+
+        for (let d = 1; d <= amount; d++) {
+          const off = d * 0.01;
+          const base = newPositions.length / 3;
+          for (let i = 0; i < origCount; i++) {
+            const nx = normAttr ? normAttr.getX(i) : 0;
+            const ny = normAttr ? normAttr.getY(i) : 1;
+            const nz = normAttr ? normAttr.getZ(i) : 0;
+            newPositions.push(posAttr.getX(i) + nx * off, posAttr.getY(i) + ny * off, posAttr.getZ(i) + nz * off);
+          }
+          for (let i = 0; i < idxArr.length; i++) newIndices.push(idxArr[i] + base);
+        }
+
+        geometry.dispose();
+        geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+        geometry.setIndex(newIndices);
+        geometry.computeVertexNormals();
+      }
+    }
+  }
+
+  // Apply fillet curve - round corners by inserting arc segments
+  if (geoData.filletRadius > 0) {
+    const radius = geoData.filletRadius;
+    const count = geoData.filletCount || 4;
+    const posAttr = geometry.getAttribute('position');
+    if (posAttr && posAttr.count > 2) {
+      const pts = [];
+      // First point
+      pts.push(posAttr.getX(0), posAttr.getY(0), posAttr.getZ(0));
+
+      for (let i = 1; i < posAttr.count - 1; i++) {
+        // Get three consecutive points
+        const prev = { x: posAttr.getX(i - 1), y: posAttr.getY(i - 1), z: posAttr.getZ(i - 1) };
+        const curr = { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) };
+        const next = { x: posAttr.getX(i + 1), y: posAttr.getY(i + 1), z: posAttr.getZ(i + 1) };
+
+        // Direction vectors
+        const d1 = { x: curr.x - prev.x, y: curr.y - prev.y, z: curr.z - prev.z };
+        const d2 = { x: next.x - curr.x, y: next.y - curr.y, z: next.z - curr.z };
+        const l1 = Math.sqrt(d1.x * d1.x + d1.y * d1.y + d1.z * d1.z) || 1;
+        const l2 = Math.sqrt(d2.x * d2.x + d2.y * d2.y + d2.z * d2.z) || 1;
+
+        // Normalized directions
+        const n1 = { x: d1.x / l1, y: d1.y / l1, z: d1.z / l1 };
+        const n2 = { x: d2.x / l2, y: d2.y / l2, z: d2.z / l2 };
+
+        // Offset distance (limited by edge lengths)
+        const offset = Math.min(radius, l1 * 0.4, l2 * 0.4);
+
+        // Start and end of fillet
+        const fStart = { x: curr.x - n1.x * offset, y: curr.y - n1.y * offset, z: curr.z - n1.z * offset };
+        const fEnd = { x: curr.x + n2.x * offset, y: curr.y + n2.y * offset, z: curr.z + n2.z * offset };
+
+        // Interpolate arc segments
+        for (let j = 0; j <= count; j++) {
+          const t = j / count;
+          pts.push(
+            fStart.x + t * (fEnd.x - fStart.x) + (1 - Math.abs(2 * t - 1)) * (curr.x - (fStart.x + fEnd.x) / 2) * 0.5,
+            fStart.y + t * (fEnd.y - fStart.y) + (1 - Math.abs(2 * t - 1)) * (curr.y - (fStart.y + fEnd.y) / 2) * 0.5,
+            fStart.z + t * (fEnd.z - fStart.z) + (1 - Math.abs(2 * t - 1)) * (curr.z - (fStart.z + fEnd.z) / 2) * 0.5
+          );
+        }
+      }
+
+      // Last point
+      const last = posAttr.count - 1;
+      pts.push(posAttr.getX(last), posAttr.getY(last), posAttr.getZ(last));
+
+      geometry.dispose();
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    }
+  }
+
   return geometry;
 }
 

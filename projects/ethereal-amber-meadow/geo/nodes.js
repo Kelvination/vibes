@@ -2958,12 +2958,11 @@ registry.addNodes('geo', {
       const geo = inputs['Geometry'];
       const amount = inputs['Amount'] ?? values.amount;
       if (!geo) return { outputs: [null, 0] };
-      // Create array of duplicated geometry
-      const result = [];
-      for (let i = 0; i <= amount; i++) {
-        result.push(...geoToArray(cloneGeo(geo)));
-      }
-      return { outputs: [result.length > 0 ? result : null, amount] };
+      // Pass duplication parameters to the builder for per-element duplication
+      return { outputs: [mapGeo(geo, g => {
+        g.duplicateElements = { amount: amount || 1, domain: values.domain || 'faces' };
+        return g;
+      }), amount] };
     },
   },
 
@@ -3410,7 +3409,9 @@ registry.addNodes('geo', {
       const radius = inputs['Radius'] ?? values.radius;
       if (!curve) return { outputs: [null] };
       return { outputs: [mapGeo(curve, g => {
-        g.fillet = { count, radius, mode: values.mode };
+        g.filletRadius = radius;
+        g.filletCount = count || 4;
+        g.filletMode = values.mode || 'bezier';
         return g;
       })] };
     },
