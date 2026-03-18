@@ -7,7 +7,7 @@
 ## Session Maintenance Instructions
 
 **Before EVERY session:**
-1. Read through `geo/nodes.js` and identify all registered node keys and their labels
+1. Read through the v2 node modules (`geo/nodes_v2_*.js`) and identify all registered node keys and their labels
 2. Cross-reference against this checklist
 3. Uncheck any items that were removed or broken since last session
 4. Note any discrepancies at the bottom in the Session Log section
@@ -20,7 +20,7 @@
 5. Commit this file alongside your code changes
 
 **How to verify a node is "implemented":**
-- It must be registered in `geo/nodes.js` via `registry.addNodes('geo', { ... })`
+- It must be registered in the appropriate `geo/nodes_v2_*.js` module via `registry.addNode('geo', ...)`
 - It must have a working `evaluate()` function
 - It must have correct inputs, outputs, and at minimum its core functionality
 
@@ -429,7 +429,7 @@
 
 ### 2026-02-10 -- Initial Audit
 - Created this checklist from full Blender 4.4 node catalog
-- Audited `geo/nodes.js` against all known geometry nodes
+- Audited geometry node modules against all known geometry nodes
 - 59 nodes implemented, 189 remaining
 - Note: Torus is a custom addition not in standard Blender Geometry Nodes
 - Note: Switch has custom Float and Vector variants beyond standard Blender Switch

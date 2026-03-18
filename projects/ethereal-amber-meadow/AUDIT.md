@@ -54,16 +54,13 @@
 
 ## Key Findings
 
-### 1. Fundamental: No Field Evaluation System
-The biggest systemic issue. Blender nodes like Position, Normal, Index, and all mesh read
-nodes produce **lazy per-element fields** evaluated downstream. This project evaluates
-everything as **single scalar/vector values**, which fundamentally breaks how many nodes work.
-
-**Update:** A basic field evaluation system has been implemented in `core/field.js`. Field-producing
-nodes (Position, Normal, Index), field-propagating nodes (math, vector_math, separate/combine_xyz,
-boolean_math, compare, float_to_int), and field-consuming nodes (set_position, delete_geometry,
-separate_geometry) now support per-element field evaluation. Many mesh read nodes still need
-to be converted to use this system.
+### 1. Field Evaluation System — Implemented
+The field evaluation system is implemented in `core/field.js`. Field-producing nodes
+(Position, Normal, Index), field-propagating nodes (math, vector_math, separate/combine_xyz,
+compare, clamp, map_range), and field-consuming nodes (set_position, delete_geometry)
+support per-element field evaluation. The v2 modular architecture
+(`geo/nodes_v2_primitives.js`, `geo/nodes_v2_operations.js`, `geo/nodes_v2_fields.js`,
+`geo/nodes_v2_curves.js`) operates on real geometry data via `core/geometry.js`.
 
 ### 2. Best Nodes (Score 8-10)
 Simple math and constant nodes that don't depend on per-element evaluation:
@@ -78,10 +75,10 @@ No nodes remain at score 1.
 `mesh_torus` (3), `switch_float` (3), `switch_vector` (3) don't exist in Blender's
 geometry node set.
 
-### 5. Flag-Based Deferral Pattern
-Many operation nodes set flags (e.g., `convexHull=true`, `dualMesh=true`) and defer to
-the builder. Most builders now have real implementations (extrude_mesh, scale_elements,
-subdivide, curve_to_mesh). Remaining gaps: mesh_boolean (approximation only), fillet_curve (poly only).
+### 5. Builder Pattern
+Operation nodes delegate heavy computation to `geo/builders.js`. Most builders have real
+implementations (extrude_mesh, scale_elements, subdivide, curve_to_mesh). Remaining gaps:
+mesh_boolean (approximation only), fillet_curve (poly only).
 
 ---
 
@@ -369,12 +366,12 @@ Score  3:  3 nodes (mesh_torus*, switch_float*, switch_vector*)  *non-Blender no
 
 1. **~~Implement a basic field evaluation system~~** ✅ Done — `core/field.js` now provides lazy per-element field evaluation for Position, Normal, Index, math nodes, and consumer nodes
 2. **Fix extrude_mesh** — one of the most commonly used nodes; doesn't actually extrude (Effort: L)
-3. **Implement sample_curve** — currently fully stubbed, widely used in curve workflows (Effort: L)
+3. ~~**Implement sample_curve**~~ ✅ Done — arc-length parameterized sampling in `nodes_v2_curves.js`
 4. **Add CSG library for mesh_boolean** — currently a no-op (Effort: L)
 
 ### Medium Impact
 
-5. ~~Fix delete_geometry / separate_geometry for per-element operation~~ ✅ Done via field system
+5. ~~**Fix delete_geometry / separate_geometry for per-element operation**~~ ✅ Done via field system
 6. Add missing math operations (wrap 3rd input, vector_math refract/wrap/modulo) (Effort: S)
 7. Add blend modes to mix_color (at least Multiply, Screen, Overlay, Add) (Effort: L)
 8. Fix scale_elements / extrude_mesh builders for actual topology operations (Effort: M–L)

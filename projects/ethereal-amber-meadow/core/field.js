@@ -62,6 +62,10 @@ export function resolveField(value, elements) {
     return value.evaluateAll(elements);
   }
   // Scalar/vector: repeat for all elements
+  // Clone objects to avoid shared reference mutations
+  if (value !== null && typeof value === 'object') {
+    return Array.from({ length: elements.length }, () => ({ ...value }));
+  }
   return new Array(elements.length).fill(value);
 }
 

@@ -6,8 +6,19 @@
 import { registry } from './core/registry.js';
 import { NodeGraph } from './core/graph.js';
 
-// Import node registrations (side-effect modules)
-import './geo/nodes.js';
+// Import v2 node registrations (real geometry pipeline)
+import { registerPrimitiveNodes } from './geo/nodes_v2_primitives.js';
+import { registerOperationNodes } from './geo/nodes_v2_operations.js';
+import { registerCurveNodes } from './geo/nodes_v2_curves.js';
+import { registerFieldNodes } from './geo/nodes_v2_fields.js';
+
+// Register all v2 geometry nodes
+registerPrimitiveNodes(registry);
+registerOperationNodes(registry);
+registerCurveNodes(registry);
+registerFieldNodes(registry);
+
+// Import shader nodes (unchanged)
 import './shader/nodes.js';
 
 import { GraphRenderer } from './ui/renderer.js';
@@ -78,7 +89,7 @@ import { compileShader } from './shader/compiler.js';
   let pendingDrop = null; // stores connection drop info for context menu
 
   // ===== Graph Version & Storage =====
-  const GRAPH_VERSION = 3;
+  const GRAPH_VERSION = 4; // v2 pipeline: real geometry (GeometrySet) instead of descriptors
 
   function getStorageKey(graphType) {
     return graphType === 'shader' ? 'geonodes_shader_graph' : 'geonodes_graph';
@@ -94,7 +105,7 @@ import { compileShader } from './shader/compiler.js';
 
     if (graph.graphType === 'geo') {
       const cubeNode = graph.addNode('mesh_cube', 50, 100);
-      const transformNode = graph.addNode('transform', 300, 80);
+      const transformNode = graph.addNode('transform_geometry', 300, 80);
       const outputNode = graph.addNode('output', 550, 120);
       if (cubeNode && transformNode && outputNode) {
         graph.addConnection(cubeNode.id, 0, transformNode.id, 0);
