@@ -1,8 +1,8 @@
 /**
  * ui/viewport.js - Three.js 3D viewport for previewing geometry node output.
- * Refactored as ES module using builders from geo/builders.js.
+ * Refactored as ES module. Uses geo/converter.js for GeometrySet → Three.js.
  */
-import { buildMesh } from '../geo/builders.js';
+import { geometrySetToThreeJS } from '../geo/converter.js';
 
 export class Viewport3D {
   constructor(canvas) {
@@ -180,29 +180,38 @@ export class Viewport3D {
   }
 
   // ===== Build geometry from evaluation results =====
-  updateGeometry(geometries) {
-    // Remove old meshes
-    for (const mesh of this.meshes) {
-      this.scene.remove(mesh);
-      if (mesh.geometry) mesh.geometry.dispose();
-      if (mesh.material) mesh.material.dispose();
+  /**
+   * Update the viewport with GeometrySet objects from the new v2 pipeline.
+   * @param {GeometrySet[]} geometrySets - Array of GeometrySet instances
+   */
+  updateGeometry(geometrySets) {
+    // Remove old objects
+    for (const obj of this.meshes) {
+      this.scene.remove(obj);
+      obj.traverse(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+          else child.material.dispose();
+        }
+      });
     }
     this.meshes = [];
 
-    if (!geometries || geometries.length === 0) return { verts: 0, faces: 0 };
+    if (!geometrySets || geometrySets.length === 0) return { verts: 0, faces: 0 };
 
     let totalVerts = 0;
     let totalFaces = 0;
 
-    for (const geo of geometries) {
-      if (!geo) continue;
-      const result = buildMesh(geo, this.wireframeMode);
-      if (result) {
-        this.scene.add(result.mesh);
-        this.meshes.push(result.mesh);
-        totalVerts += result.verts;
-        totalFaces += result.faces;
+    for (const gs of geometrySets) {
+      if (!gs) continue;
+      const result = geometrySetToThreeJS(gs, this.wireframeMode);
+      for (const obj of result.objects) {
+        this.scene.add(obj);
+        this.meshes.push(obj);
       }
+      totalVerts += result.verts;
+      totalFaces += result.faces;
     }
 
     return { verts: totalVerts, faces: totalFaces };

@@ -189,7 +189,7 @@ export class NodeGraph {
       };
     }
 
-    // Geometry graph
+    // Geometry graph - v2 pipeline returns GeometrySet objects
     const geoData = outputResult?.geometry;
     let geometries = [];
     if (geoData) {
@@ -201,6 +201,8 @@ export class NodeGraph {
       error: errors.length > 0 ? errors.join('; ') : null,
       evalTime,
     };
+    // Note: geometries[] now contains GeometrySet instances (not descriptors)
+    // The viewport uses geo/converter.js to convert them to Three.js objects
   }
 
   toJSON() {
