@@ -781,6 +781,22 @@ import { compileShader } from './shader/compiler.js';
   }
 
   // ===== Renderer callbacks =====
+  function clearGraph() {
+    if (!confirm('Clear all nodes? This cannot be undone.')) return;
+    activeGraph.nodes = [];
+    activeGraph.connections = [];
+    activeGraph.nextId = 1;
+    activeGraph.undoStack = [];
+    // Re-add output node
+    const outputType = activeGraphType === 'shader' ? 'shader_output' : 'output';
+    activeGraph.addNode(outputType, 200, 100);
+    renderer.selectedNode = null;
+    closeProperties();
+    statusText.textContent = 'Graph cleared';
+    saveGraph();
+    renderer.zoomToFit();
+  }
+
   function setupRendererCallbacks() {
     renderer.onNodeSelected = (node) => {
       if (!node) return;
@@ -799,6 +815,89 @@ import { compileShader } from './shader/compiler.js';
     renderer.onConnectionDropped = (info) => {
       openDropMenu(info);
     };
+
+    renderer.onNodeValueChanged = () => {
+      saveGraph();
+      autoRun();
+    };
+
+    renderer.onEmptyDoubleTap = (info) => {
+      // Open the add-node drop menu at the cursor position
+      openAddMenuAt(info);
+    };
+  }
+
+  /** Open add-node menu at a specific screen/world position (for double-click on empty space). */
+  function openAddMenuAt(info) {
+    // Reuse the drop menu UI but show ALL nodes (not filtered by socket type)
+    pendingDrop = null; // no auto-connect
+    const nodeTypes = registry.getNodeTypes(activeGraphType);
+    const categories = registry.getCategories(activeGraphType);
+    const outputTypeId = activeGraphType === 'shader' ? 'shader_output' : 'output';
+
+    const allItems = [];
+    for (const [typeId, def] of Object.entries(nodeTypes)) {
+      if (typeId === outputTypeId) continue;
+      allItems.push({ typeId, def });
+    }
+
+    if (allItems.length === 0) return;
+
+    const menuW = 240, menuH = 360;
+    let left = info.screenX;
+    let top = info.screenY;
+    if (left + menuW > window.innerWidth) left = window.innerWidth - menuW - 8;
+    if (top + menuH > window.innerHeight) top = window.innerHeight - menuH - 8;
+    if (left < 4) left = 4;
+    if (top < 4) top = 4;
+    dropMenu.style.left = left + 'px';
+    dropMenu.style.top = top + 'px';
+
+    dropMenuSearch.value = '';
+
+    const buildList = (filter) => {
+      dropMenuItems.innerHTML = '';
+      const lf = filter.toLowerCase();
+      const grouped = {};
+      for (const item of allItems) {
+        if (lf && !item.def.label.toLowerCase().includes(lf)) continue;
+        const cat = item.def.category;
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(item);
+      }
+      for (const [catId, items] of Object.entries(grouped)) {
+        const catDef = categories[catId];
+        if (!catDef) continue;
+        const catEl = document.createElement('div');
+        catEl.className = 'drop-menu-cat';
+        catEl.textContent = catDef.name;
+        dropMenuItems.appendChild(catEl);
+        for (const item of items) {
+          const el = document.createElement('div');
+          el.className = 'drop-menu-item';
+          el.innerHTML = `<div class="dmi-icon" style="background:${catDef.color}">${catDef.icon}</div>${item.def.label}`;
+          el.addEventListener('click', () => {
+            const x = info.worldX - renderer.nodeWidth / 2;
+            const y = info.worldY - 30;
+            const node = activeGraph.addNode(item.typeId, x, y);
+            if (node) {
+              renderer.selectedNode = node.id;
+              statusText.textContent = `Added ${item.def.label}`;
+              saveGraph();
+              autoRun();
+            }
+            closeDropMenu();
+          });
+          dropMenuItems.appendChild(el);
+        }
+      }
+    };
+
+    buildList('');
+    dropMenu.classList.remove('hidden');
+    dropMenuOverlay.classList.remove('hidden');
+    setTimeout(() => dropMenuSearch.focus(), 50);
+    dropMenuSearch.oninput = () => buildList(dropMenuSearch.value);
   }
 
   // ===== Event Bindings =====
@@ -917,6 +1016,13 @@ import { compileShader } from './shader/compiler.js';
       case ' ':
         e.preventDefault();
         runGraph();
+        break;
+      case 'x':
+      case 'X':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          clearGraph();
+        }
         break;
       case '1':
         switchTab('geo');

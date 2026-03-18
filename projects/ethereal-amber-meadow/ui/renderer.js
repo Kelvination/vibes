@@ -1,6 +1,6 @@
 /**
  * ui/renderer.js - Canvas-based node graph renderer with touch support.
- * Refactored as ES module using the shared registry.
+ * Features Blender-style inline value fields on unconnected inputs.
  */
 import { registry, SocketColors } from '../core/registry.js';
 import { NodeGraph } from '../core/graph.js';
@@ -17,11 +17,11 @@ export class GraphRenderer {
     this.zoom = 1;
 
     // Node layout constants
-    this.nodeWidth = 160;
-    this.nodeHeaderH = 28;
-    this.socketRowH = 22;
+    this.nodeWidth = 180;
+    this.nodeHeaderH = 26;
+    this.socketRowH = 24;
     this.socketSize = 6;
-    this.nodePadding = 8;
+    this.nodePadding = 6;
 
     // Interaction state
     this.dragging = null;
@@ -31,16 +31,22 @@ export class GraphRenderer {
     this.hoveredSocket = null;
     this.pinchDist = null;
 
+    // Inline value scrubbing state
+    this.scrubbing = null; // { nodeId, propKey, startX, startVal, step, min, max, propType }
+
     // Touch tracking
     this.lastTouchPos = null;
     this.touchStartTime = 0;
     this.lastTapTime = 0;
+    this.lastTapPos = null;
 
     // Callbacks
     this.onNodeSelected = null;
     this.onNodeDoubleTap = null;
     this.onConnectionMade = null;
     this.onConnectionDropped = null;
+    this.onNodeValueChanged = null;
+    this.onEmptyDoubleTap = null;
     this.onStatusUpdate = null;
 
     this._setupEvents();
@@ -104,6 +110,36 @@ export class GraphRenderer {
     return { x, y };
   }
 
+  /** Get the bounding box of the inline value field for an input socket. */
+  _getValueFieldRect(node, socketIdx) {
+    const x = node.x + this.socketSize + 4;
+    const rowY = node.y + this.nodeHeaderH + socketIdx * this.socketRowH;
+    const fieldW = this.nodeWidth - this.socketSize * 2 - 8;
+    return { x, y: rowY + 2, w: fieldW, h: this.socketRowH - 4 };
+  }
+
+  /** Find which property key corresponds to an input socket by matching names. */
+  _getInputPropKey(node, def, socketIdx) {
+    const inp = def.inputs[socketIdx];
+    if (!inp || !def.props) return null;
+    // Match by input name to prop key (common patterns)
+    const name = inp.name;
+    for (const p of def.props) {
+      if (p.label === name) return p;
+      // Match "Value" → "value", "Value2" → "value2", etc.
+      if (p.key === name.toLowerCase()) return p;
+      if (p.key === name.toLowerCase().replace(/ /g, '')) return p;
+    }
+    // Try matching first input to first numeric prop, second to second, etc.
+    const numericProps = def.props.filter(p => p.type === 'float' || p.type === 'int');
+    const numericInputs = def.inputs.filter(i => i.type === 'float' || i.type === 'int' || i.type === 'bool');
+    const inputIdx = numericInputs.indexOf(inp);
+    if (inputIdx >= 0 && inputIdx < numericProps.length) {
+      return numericProps[inputIdx];
+    }
+    return null;
+  }
+
   hitTestNode(wx, wy) {
     for (let i = this.graph.nodes.length - 1; i >= 0; i--) {
       const node = this.graph.nodes[i];
@@ -133,6 +169,34 @@ export class GraphRenderer {
         const pos = this.getSocketPos(node, false, i);
         if (Math.abs(wx - pos.x) < hitR && Math.abs(wy - pos.y) < hitR) {
           return { nodeId: node.id, socketIdx: i, isOutput: false, type: def.inputs[i].type };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Hit-test inline value fields on unconnected inputs. Returns { node, socketIdx, prop } or null. */
+  hitTestValueField(wx, wy) {
+    for (let ni = this.graph.nodes.length - 1; ni >= 0; ni--) {
+      const node = this.graph.nodes[ni];
+      if (node.collapsed) continue;
+      const def = this.graph.getNodeDef(node);
+      if (!def) continue;
+
+      for (let i = 0; i < def.inputs.length; i++) {
+        const connected = this.graph.getInputConnection(node.id, i);
+        if (connected) continue;
+
+        const inp = def.inputs[i];
+        if (inp.type !== 'float' && inp.type !== 'int') continue;
+
+        const prop = this._getInputPropKey(node, def, i);
+        if (!prop) continue;
+
+        const rect = this._getValueFieldRect(node, i);
+        if (wx >= rect.x && wx <= rect.x + rect.w &&
+            wy >= rect.y && wy <= rect.y + rect.h) {
+          return { node, socketIdx: i, prop };
         }
       }
     }
@@ -171,6 +235,7 @@ export class GraphRenderer {
       this.pinchCenter = { x: (t1.x + t2.x) / 2, y: (t1.y + t2.y) / 2 };
       this.dragging = null;
       this.connecting = null;
+      this.scrubbing = null;
       return;
     }
 
@@ -190,6 +255,22 @@ export class GraphRenderer {
       return;
     }
 
+    // Check for value field hit (scrub)
+    const vf = this.hitTestValueField(world.x, world.y);
+    if (vf) {
+      this.scrubbing = {
+        nodeId: vf.node.id,
+        propKey: vf.prop.key,
+        startX: pos.x,
+        startVal: vf.node.values[vf.prop.key] ?? 0,
+        step: vf.prop.step ?? 0.1,
+        min: vf.prop.min ?? -10000,
+        max: vf.prop.max ?? 10000,
+        propType: vf.prop.type,
+      };
+      return;
+    }
+
     const node = this.hitTestNode(world.x, world.y);
     if (node) {
       const now = Date.now();
@@ -199,6 +280,7 @@ export class GraphRenderer {
         return;
       }
       this.lastTapTime = now;
+      this.lastTapPos = { x: pos.x, y: pos.y };
 
       this.selectedNode = node.id;
       if (this.onNodeSelected) this.onNodeSelected(node);
@@ -219,6 +301,21 @@ export class GraphRenderer {
       };
       this.touchStartTime = Date.now();
     } else {
+      // Empty space tap
+      const now = Date.now();
+      if (now - this.lastTapTime < 350 && this.lastTapPos &&
+          Math.abs(pos.x - this.lastTapPos.x) < 30 && Math.abs(pos.y - this.lastTapPos.y) < 30) {
+        // Double tap on empty space
+        if (this.onEmptyDoubleTap) {
+          const rect = this.canvas.getBoundingClientRect();
+          this.onEmptyDoubleTap({ screenX: rect.left + pos.x, screenY: rect.top + pos.y, worldX: world.x, worldY: world.y });
+        }
+        this.lastTapTime = 0;
+        this.lastTapPos = null;
+        return;
+      }
+      this.lastTapTime = now;
+      this.lastTapPos = { x: pos.x, y: pos.y };
       this.panning = true;
       this.lastTouchPos = pos;
       this.selectedNode = null;
@@ -253,6 +350,11 @@ export class GraphRenderer {
 
     const pos = this._getTouchPos(e.touches[0]);
 
+    if (this.scrubbing) {
+      this._handleScrub(pos.x);
+      return;
+    }
+
     if (this.connecting) {
       this.connecting.x = pos.x;
       this.connecting.y = pos.y;
@@ -278,6 +380,11 @@ export class GraphRenderer {
   }
 
   _onTouchEnd(e) {
+    if (this.scrubbing) {
+      this.scrubbing = null;
+      return;
+    }
+
     if (this.connecting && e.touches.length === 0) {
       const pos = { x: this.connecting.x, y: this.connecting.y };
       const world = this.screenToWorld(pos.x, pos.y);
@@ -341,6 +448,25 @@ export class GraphRenderer {
       return;
     }
 
+    // Check for value field hit (scrub)
+    const vf = this.hitTestValueField(world.x, world.y);
+    if (vf) {
+      this.scrubbing = {
+        nodeId: vf.node.id,
+        propKey: vf.prop.key,
+        startX: pos.x,
+        startVal: vf.node.values[vf.prop.key] ?? 0,
+        step: vf.prop.step ?? 0.1,
+        min: vf.prop.min ?? -10000,
+        max: vf.prop.max ?? 10000,
+        propType: vf.prop.type,
+      };
+      // Select the node too
+      this.selectedNode = vf.node.id;
+      if (this.onNodeSelected) this.onNodeSelected(vf.node);
+      return;
+    }
+
     const node = this.hitTestNode(world.x, world.y);
     if (node) {
       this.selectedNode = node.id;
@@ -368,6 +494,11 @@ export class GraphRenderer {
 
   _onMouseMove(e) {
     const pos = { x: e.offsetX, y: e.offsetY };
+
+    if (this.scrubbing) {
+      this._handleScrub(pos.x);
+      return;
+    }
 
     if (this.connecting) {
       this.connecting.x = pos.x;
@@ -397,6 +528,11 @@ export class GraphRenderer {
   }
 
   _onMouseUp(e) {
+    if (this.scrubbing) {
+      this.scrubbing = null;
+      return;
+    }
+
     if (this.connecting) {
       const pos = { x: e.offsetX, y: e.offsetY };
       const world = this.screenToWorld(pos.x, pos.y);
@@ -417,7 +553,6 @@ export class GraphRenderer {
         this.graph.addConnection(from.nodeId, from.socketIdx, to.nodeId, to.socketIdx);
         if (this.onConnectionMade) this.onConnectionMade();
       } else if (!socket && this.onConnectionDropped) {
-        // Dropped into empty space - fire callback for context menu
         const rect = this.canvas.getBoundingClientRect();
         this.onConnectionDropped({
           fromNode: this.connecting.fromNode,
@@ -453,8 +588,31 @@ export class GraphRenderer {
     const pos = { x: e.offsetX, y: e.offsetY };
     const world = this.screenToWorld(pos.x, pos.y);
     const node = this.hitTestNode(world.x, world.y);
-    if (node && this.onNodeDoubleTap) {
-      this.onNodeDoubleTap(node);
+    if (node) {
+      if (this.onNodeDoubleTap) this.onNodeDoubleTap(node);
+    } else {
+      // Double click on empty space
+      if (this.onEmptyDoubleTap) {
+        this.onEmptyDoubleTap({ screenX: e.clientX, screenY: e.clientY, worldX: world.x, worldY: world.y });
+      }
+    }
+  }
+
+  // ===== Value scrubbing =====
+  _handleScrub(screenX) {
+    if (!this.scrubbing) return;
+    const s = this.scrubbing;
+    const deltaPixels = screenX - s.startX;
+    const sensitivity = s.step * 0.5;
+    let newVal = s.startVal + deltaPixels * sensitivity;
+    newVal = Math.max(s.min, Math.min(s.max, newVal));
+    if (s.propType === 'int') newVal = Math.round(newVal);
+    else newVal = Math.round(newVal * 1000) / 1000;
+
+    const node = this.graph.nodes.find(n => n.id === s.nodeId);
+    if (node) {
+      this.graph.setNodeValue(s.nodeId, s.propKey, newVal);
+      if (this.onNodeValueChanged) this.onNodeValueChanged(node);
     }
   }
 
@@ -663,9 +821,9 @@ export class GraphRenderer {
         const sx = x;
         const sy = rowY + this.socketRowH / 2;
         const color = SocketColors[inp.type] || '#90a4ae';
-
         const connected = this.graph.getInputConnection(node.id, i);
 
+        // Socket circle
         ctx.fillStyle = connected ? color : '#232b3e';
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
@@ -674,7 +832,17 @@ export class GraphRenderer {
         ctx.fill();
         ctx.stroke();
 
-        ctx.fillStyle = '#bbb';
+        if (!connected && (inp.type === 'float' || inp.type === 'int')) {
+          // Draw Blender-style inline value field
+          const prop = this._getInputPropKey(node, def, i);
+          if (prop) {
+            this._drawValueField(ctx, node, i, inp, prop, rowY);
+            continue; // skip normal label since field draws its own
+          }
+        }
+
+        // Normal label (for connected inputs or non-numeric types)
+        ctx.fillStyle = connected ? '#999' : '#ccc';
         ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
         ctx.textAlign = 'left';
         ctx.fillText(inp.name, sx + this.socketSize + 6, sy + 1);
@@ -701,6 +869,59 @@ export class GraphRenderer {
         ctx.fillText(out.name, sx - this.socketSize - 6, sy + 1);
       }
     }
+
+    ctx.textAlign = 'left';
+  }
+
+  /** Draw Blender-style inline value field for an unconnected numeric input. */
+  _drawValueField(ctx, node, socketIdx, inp, prop, rowY) {
+    const rect = this._getValueFieldRect(node, socketIdx);
+    const val = node.values[prop.key] ?? 0;
+    const isScrubbing = this.scrubbing && this.scrubbing.nodeId === node.id && this.scrubbing.propKey === prop.key;
+
+    // Background bar
+    ctx.fillStyle = isScrubbing ? 'rgba(79,195,247,0.15)' : 'rgba(255,255,255,0.06)';
+    ctx.beginPath();
+    ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 3);
+    ctx.fill();
+
+    // Fill proportion bar (shows value relative to min/max range)
+    const min = prop.min ?? 0;
+    const max = prop.max ?? 1;
+    const range = max - min;
+    if (range > 0) {
+      const frac = Math.max(0, Math.min(1, (val - min) / range));
+      const barW = frac * rect.w;
+      if (barW > 0) {
+        ctx.fillStyle = isScrubbing ? 'rgba(79,195,247,0.25)' : 'rgba(255,255,255,0.05)';
+        ctx.beginPath();
+        ctx.roundRect(rect.x, rect.y, barW, rect.h, [3, 0, 0, 3]);
+        ctx.fill();
+      }
+    }
+
+    // Border on hover/scrub
+    if (isScrubbing) {
+      ctx.strokeStyle = 'rgba(79,195,247,0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 3);
+      ctx.stroke();
+    }
+
+    // Label on left
+    ctx.fillStyle = '#999';
+    ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(inp.name, rect.x + 4, rect.y + rect.h / 2);
+
+    // Value on right
+    const displayVal = prop.type === 'int' ? Math.round(val).toString() : val.toFixed(2);
+    ctx.fillStyle = '#ddd';
+    ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(displayVal, rect.x + rect.w - 4, rect.y + rect.h / 2);
 
     ctx.textAlign = 'left';
   }
