@@ -1,29 +1,16 @@
 # Shader Nodes Checklist
 
-> Complete list of every Blender Shader Node (as of Blender 4.4), ordered from most commonly used to most rarely used. Checked items are already implemented in this project.
+> Blender Shader Nodes (4.4) implementation status. Checked items are registered in `shader/nodes.js` with working `evaluate()` functions that produce GLSL output via `shader/compiler.js`.
 
 ---
 
-## Session Maintenance Instructions
+## Maintenance
 
-**Before EVERY session:**
-1. Read through `shader/nodes.js` and identify all registered node keys and their labels
-2. Cross-reference against this checklist
-3. Uncheck any items that were removed or broken since last session
-4. Note any discrepancies at the bottom in the Session Log section
-
-**After EVERY session:**
-1. For each node you implemented, change `[ ]` to `[x]` on the corresponding line
-2. If you partially implemented a node (missing features/modes), add `(partial)` after the checkbox
-3. Update the counts in the Progress Summary section below
-4. Add a dated entry to the Session Log at the bottom of this file
-5. Commit this file alongside your code changes
-
-**How to verify a node is "implemented":**
-- It must be registered in `shader/nodes.js` via `registry.addNodes('shader', { ... })`
-- It must have a working `evaluate()` function
-- It must produce correct GLSL output via the shader compiler (`shader/compiler.js`)
-- It must have correct inputs, outputs, and at minimum its core functionality
+**When implementing a node:**
+1. Register it in `shader/nodes.js` via `registry.addNodes('shader', { ... })`
+2. Ensure `evaluate()` returns a shader descriptor compatible with `shader/compiler.js`
+3. Add the node to the shader graph category if needed
+4. Check it off below and update the count
 
 ---
 
@@ -159,27 +146,3 @@
 - [ ] Group Output
 - [ ] Node Group (custom/linked)
 
----
-
-## Session Log
-
-<!-- Add entries here after each session, newest first -->
-
-### 2026-02-10 -- Batch Implementation (25 nodes)
-- Implemented 25 new shader nodes, bringing total from 16 to 41
-- **BSDFs/Materials (8):** Diffuse BSDF, Glossy BSDF, Glass BSDF, Transparent BSDF, Translucent BSDF, Add Shader, Holdout, Background
-- **Inputs (4):** Value (Float), Geometry, Light Path, Layer Weight
-- **Textures (6):** Checker Texture, Gradient Texture, Brick Texture, Wave Texture, Magic Texture, White Noise Texture
-- **Color (4):** Hue/Saturation/Value, Brightness/Contrast, Gamma, Invert Color
-- **Vector (2):** Normal Map, Bump
-- **Converter (1):** Combine XYZ
-- Added new SHADER_CONVERTER category
-- BSDFs approximate via principled material descriptors for preview rendering
-
-### 2026-02-10 -- Initial Audit
-- Created this checklist from full Blender 4.4 shader node catalog
-- Audited `shader/nodes.js` against all known shader nodes
-- 16 nodes implemented, 78 remaining
-- Principled BSDF marked as partial (only supports Base Color, Metallic, Roughness, Normal -- missing Specular, IOR, Transmission, Coat, Sheen, Emission, Alpha, Subsurface, Anisotropic, and other inputs)
-- Noise Texture and Voronoi Texture have simplified parameter sets compared to Blender originals
-- Math and Vector Math nodes share operation sets with their geometry counterparts
