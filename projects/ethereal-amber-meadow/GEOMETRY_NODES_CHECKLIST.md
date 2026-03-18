@@ -1,52 +1,40 @@
 # Geometry Nodes Checklist
 
-> Complete list of every Blender Geometry Node (as of Blender 4.4), ordered from most commonly used to most rarely used. Checked items are already implemented in this project.
+> Blender Geometry Nodes (4.4) implementation status. Checked items exist in the v2 modular architecture (`geo/nodes_v2_*.js`) with working `evaluate()` functions operating on real `GeometrySet` data.
 
 ---
 
-## Session Maintenance Instructions
+## Maintenance
 
-**Before EVERY session:**
-1. Read through the v2 node modules (`geo/nodes_v2_*.js`) and identify all registered node keys and their labels
-2. Cross-reference against this checklist
-3. Uncheck any items that were removed or broken since last session
-4. Note any discrepancies at the bottom in the Session Log section
-
-**After EVERY session:**
-1. For each node you implemented, change `[ ]` to `[x]` on the corresponding line
-2. If you partially implemented a node (missing features/modes), add `(partial)` after the checkbox
-3. Update the counts in the Progress Summary section below
-4. Add a dated entry to the Session Log at the bottom of this file
-5. Commit this file alongside your code changes
-
-**How to verify a node is "implemented":**
-- It must be registered in the appropriate `geo/nodes_v2_*.js` module via `registry.addNode('geo', ...)`
-- It must have a working `evaluate()` function
-- It must have correct inputs, outputs, and at minimum its core functionality
+**When implementing a node:**
+1. Register it in the appropriate `geo/nodes_v2_*.js` module via `registry.addNode('geo', ...)`
+2. Ensure it operates on real geometry (`GeometrySet`, `MeshComponent`, `CurveComponent`)
+3. Support field inputs where applicable (`isField()` / `resolveField()`)
+4. Add a test in `tests/integration/node-pipeline.test.js`
+5. Check it off below and update the count
 
 ---
 
 ## Progress Summary
 
-<!-- UPDATE THESE COUNTS AFTER EVERY SESSION -->
-- **Implemented:** 84 / 248
-- **Remaining:** 164
-- **Last updated:** 2026-02-10
+- **Implemented:** 33 / 248
+- **Remaining:** 215
+- **Last updated:** 2026-03-18
 
 ---
 
 ## Output
 
-- [x] Group Output
-- [x] Viewer (as `viewer`)
+- [x] Group Output (`output`)
+- [ ] Viewer
 
 ## Input -- Constant
 
-- [x] Value (Float)
-- [x] Integer
-- [x] Vector
-- [x] Boolean
-- [x] Color (as `value_color`)
+- [x] Value / Float (`value_float`)
+- [x] Integer (`value_int`)
+- [x] Vector (`value_vector`)
+- [x] Boolean (`value_bool`)
+- [ ] Color
 - [ ] Rotation
 - [ ] String
 - [ ] Material
@@ -55,7 +43,7 @@
 
 ## Input -- Scene
 
-- [x] Scene Time
+- [ ] Scene Time
 - [ ] Object Info
 - [ ] Collection Info
 - [ ] Self Object
@@ -72,22 +60,22 @@
 
 ## Geometry -- Read
 
-- [x] Position
-- [x] Normal
-- [x] Index
+- [x] Position (`position`)
+- [x] Normal (`normal`)
+- [x] Index (`index`)
 - [ ] ID
 - [ ] Named Attribute
 - [ ] Radius
 
 ## Geometry -- Write
 
-- [x] Set Position
+- [x] Set Position (`set_position`)
 - [ ] Set ID
 - [ ] Set Geometry Name
 
 ## Geometry -- Sample
 
-- [x] Geometry Proximity
+- [ ] Geometry Proximity
 - [ ] Raycast
 - [ ] Sample Index
 - [ ] Sample Nearest
@@ -95,14 +83,14 @@
 
 ## Geometry -- Operations
 
-- [x] Transform Geometry
-- [x] Join Geometry
-- [x] Delete Geometry
-- [x] Separate Geometry
-- [x] Bounding Box
-- [x] Merge by Distance
-- [x] Convex Hull
-- [x] Duplicate Elements (as `duplicate_elements`)
+- [x] Transform Geometry (`transform_geometry`)
+- [x] Join Geometry (`join_geometry`)
+- [x] Delete Geometry (`delete_geometry`)
+- [ ] Separate Geometry
+- [ ] Bounding Box
+- [ ] Merge by Distance
+- [ ] Convex Hull
+- [ ] Duplicate Elements
 - [ ] Sort Elements
 - [ ] Geometry to Instance
 - [ ] Separate Components
@@ -111,29 +99,29 @@
 
 ## Mesh Primitives
 
-- [x] Cube
-- [x] UV Sphere
-- [x] Cylinder
-- [x] Cone
-- [x] Grid (Plane)
-- [x] Ico Sphere
-- [x] Torus *(custom addition, not standard Blender node)*
-- [x] Mesh Line
-- [x] Mesh Circle (as `mesh_circle`)
+- [x] Cube (`mesh_cube`)
+- [x] UV Sphere (`mesh_uv_sphere`)
+- [x] Cylinder (`mesh_cylinder`)
+- [x] Cone (`mesh_cone`)
+- [x] Grid / Plane (`mesh_grid`)
+- [x] Ico Sphere (`mesh_ico_sphere`)
+- [x] Torus (`mesh_torus`) *(custom, not standard Blender)*
+- [ ] Mesh Line
+- [ ] Mesh Circle
 
 ## Mesh -- Operations
 
-- [x] Extrude Mesh
-- [x] Subdivision Surface
-- [x] Subdivide Mesh
-- [x] Mesh Boolean
-- [x] Scale Elements
-- [x] Triangulate
-- [x] Dual Mesh
-- [x] Flip Faces
-- [x] Split Edges
-- [x] Mesh to Points
-- [x] Mesh to Curve (as `mesh_to_curve`)
+- [ ] Extrude Mesh
+- [ ] Subdivision Surface
+- [ ] Subdivide Mesh
+- [ ] Mesh Boolean
+- [ ] Scale Elements
+- [ ] Triangulate
+- [ ] Dual Mesh
+- [ ] Flip Faces
+- [ ] Split Edges
+- [ ] Mesh to Points
+- [ ] Mesh to Curve
 - [ ] Mesh to Volume
 - [ ] Edge Paths to Curves
 - [ ] Edge Paths to Selection
@@ -142,25 +130,25 @@
 
 ## Mesh -- Read
 
-- [x] Set Shade Smooth
-- [x] Edge Angle (as `edge_angle`)
-- [x] Edge Neighbors (as `edge_neighbors`)
+- [ ] Set Shade Smooth
+- [ ] Edge Angle
+- [ ] Edge Neighbors
 - [ ] Edge Vertices
 - [ ] Edges to Face Groups
-- [x] Face Area (as `face_area`)
+- [ ] Face Area
 - [ ] Face Group Boundaries
-- [x] Face Neighbors (as `face_neighbors`)
+- [ ] Face Neighbors
 - [ ] Is Edge Smooth
 - [ ] Is Face Planar
 - [ ] Is Face Smooth
 - [ ] Mesh Island
 - [ ] Shortest Edge Paths
-- [x] Vertex Neighbors (as `vertex_neighbors`)
+- [ ] Vertex Neighbors
 
 ## Mesh -- Write
 
-- [x] Set Sharp Edges (as `set_sharp_edges`)
-- [x] Set Sharp Faces (as `set_sharp_faces`)
+- [ ] Set Sharp Edges
+- [ ] Set Sharp Faces
 
 ## Mesh -- Topology
 
@@ -180,25 +168,25 @@
 
 ## Curve -- Primitives
 
-- [x] Curve Circle
-- [x] Curve Line
-- [x] Spiral
-- [x] Arc (as `curve_arc`)
+- [x] Curve Circle (`curve_circle`)
+- [x] Curve Line (`curve_line`)
+- [ ] Spiral
+- [ ] Arc
 - [ ] Bezier Segment
 - [ ] Quadratic Bezier
 - [ ] Quadrilateral
-- [x] Star (as `curve_star`)
+- [ ] Star
 
 ## Curve -- Operations
 
-- [x] Curve to Mesh
-- [x] Resample Curve
-- [x] Fill Curve
-- [x] Curve to Points (as `curve_to_points`)
-- [x] Fillet Curve (as `fillet_curve`)
-- [x] Trim Curve (as `trim_curve`)
-- [x] Reverse Curve (as `reverse_curve`)
-- [ ] Sample Curve
+- [x] Curve to Mesh (`curve_to_mesh`)
+- [x] Resample Curve (`resample_curve`)
+- [x] Sample Curve (`sample_curve`)
+- [ ] Fill Curve
+- [ ] Curve to Points
+- [ ] Fillet Curve
+- [ ] Trim Curve
+- [ ] Reverse Curve
 - [ ] Subdivide Curve
 - [ ] Deform Curves on Surface
 - [ ] Interpolate Curves
@@ -213,7 +201,7 @@
 - [ ] Handle Type Selection
 - [ ] Is Spline Cyclic
 - [ ] Spline Length
-- [x] Spline Parameter (as `spline_parameter`)
+- [ ] Spline Parameter
 - [ ] Spline Resolution
 
 ## Curve -- Write
@@ -223,7 +211,7 @@
 - [ ] Set Curve Tilt
 - [ ] Set Handle Positions
 - [ ] Set Handle Type
-- [x] Set Spline Cyclic (as `set_spline_cyclic`)
+- [ ] Set Spline Cyclic
 - [ ] Set Spline Resolution
 - [ ] Set Spline Type
 
@@ -235,11 +223,11 @@
 
 ## Instances
 
-- [x] Instance on Points
-- [x] Realize Instances
-- [x] Rotate Instances
-- [x] Scale Instances
-- [x] Translate Instances
+- [x] Instance on Points (`instance_on_points`)
+- [x] Realize Instances (`realize_instances`)
+- [ ] Rotate Instances
+- [ ] Scale Instances
+- [ ] Translate Instances
 - [ ] Instance Rotation
 - [ ] Instance Scale
 - [ ] Instance Transform
@@ -248,7 +236,7 @@
 
 ## Point
 
-- [x] Distribute Points on Faces
+- [ ] Distribute Points on Faces
 - [ ] Distribute Points in Volume
 - [ ] Points
 - [ ] Points to Curves
@@ -258,8 +246,8 @@
 
 ## Material
 
-- [x] Set Material (as `set_material`)
-- [x] Material Index (as `material_index`)
+- [ ] Set Material
+- [ ] Material Index
 - [ ] Material Selection
 - [ ] Replace Material
 - [ ] Set Material Index
@@ -275,13 +263,13 @@
 
 ## Utilities -- Math
 
-- [x] Math (27 operations: Add, Subtract, Multiply, Divide, Power, Sqrt, Log, Modulo, Min, Max, Abs, Floor, Ceil, Round, Sin, Cos, Tan, Asin, Acos, Atan, Atan2, Sign, Fraction, Snap, Ping Pong, Wrap, Smooth Min, Smooth Max)
-- [x] Vector Math (20 operations: Add, Subtract, Multiply, Divide, Cross, Dot, Distance, Normalize, Length, Scale, Reflect, Project, Faceforward, Snap, Floor, Ceil, Abs, Min, Max, Sine, Cosine, Tangent)
-- [x] Boolean Math (7 operations: AND, OR, NOT, NAND, NOR, XOR, XNOR)
-- [x] Clamp
-- [x] Map Range
-- [x] Compare
-- [x] Random Value
+- [x] Math (`math`) — 37 operations, field-aware
+- [x] Vector Math (`vector_math`) — 26 operations, field-aware
+- [ ] Boolean Math
+- [x] Clamp (`clamp`)
+- [x] Map Range (`map_range`)
+- [x] Compare (`compare`)
+- [ ] Random Value
 - [ ] Mix (Float/Vector/Color)
 - [ ] Float Curve
 - [ ] Float to Integer
@@ -316,8 +304,8 @@
 
 ## Utilities -- Vector
 
-- [x] Separate XYZ
-- [x] Combine XYZ
+- [x] Separate XYZ (`separate_xyz`)
+- [x] Combine XYZ (`combine_xyz`)
 - [ ] Vector Curves
 - [ ] Vector Rotate
 
@@ -330,25 +318,23 @@
 
 ## Utilities -- General
 
-- [x] Switch (Geometry)
-- [x] Switch -- Float variant *(custom)*
-- [x] Switch -- Vector variant *(custom)*
+- [ ] Switch (Geometry)
 - [ ] Index Switch
 - [ ] Menu Switch
 - [ ] Hash Value (4.3+)
 
 ## Color
 
-- [x] Color Ramp (as `geo_color_ramp`)
-- [x] Combine Color (as `geo_combine_color`)
+- [ ] Color Ramp
+- [ ] Combine Color
 - [ ] Mix Color
-- [x] Separate Color (as `geo_separate_color`)
+- [ ] Separate Color
 
 ## Texture
 
-- [x] Noise Texture
-- [x] Voronoi Texture
-- [x] White Noise Texture
+- [ ] Noise Texture
+- [ ] Voronoi Texture
+- [ ] White Noise Texture
 - [ ] Brick Texture
 - [ ] Checker Texture
 - [ ] Gradient Texture
@@ -401,35 +387,3 @@
 
 - [ ] Group Input
 - [ ] Node Group (custom/linked)
-
----
-
-## Session Log
-
-<!-- Add entries here after each session, newest first -->
-
-### 2026-02-10 -- Batch Implementation (25 nodes)
-- Implemented 25 new geometry nodes, bringing total from 59 to 84
-- **Input (1):** Color
-- **Output (1):** Viewer
-- **Mesh Primitives (1):** Mesh Circle
-- **Mesh Operations (1):** Mesh to Curve
-- **Geometry Operations (1):** Duplicate Elements
-- **Mesh Read (5):** Edge Angle, Edge Neighbors, Face Area, Face Neighbors, Vertex Neighbors
-- **Mesh Write (2):** Set Sharp Edges, Set Sharp Faces
-- **Curve Primitives (2):** Arc, Star
-- **Curve Operations (4):** Curve to Points, Fillet Curve, Trim Curve, Reverse Curve
-- **Curve Read (1):** Spline Parameter
-- **Curve Write (1):** Set Spline Cyclic
-- **Material (2):** Set Material, Material Index
-- **Color (3):** Color Ramp, Combine Color, Separate Color
-- Added new MATERIAL and COLOR categories for geo nodes
-- Added builders for mesh_circle, curve_arc, and curve_star in geo/builders.js
-- Set Material node applies color/metallic/roughness to Three.js material
-
-### 2026-02-10 -- Initial Audit
-- Created this checklist from full Blender 4.4 node catalog
-- Audited geometry node modules against all known geometry nodes
-- 59 nodes implemented, 189 remaining
-- Note: Torus is a custom addition not in standard Blender Geometry Nodes
-- Note: Switch has custom Float and Vector variants beyond standard Blender Switch
