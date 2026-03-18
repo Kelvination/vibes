@@ -234,6 +234,113 @@ describe('Field Node Evaluation', () => {
   });
 });
 
+describe('Boolean Math Node', () => {
+  it('should register boolean_math', () => {
+    assert.ok(registry.getNodeDef('geo', 'boolean_math'));
+  });
+
+  it('AND should return true only when both inputs are true', () => {
+    const def = registry.getNodeDef('geo', 'boolean_math');
+    assert.equal(def.evaluate({ operation: 'AND', a: true, b: true }, {}).outputs[0], true);
+    assert.equal(def.evaluate({ operation: 'AND', a: true, b: false }, {}).outputs[0], false);
+    assert.equal(def.evaluate({ operation: 'AND', a: false, b: false }, {}).outputs[0], false);
+  });
+
+  it('OR should return true when either input is true', () => {
+    const def = registry.getNodeDef('geo', 'boolean_math');
+    assert.equal(def.evaluate({ operation: 'OR', a: false, b: true }, {}).outputs[0], true);
+    assert.equal(def.evaluate({ operation: 'OR', a: false, b: false }, {}).outputs[0], false);
+  });
+
+  it('NOT should negate first input', () => {
+    const def = registry.getNodeDef('geo', 'boolean_math');
+    assert.equal(def.evaluate({ operation: 'NOT', a: true, b: false }, {}).outputs[0], false);
+    assert.equal(def.evaluate({ operation: 'NOT', a: false, b: false }, {}).outputs[0], true);
+  });
+
+  it('XOR should return true when inputs differ', () => {
+    const def = registry.getNodeDef('geo', 'boolean_math');
+    assert.equal(def.evaluate({ operation: 'XOR', a: true, b: false }, {}).outputs[0], true);
+    assert.equal(def.evaluate({ operation: 'XOR', a: true, b: true }, {}).outputs[0], false);
+  });
+});
+
+describe('Random Value Node', () => {
+  it('should register random_value', () => {
+    assert.ok(registry.getNodeDef('geo', 'random_value'));
+  });
+
+  it('should return a Field for per-element randomness', () => {
+    const def = registry.getNodeDef('geo', 'random_value');
+    const result = def.evaluate({ data_type: 'FLOAT', min: 0, max: 1, seed: 42 }, {});
+    assert.ok(isField(result.outputs[0]));
+  });
+
+  it('FLOAT values should be within min/max range', () => {
+    const def = registry.getNodeDef('geo', 'random_value');
+    const result = def.evaluate({ data_type: 'FLOAT', min: 0, max: 1, seed: 0 }, {});
+    const field = result.outputs[0];
+    for (let i = 0; i < 20; i++) {
+      const v = field.evaluateAt({ index: i, count: 20, position: { x: 0, y: 0, z: 0 }, normal: { x: 0, y: 1, z: 0 } });
+      assert.ok(v >= 0 && v <= 1, `Value ${v} out of range [0,1] at index ${i}`);
+    }
+  });
+
+  it('different seeds should produce different values', () => {
+    const def = registry.getNodeDef('geo', 'random_value');
+    const f1 = def.evaluate({ data_type: 'FLOAT', min: 0, max: 1, seed: 0 }, {}).outputs[0];
+    const f2 = def.evaluate({ data_type: 'FLOAT', min: 0, max: 1, seed: 99 }, {}).outputs[0];
+    const el = { index: 0, count: 1, position: { x: 0, y: 0, z: 0 }, normal: { x: 0, y: 1, z: 0 } };
+    assert.notEqual(f1.evaluateAt(el), f2.evaluateAt(el));
+  });
+});
+
+describe('Integer Math Node', () => {
+  it('should register integer_math', () => {
+    assert.ok(registry.getNodeDef('geo', 'integer_math'));
+  });
+
+  it('ADD should add integers', () => {
+    const def = registry.getNodeDef('geo', 'integer_math');
+    assert.equal(def.evaluate({ operation: 'ADD', value: 3, value2: 4 }, {}).outputs[0], 7);
+  });
+
+  it('MULTIPLY should multiply integers', () => {
+    const def = registry.getNodeDef('geo', 'integer_math');
+    assert.equal(def.evaluate({ operation: 'MULTIPLY', value: 3, value2: 4 }, {}).outputs[0], 12);
+  });
+
+  it('MODULO should return remainder', () => {
+    const def = registry.getNodeDef('geo', 'integer_math');
+    assert.equal(def.evaluate({ operation: 'MODULO', value: 7, value2: 3 }, {}).outputs[0], 1);
+  });
+
+  it('DIVIDE should truncate to integer', () => {
+    const def = registry.getNodeDef('geo', 'integer_math');
+    assert.equal(def.evaluate({ operation: 'DIVIDE', value: 7, value2: 2 }, {}).outputs[0], 3);
+  });
+
+  it('DIVIDE by zero should return 0', () => {
+    const def = registry.getNodeDef('geo', 'integer_math');
+    assert.equal(def.evaluate({ operation: 'DIVIDE', value: 7, value2: 0 }, {}).outputs[0], 0);
+  });
+
+  it('GCD should compute greatest common divisor', () => {
+    const def = registry.getNodeDef('geo', 'integer_math');
+    assert.equal(def.evaluate({ operation: 'GCD', value: 12, value2: 8 }, {}).outputs[0], 4);
+  });
+
+  it('ABS should return absolute value', () => {
+    const def = registry.getNodeDef('geo', 'integer_math');
+    assert.equal(def.evaluate({ operation: 'ABS', value: -5, value2: 0 }, {}).outputs[0], 5);
+  });
+
+  it('NEGATE should negate', () => {
+    const def = registry.getNodeDef('geo', 'integer_math');
+    assert.equal(def.evaluate({ operation: 'NEGATE', value: 5, value2: 0 }, {}).outputs[0], -5);
+  });
+});
+
 describe('Operation Node Evaluation', () => {
   it('transform_geometry should accept and return geometry', () => {
     const cubeDef = registry.getNodeDef('geo', 'mesh_cube');

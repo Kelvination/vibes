@@ -19,7 +19,9 @@ import {
   positionField,
   normalField,
   indexField,
+  resolveScalar,
 } from '../core/field.js';
+import { seededRandom } from '../core/utils.js';
 
 // ── Vector Helpers ──────────────────────────────────────────────────────────
 
@@ -603,6 +605,204 @@ export function registerFieldNodes(registry) {
           rhi = tmpHi;
         }
         return Math.max(rlo, Math.min(rhi, rv));
+      });
+      return { outputs: [result] };
+    },
+  });
+
+  // ── boolean_math ─────────────────────────────────────────────────────────
+  const booleanMathOperations = [
+    { value: 'AND', label: 'And' },
+    { value: 'OR', label: 'Or' },
+    { value: 'NOT', label: 'Not' },
+    { value: 'NAND', label: 'Not And' },
+    { value: 'NOR', label: 'Not Or' },
+    { value: 'XOR', label: 'Exclusive Or' },
+    { value: 'XNOR', label: 'Exclusive Not Or' },
+  ];
+
+  function evalBooleanMathOp(op, a, b) {
+    switch (op) {
+      case 'AND': return a && b;
+      case 'OR': return a || b;
+      case 'NOT': return !a;
+      case 'NAND': return !(a && b);
+      case 'NOR': return !(a || b);
+      case 'XOR': return a !== b;
+      case 'XNOR': return a === b;
+      default: return false;
+    }
+  }
+
+  registry.addNode('geo', 'boolean_math', {
+    label: 'Boolean Math',
+    category: 'MATH',
+    inputs: [
+      { name: 'Boolean', type: SocketType.BOOL },
+      { name: 'Boolean_001', type: SocketType.BOOL },
+    ],
+    outputs: [
+      { name: 'Boolean', type: SocketType.BOOL },
+    ],
+    defaults: { operation: 'AND', a: false, b: false },
+    props: [
+      { key: 'operation', label: 'Operation', type: 'select', options: booleanMathOperations },
+      { key: 'a', label: 'A', type: 'bool' },
+      { key: 'b', label: 'B', type: 'bool' },
+    ],
+    evaluate(values, inputs) {
+      const op = values.operation;
+      const a = inputs['Boolean'] ?? values.a;
+      const b = inputs['Boolean_001'] ?? values.b;
+
+      const result = combineFields(a, b, 'bool', (va, vb) => {
+        return evalBooleanMathOp(op, !!va, !!vb);
+      });
+      return { outputs: [result] };
+    },
+  });
+
+  // ── random_value ─────────────────────────────────────────────────────────
+  const randomValueDataTypes = [
+    { value: 'FLOAT', label: 'Float' },
+    { value: 'INT', label: 'Integer' },
+    { value: 'FLOAT_VECTOR', label: 'Float Vector' },
+    { value: 'BOOLEAN', label: 'Boolean' },
+  ];
+
+  registry.addNode('geo', 'random_value', {
+    label: 'Random Value',
+    category: 'MATH',
+    inputs: [
+      { name: 'Min', type: SocketType.FLOAT },
+      { name: 'Max', type: SocketType.FLOAT },
+      { name: 'Seed', type: SocketType.INT },
+    ],
+    outputs: [
+      { name: 'Value', type: SocketType.FLOAT },
+    ],
+    defaults: { data_type: 'FLOAT', min: 0, max: 1, seed: 0 },
+    props: [
+      { key: 'data_type', label: 'Data Type', type: 'select', options: randomValueDataTypes },
+      { key: 'min', label: 'Min', type: 'float', min: -10000, max: 10000, step: 0.1 },
+      { key: 'max', label: 'Max', type: 'float', min: -10000, max: 10000, step: 0.1 },
+      { key: 'seed', label: 'Seed', type: 'int', min: 0, max: 100000, step: 1 },
+    ],
+    evaluate(values, inputs) {
+      const dataType = values.data_type;
+      const minVal = inputs['Min'] ?? values.min;
+      const maxVal = inputs['Max'] ?? values.max;
+      const seed = inputs['Seed'] ?? values.seed;
+
+      // Always return a Field for per-element randomness
+      const fieldType = dataType === 'FLOAT_VECTOR' ? 'vector' : (dataType === 'BOOLEAN' ? 'bool' : 'float');
+
+      const result = new Field(fieldType, (el) => {
+        const idx = el.index ?? 0;
+        const rMin = isField(minVal) ? minVal.evaluateAt(el) : minVal;
+        const rMax = isField(maxVal) ? maxVal.evaluateAt(el) : maxVal;
+        const rSeed = isField(seed) ? seed.evaluateAt(el) : seed;
+
+        switch (dataType) {
+          case 'FLOAT': {
+            const r = seededRandom((idx * 73856093) ^ rSeed);
+            return rMin + r * (rMax - rMin);
+          }
+          case 'INT': {
+            const r = seededRandom((idx * 73856093) ^ rSeed);
+            return Math.floor(rMin + r * (rMax + 1 - rMin));
+          }
+          case 'BOOLEAN': {
+            const r = seededRandom((idx * 73856093) ^ rSeed);
+            return r > 0.5;
+          }
+          case 'FLOAT_VECTOR': {
+            const rx = seededRandom((idx * 73856093) ^ rSeed);
+            const ry = seededRandom((idx * 19349663) ^ rSeed);
+            const rz = seededRandom((idx * 83492791) ^ rSeed);
+            return {
+              x: rMin + rx * (rMax - rMin),
+              y: rMin + ry * (rMax - rMin),
+              z: rMin + rz * (rMax - rMin),
+            };
+          }
+          default: return 0;
+        }
+      });
+      return { outputs: [result] };
+    },
+  });
+
+  // ── integer_math ─────────────────────────────────────────────────────────
+  const integerMathOperations = [
+    { value: 'ADD', label: 'Add' },
+    { value: 'SUBTRACT', label: 'Subtract' },
+    { value: 'MULTIPLY', label: 'Multiply' },
+    { value: 'DIVIDE', label: 'Divide' },
+    { value: 'MODULO', label: 'Modulo' },
+    { value: 'POWER', label: 'Power' },
+    { value: 'MIN', label: 'Minimum' },
+    { value: 'MAX', label: 'Maximum' },
+    { value: 'ABS', label: 'Absolute' },
+    { value: 'SIGN', label: 'Sign' },
+    { value: 'NEGATE', label: 'Negate' },
+    { value: 'GCD', label: 'Greatest Common Divisor' },
+  ];
+
+  function gcd(a, b) {
+    a = Math.abs(a);
+    b = Math.abs(b);
+    while (b !== 0) {
+      const t = b;
+      b = a % b;
+      a = t;
+    }
+    return a;
+  }
+
+  function evalIntegerMathOp(op, a, b) {
+    a = Math.round(a);
+    b = Math.round(b);
+    switch (op) {
+      case 'ADD': return a + b;
+      case 'SUBTRACT': return a - b;
+      case 'MULTIPLY': return a * b;
+      case 'DIVIDE': return b !== 0 ? Math.trunc(a / b) : 0;
+      case 'MODULO': return b !== 0 ? a % b : 0;
+      case 'POWER': return Math.round(Math.pow(a, b));
+      case 'MIN': return Math.min(a, b);
+      case 'MAX': return Math.max(a, b);
+      case 'ABS': return Math.abs(a);
+      case 'SIGN': return Math.sign(a);
+      case 'NEGATE': return -a;
+      case 'GCD': return gcd(a, b);
+      default: return a;
+    }
+  }
+
+  registry.addNode('geo', 'integer_math', {
+    label: 'Integer Math',
+    category: 'MATH',
+    inputs: [
+      { name: 'Value', type: SocketType.INT },
+      { name: 'Value2', type: SocketType.INT },
+    ],
+    outputs: [
+      { name: 'Value', type: SocketType.INT },
+    ],
+    defaults: { operation: 'ADD', value: 0, value2: 0 },
+    props: [
+      { key: 'operation', label: 'Operation', type: 'select', options: integerMathOperations },
+      { key: 'value', label: 'Value', type: 'int', min: -10000, max: 10000, step: 1 },
+      { key: 'value2', label: 'Value 2', type: 'int', min: -10000, max: 10000, step: 1 },
+    ],
+    evaluate(values, inputs) {
+      const op = values.operation;
+      const a = inputs['Value'] ?? values.value;
+      const b = inputs['Value2'] ?? values.value2;
+
+      const result = combineFields(a, b, 'int', (va, vb) => {
+        return evalIntegerMathOp(op, va, vb);
       });
       return { outputs: [result] };
     },
