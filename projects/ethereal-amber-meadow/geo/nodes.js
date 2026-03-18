@@ -380,27 +380,37 @@ registry.addNodes('geo', {
     ],
     defaults: { sizeX: 1, sizeY: 1, sizeZ: 1, verticesX: 2, verticesY: 2, verticesZ: 2 },
     props: [
-      { key: 'sizeX', label: 'Size X', type: 'float', min: 0.01, max: 50, step: 0.1 },
-      { key: 'sizeY', label: 'Size Y', type: 'float', min: 0.01, max: 50, step: 0.1 },
-      { key: 'sizeZ', label: 'Size Z', type: 'float', min: 0.01, max: 50, step: 0.1 },
+      { key: 'sizeX', label: 'Size X', type: 'float', min: 0, max: 50, step: 0.1 },
+      { key: 'sizeY', label: 'Size Y', type: 'float', min: 0, max: 50, step: 0.1 },
+      { key: 'sizeZ', label: 'Size Z', type: 'float', min: 0, max: 50, step: 0.1 },
       { key: 'verticesX', label: 'Vertices X', type: 'int', min: 2, max: 100, step: 1 },
       { key: 'verticesY', label: 'Vertices Y', type: 'int', min: 2, max: 100, step: 1 },
       { key: 'verticesZ', label: 'Vertices Z', type: 'int', min: 2, max: 100, step: 1 },
     ],
     evaluate(values, inputs) {
       const size = inputs['Size'] || { x: values.sizeX, y: values.sizeY, z: values.sizeZ };
+      const sx = size.x ?? values.sizeX;
+      const sy = size.y ?? values.sizeY;
+      const sz = size.z ?? values.sizeZ;
+      // Degenerate dimension handling: degrade to plane or line if any dimension is 0
+      let geoType = 'cube';
+      const zeroCount = (sx === 0 ? 1 : 0) + (sy === 0 ? 1 : 0) + (sz === 0 ? 1 : 0);
+      if (zeroCount >= 2) geoType = 'cube_line';
+      else if (zeroCount === 1) geoType = 'cube_plane';
       return { outputs: [{
-        type: 'cube',
-        sizeX: size.x || values.sizeX,
-        sizeY: size.y || values.sizeY,
-        sizeZ: size.z || values.sizeZ,
+        type: geoType,
+        sizeX: sx,
+        sizeY: sy,
+        sizeZ: sz,
         verticesX: inputs['Vertices X'] ?? values.verticesX,
         verticesY: inputs['Vertices Y'] ?? values.verticesY,
         verticesZ: inputs['Vertices Z'] ?? values.verticesZ,
         transforms: [], smooth: false,
       }, new Field('vector', (el) => {
         const p = el.position || { x: 0, y: 0, z: 0 };
-        return { x: p.x * 0.5 + 0.5, y: p.z * 0.5 + 0.5, z: 0 };
+        const invX = sx !== 0 ? 1 / sx : 1;
+        const invZ = sz !== 0 ? 1 / sz : 1;
+        return { x: p.x * invX + 0.5, y: p.z * invZ + 0.5, z: 0 };
       })] };
     },
   },
@@ -452,6 +462,7 @@ registry.addNodes('geo', {
       { name: 'Top', type: SocketType.BOOL },
       { name: 'Side', type: SocketType.BOOL },
       { name: 'Bottom', type: SocketType.BOOL },
+      { name: 'UV Map', type: SocketType.VECTOR },
     ],
     defaults: { radius: 1, depth: 2, vertices: 32, sideSegments: 1, fillSegments: 1, fillType: 'ngon' },
     props: [
@@ -482,6 +493,13 @@ registry.addNodes('geo', {
         const p = el.position || { x: 0, y: 0, z: 0 };
         return Math.abs(p.y + halfDepth) < 0.001;
       });
+      const uvMapField = new Field('vector', (el) => {
+        const p = el.position || { x: 0, y: 0, z: 0 };
+        const angle = Math.atan2(p.z, p.x);
+        const u = (angle + Math.PI) / (2 * Math.PI);
+        const v = (p.y + d / 2) / d;
+        return { x: u, y: clampVal(v, 0, 1), z: 0 };
+      });
       return { outputs: [{
         type: 'cylinder', radius: r, depth: d,
         vertices: inputs['Vertices'] ?? values.vertices,
@@ -489,7 +507,7 @@ registry.addNodes('geo', {
         fillSegments: inputs['Fill Segments'] ?? values.fillSegments,
         fillType: values.fillType,
         transforms: [], smooth: false,
-      }, topField, sideField, bottomField] };
+      }, topField, sideField, bottomField, uvMapField] };
     },
   },
 
@@ -509,6 +527,7 @@ registry.addNodes('geo', {
       { name: 'Top', type: SocketType.BOOL },
       { name: 'Side', type: SocketType.BOOL },
       { name: 'Bottom', type: SocketType.BOOL },
+      { name: 'UV Map', type: SocketType.VECTOR },
     ],
     defaults: { radiusTop: 0, radiusBottom: 1, depth: 2, vertices: 32, sideSegments: 1, fillSegments: 1, fillType: 'ngon' },
     props: [
@@ -539,6 +558,13 @@ registry.addNodes('geo', {
         const p = el.position || { x: 0, y: 0, z: 0 };
         return Math.abs(p.y + halfDepth) < 0.001;
       });
+      const uvMapField = new Field('vector', (el) => {
+        const p = el.position || { x: 0, y: 0, z: 0 };
+        const angle = Math.atan2(p.z, p.x);
+        const u = (angle + Math.PI) / (2 * Math.PI);
+        const v = (p.y + d / 2) / d;
+        return { x: u, y: clampVal(v, 0, 1), z: 0 };
+      });
       return { outputs: [{
         type: 'cone',
         radius1: inputs['Radius Bottom'] ?? values.radiusBottom,
@@ -549,7 +575,7 @@ registry.addNodes('geo', {
         fillSegments: inputs['Fill Segments'] ?? values.fillSegments,
         fillType: values.fillType,
         transforms: [], smooth: false,
-      }, topField, sideField, bottomField] };
+      }, topField, sideField, bottomField, uvMapField] };
     },
   },
 
@@ -1490,6 +1516,7 @@ registry.addNodes('geo', {
     evaluate(values, inputs) {
       const points = inputs['Points'];
       const instance = inputs['Instance'];
+      const selection = inputs['Selection'];
       const scale = inputs['Scale'] || { x: values.scaleX, y: values.scaleY, z: values.scaleZ };
       const rotation = inputs['Rotation'] || { x: 0, y: 0, z: 0 };
       if (!points || !instance) return { outputs: [points || null] };
@@ -1499,6 +1526,7 @@ registry.addNodes('geo', {
         instance: cloneGeo(instance),
         scale: { x: scale.x ?? values.scaleX, y: scale.y ?? values.scaleY, z: scale.z ?? values.scaleZ },
         rotation: rotation,
+        selection: isField(selection) ? selection : (selection ?? true),
         pickInstance: inputs['Pick Instance'] ?? values.pickInstance,
         instanceIndex: inputs['Instance Index'] ?? values.instanceIndex,
         transforms: [], smooth: false,
@@ -2233,6 +2261,8 @@ registry.addNodes('geo', {
         { value: 'nor', label: 'NOR' },
         { value: 'xor', label: 'XOR' },
         { value: 'xnor', label: 'XNOR' },
+        { value: 'imply', label: 'IMPLY' },
+        { value: 'nimply', label: 'NIMPLY' },
       ]},
       { key: 'a', label: 'A', type: 'bool' },
       { key: 'b', label: 'B', type: 'bool' },
@@ -2251,6 +2281,8 @@ registry.addNodes('geo', {
           case 'nor': return !(av || bv);
           case 'xor': return !!((av || bv) && !(av && bv));
           case 'xnor': return !((av || bv) && !(av && bv));
+          case 'imply': return !!(!av || bv);
+          case 'nimply': return !!(av && !bv);
           default: return false;
         }
       };
@@ -2366,6 +2398,18 @@ registry.addNodes('geo', {
       const tMin = inputs['To Min'] ?? values.toMin;
       const tMax = inputs['To Max'] ?? values.toMax;
       const steps = inputs['Steps'] ?? values.steps;
+      // Field support: if any input is a Field, return a Field
+      if (isField(v) || isField(fMin) || isField(fMax) || isField(tMin) || isField(tMax) || isField(steps)) {
+        return { outputs: [new Field('float', (el) => {
+          const vv = isField(v) ? resolveField(v, el) : v;
+          const fMinV = isField(fMin) ? resolveField(fMin, el) : fMin;
+          const fMaxV = isField(fMax) ? resolveField(fMax, el) : fMax;
+          const tMinV = isField(tMin) ? resolveField(tMin, el) : tMin;
+          const tMaxV = isField(tMax) ? resolveField(tMax, el) : tMax;
+          const stepsV = isField(steps) ? resolveField(steps, el) : steps;
+          return mapRangeScalar(vv, fMinV, fMaxV, tMinV, tMaxV, stepsV);
+        }), { x: 0, y: 0, z: 0 }] };
+      }
       return { outputs: [mapRangeScalar(v, fMin, fMax, tMin, tMax, steps), { x: 0, y: 0, z: 0 }] };
     },
   },
@@ -2523,63 +2567,75 @@ registry.addNodes('geo', {
     outputs: [
       { name: 'Output', type: SocketType.GEOMETRY },
     ],
-    defaults: { switch_val: false },
+    defaults: { switch_val: false, inputType: 'geometry', falseFloat: 0, trueFloat: 1, falseInt: 0, trueInt: 1, falseBool: false, trueBool: true },
     props: [
+      { key: 'inputType', label: 'Input Type', type: 'select', options: [
+        { value: 'geometry', label: 'Geometry' },
+        { value: 'float', label: 'Float' },
+        { value: 'int', label: 'Integer' },
+        { value: 'boolean', label: 'Boolean' },
+        { value: 'vector', label: 'Vector' },
+        { value: 'color', label: 'Color' },
+        { value: 'string', label: 'String' },
+        { value: 'object', label: 'Object' },
+        { value: 'collection', label: 'Collection' },
+        { value: 'image', label: 'Image' },
+        { value: 'material', label: 'Material' },
+      ]},
       { key: 'switch_val', label: 'Switch', type: 'bool' },
+      { key: 'falseFloat', label: 'False', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'trueFloat', label: 'True', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'falseInt', label: 'False (Int)', type: 'int', min: -1000, max: 1000, step: 1 },
+      { key: 'trueInt', label: 'True (Int)', type: 'int', min: -1000, max: 1000, step: 1 },
+      { key: 'falseBool', label: 'False (Bool)', type: 'bool' },
+      { key: 'trueBool', label: 'True (Bool)', type: 'bool' },
     ],
     evaluate(values, inputs) {
       const sw = inputs['Switch'] ?? values.switch_val;
-      const falseVal = inputs['False'] || null;
-      const trueVal = inputs['True'] || null;
-      return { outputs: [sw ? trueVal : falseVal] };
-    },
-  },
+      const inputType = values.inputType || 'geometry';
 
-  'switch_float': {
-    label: 'Switch (Float)',
-    category: 'UTILITY',
-    inputs: [
-      { name: 'Switch', type: SocketType.BOOL },
-      { name: 'False', type: SocketType.FLOAT },
-      { name: 'True', type: SocketType.FLOAT },
-    ],
-    outputs: [
-      { name: 'Output', type: SocketType.FLOAT },
-    ],
-    defaults: { switch_val: false, falseVal: 0, trueVal: 1 },
-    props: [
-      { key: 'switch_val', label: 'Switch', type: 'bool' },
-      { key: 'falseVal', label: 'False', type: 'float', min: -1000, max: 1000, step: 0.1 },
-      { key: 'trueVal', label: 'True', type: 'float', min: -1000, max: 1000, step: 0.1 },
-    ],
-    evaluate(values, inputs) {
-      const sw = inputs['Switch'] ?? values.switch_val;
-      const falseVal = inputs['False'] ?? values.falseVal;
-      const trueVal = inputs['True'] ?? values.trueVal;
-      return { outputs: [sw ? trueVal : falseVal] };
-    },
-  },
-
-  'switch_vector': {
-    label: 'Switch (Vector)',
-    category: 'UTILITY',
-    inputs: [
-      { name: 'Switch', type: SocketType.BOOL },
-      { name: 'False', type: SocketType.VECTOR },
-      { name: 'True', type: SocketType.VECTOR },
-    ],
-    outputs: [
-      { name: 'Output', type: SocketType.VECTOR },
-    ],
-    defaults: { switch_val: false },
-    props: [
-      { key: 'switch_val', label: 'Switch', type: 'bool' },
-    ],
-    evaluate(values, inputs) {
-      const sw = inputs['Switch'] ?? values.switch_val;
-      const falseVal = inputs['False'] || { x: 0, y: 0, z: 0 };
-      const trueVal = inputs['True'] || { x: 0, y: 0, z: 0 };
-      return { outputs: [sw ? trueVal : falseVal] };
+      switch (inputType) {
+        case 'float': {
+          const falseVal = inputs['False'] ?? values.falseFloat ?? 0;
+          const trueVal = inputs['True'] ?? values.trueFloat ?? 1;
+          return { outputs: [sw ? trueVal : falseVal] };
+        }
+        case 'int': {
+          const falseVal = inputs['False'] ?? values.falseInt ?? 0;
+          const trueVal = inputs['True'] ?? values.trueInt ?? 1;
+          return { outputs: [sw ? trueVal : falseVal] };
+        }
+        case 'boolean': {
+          const falseVal = inputs['False'] ?? values.falseBool ?? false;
+          const trueVal = inputs['True'] ?? values.trueBool ?? true;
+          return { outputs: [sw ? trueVal : falseVal] };
+        }
+        case 'vector': {
+          const falseVal = inputs['False'] || { x: 0, y: 0, z: 0 };
+          const trueVal = inputs['True'] || { x: 0, y: 0, z: 0 };
+          return { outputs: [sw ? trueVal : falseVal] };
+        }
+        case 'color': {
+          const falseVal = inputs['False'] || { r: 0, g: 0, b: 0 };
+          const trueVal = inputs['True'] || { r: 1, g: 1, b: 1 };
+          return { outputs: [sw ? trueVal : falseVal] };
+        }
+        case 'string': {
+          const falseVal = inputs['False'] ?? '';
+          const trueVal = inputs['True'] ?? '';
+          return { outputs: [sw ? trueVal : falseVal] };
+        }
+        case 'geometry':
+        case 'object':
+        case 'collection':
+        case 'image':
+        case 'material':
+        default: {
+          const falseVal = inputs['False'] || null;
+          const trueVal = inputs['True'] || null;
+          return { outputs: [sw ? trueVal : falseVal] };
+        }
+      }
     },
   },
 
@@ -2803,20 +2859,24 @@ registry.addNodes('geo', {
     inputs: [],
     outputs: [
       { name: 'Color', type: SocketType.COLOR },
+      { name: 'Alpha', type: SocketType.FLOAT },
     ],
-    defaults: { r: 0.5, g: 0.5, b: 0.5 },
+    defaults: { r: 0.5, g: 0.5, b: 0.5, a: 1.0 },
     props: [
       { key: 'r', label: 'R', type: 'float', min: 0, max: 1, step: 0.01 },
       { key: 'g', label: 'G', type: 'float', min: 0, max: 1, step: 0.01 },
       { key: 'b', label: 'B', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'a', label: 'Alpha', type: 'float', min: 0, max: 1, step: 0.01 },
     ],
     evaluate(values) {
+      const a = clampVal(values.a ?? 1.0, 0, 1);
       return {
         outputs: [{
           r: clampVal(values.r ?? 0.5, 0, 1),
           g: clampVal(values.g ?? 0.5, 0, 1),
           b: clampVal(values.b ?? 0.5, 0, 1),
-        }],
+          a: a,
+        }, a],
       };
     },
   },
@@ -2830,6 +2890,8 @@ registry.addNodes('geo', {
     inputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
       { name: 'Value', type: SocketType.FLOAT },
+      { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'Color', type: SocketType.COLOR },
     ],
     outputs: [],
     defaults: { domain: 'auto', dataType: 'float' },
@@ -2840,6 +2902,7 @@ registry.addNodes('geo', {
         { value: 'edge', label: 'Edge' },
         { value: 'face', label: 'Face' },
         { value: 'corner', label: 'Corner' },
+        { value: 'curve_point', label: 'Curve Point' },
         { value: 'instance', label: 'Instance' },
       ]},
       { key: 'dataType', label: 'Data Type', type: 'select', options: [
@@ -2848,17 +2911,31 @@ registry.addNodes('geo', {
         { value: 'vector', label: 'Vector' },
         { value: 'color', label: 'Color' },
         { value: 'boolean', label: 'Boolean' },
+        { value: 'quaternion', label: 'Rotation' },
       ]},
     ],
     evaluate(values, inputs) {
       const geo = inputs['Geometry'] || null;
-      const val = inputs['Value'] ?? 0;
+      const dataType = values.dataType || 'float';
+      let val;
+      switch (dataType) {
+        case 'vector':
+        case 'quaternion':
+          val = inputs['Vector'] || { x: 0, y: 0, z: 0 };
+          break;
+        case 'color':
+          val = inputs['Color'] || { r: 0, g: 0, b: 0 };
+          break;
+        default:
+          val = inputs['Value'] ?? 0;
+          break;
+      }
       return {
         outputs: [],
         geometry: geo,
         viewerValue: val,
         viewerDomain: values.domain || 'auto',
-        viewerDataType: values.dataType || 'float',
+        viewerDataType: dataType,
       };
     },
   },
@@ -2951,18 +3028,26 @@ registry.addNodes('geo', {
         { value: 'points', label: 'Points' },
         { value: 'edges', label: 'Edges' },
         { value: 'faces', label: 'Faces' },
+        { value: 'spline', label: 'Spline' },
         { value: 'instances', label: 'Instances' },
       ]},
     ],
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
+      const selection = inputs['Selection'];
       const amount = inputs['Amount'] ?? values.amount;
       if (!geo) return { outputs: [null, 0] };
-      // Pass duplication parameters to the builder for per-element duplication
       return { outputs: [mapGeo(geo, g => {
-        g.duplicateElements = { amount: amount || 1, domain: values.domain || 'faces' };
+        g.duplicateElements = {
+          amount: amount || 1,
+          domain: values.domain || 'faces',
+          selection: isField(selection) ? selection : null,
+        };
         return g;
-      }), amount] };
+      }), new Field('int', (el) => {
+        if (amount <= 0) return 0;
+        return el.index % (amount + 1);
+      })] };
     },
   },
 
@@ -3197,7 +3282,7 @@ registry.addNodes('geo', {
     outputs: [
       { name: 'Curve', type: SocketType.GEOMETRY },
     ],
-    defaults: { resolution: 16, radius: 1, startAngle: 0, sweepAngle: 315, mode: 'radius' },
+    defaults: { resolution: 16, radius: 1, startAngle: 0, sweepAngle: 315, mode: 'radius', connectCenter: false, invertArc: false },
     props: [
       { key: 'mode', label: 'Mode', type: 'select', options: [
         { value: 'radius', label: 'Radius' },
@@ -3207,6 +3292,8 @@ registry.addNodes('geo', {
       { key: 'radius', label: 'Radius', type: 'float', min: 0.01, max: 50, step: 0.1 },
       { key: 'startAngle', label: 'Start Angle (deg)', type: 'float', min: 0, max: 360, step: 1 },
       { key: 'sweepAngle', label: 'Sweep Angle (deg)', type: 'float', min: -360, max: 360, step: 1 },
+      { key: 'connectCenter', label: 'Connect Center', type: 'bool' },
+      { key: 'invertArc', label: 'Invert Arc', type: 'bool' },
     ],
     evaluate(values, inputs) {
       const resolution = inputs['Resolution'] ?? values.resolution;
@@ -3265,10 +3352,18 @@ registry.addNodes('geo', {
       // Radius mode (existing)
       const radius = inputs['Radius'] ?? values.radius;
       const startAngle = (inputs['Start Angle'] ?? values.startAngle) * Math.PI / 180;
-      const sweepAngle = (inputs['Sweep Angle'] ?? values.sweepAngle) * Math.PI / 180;
+      let sweepAngle = (inputs['Sweep Angle'] ?? values.sweepAngle) * Math.PI / 180;
+      const connectCenter = values.connectCenter ?? false;
+      const invertArc = values.invertArc ?? false;
+      if (invertArc) {
+        sweepAngle = sweepAngle >= 0
+          ? sweepAngle - 2 * Math.PI
+          : sweepAngle + 2 * Math.PI;
+      }
       return { outputs: [{
         type: 'curve_arc',
         resolution, radius, startAngle, sweepAngle,
+        connectCenter,
         transforms: [], smooth: false,
       }] };
     },
@@ -3540,12 +3635,20 @@ registry.addNodes('geo', {
     outputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
     ],
-    defaults: { color: '#6688cc', metallic: 0, roughness: 0.5, materialName: '' },
+    defaults: { color: '#6688cc', metallic: 0, roughness: 0.5, materialName: '',
+      emission: '#000000', emissionStrength: 0, alpha: 1, specular: 0.5, ior: 1.45, transmission: 0, materialIndex: 0 },
     props: [
       { key: 'materialName', label: 'Material', type: 'text' },
       { key: 'color', label: 'Color', type: 'color' },
       { key: 'metallic', label: 'Metallic', type: 'float', min: 0, max: 1, step: 0.01 },
       { key: 'roughness', label: 'Roughness', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'emission', label: 'Emission', type: 'color' },
+      { key: 'emissionStrength', label: 'Emission Strength', type: 'float', min: 0, max: 100, step: 0.1 },
+      { key: 'alpha', label: 'Alpha', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'specular', label: 'Specular', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'ior', label: 'IOR', type: 'float', min: 1, max: 3, step: 0.01 },
+      { key: 'transmission', label: 'Transmission', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'materialIndex', label: 'Material Index', type: 'int', min: 0, max: 100, step: 1 },
     ],
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
@@ -3556,6 +3659,13 @@ registry.addNodes('geo', {
         color: values.color,
         metallic: values.metallic,
         roughness: values.roughness,
+        emission: values.emission,
+        emissionStrength: values.emissionStrength,
+        alpha: values.alpha,
+        specular: values.specular,
+        ior: values.ior,
+        transmission: values.transmission,
+        materialIndex: values.materialIndex,
       };
       return { outputs: [mapGeo(geo, g => {
         // Store selection for the builder if it's a field
@@ -3574,15 +3684,42 @@ registry.addNodes('geo', {
   'material_index': {
     label: 'Material Index',
     category: 'MATERIAL',
-    inputs: [
-      { name: 'Geometry', type: SocketType.GEOMETRY },
-    ],
+    inputs: [],
     outputs: [
       { name: 'Material Index', type: SocketType.INT },
     ],
     defaults: {},
     evaluate(values, inputs) {
       return { outputs: [new Field('int', (el) => el.materialIndex ?? 0)] };
+    },
+  },
+
+  'set_material_index': {
+    label: 'Set Material Index',
+    category: 'MATERIAL',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
+      { name: 'Material Index', type: SocketType.INT },
+    ],
+    outputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
+    defaults: { materialIndex: 0 },
+    props: [
+      { key: 'materialIndex', label: 'Material Index', type: 'int', min: 0, max: 100, step: 1 },
+    ],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'];
+      if (!geo) return { outputs: [null] };
+      const selection = inputs['Selection'];
+      const matIdx = inputs['Material Index'] ?? values.materialIndex;
+      return { outputs: [mapGeo(geo, g => {
+        g._setMaterialIndex = { index: matIdx, selection: isField(selection) ? selection : (selection ?? true) };
+        if (!g.material) g.material = {};
+        g.material.materialIndex = matIdx;
+        return g;
+      })] };
     },
   },
 
@@ -3953,26 +4090,63 @@ registry.addNodes('geo', {
     category: 'MATH',
     inputs: [
       { name: 'Factor', type: SocketType.FLOAT },
+      { name: 'Factor X', type: SocketType.FLOAT },
+      { name: 'Factor Y', type: SocketType.FLOAT },
+      { name: 'Factor Z', type: SocketType.FLOAT },
       { name: 'A', type: SocketType.VECTOR },
       { name: 'B', type: SocketType.VECTOR },
     ],
     outputs: [
       { name: 'Result', type: SocketType.VECTOR },
     ],
-    defaults: { factor: 0.5, clampFactor: true },
+    defaults: { factor: 0.5, factorX: 0.5, factorY: 0.5, factorZ: 0.5, clampFactor: true, useUniformFactor: true },
     props: [
+      { key: 'useUniformFactor', label: 'Uniform Factor', type: 'bool' },
       { key: 'factor', label: 'Factor', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'factorX', label: 'Factor X', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'factorY', label: 'Factor Y', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'factorZ', label: 'Factor Z', type: 'float', min: 0, max: 1, step: 0.01 },
       { key: 'clampFactor', label: 'Clamp Factor', type: 'bool' },
     ],
     evaluate(values, inputs) {
-      let fac = inputs['Factor'] ?? values.factor;
-      if (values.clampFactor) fac = clampVal(fac, 0, 1);
+      const useUniform = values.useUniformFactor ?? true;
+      const clamp = values.clampFactor;
+      let facX, facY, facZ;
+      if (useUniform) {
+        let fac = inputs['Factor'] ?? values.factor;
+        if (clamp) fac = clampVal(fac, 0, 1);
+        facX = facY = facZ = fac;
+      } else {
+        facX = inputs['Factor X'] ?? values.factorX;
+        facY = inputs['Factor Y'] ?? values.factorY;
+        facZ = inputs['Factor Z'] ?? values.factorZ;
+        if (clamp) {
+          facX = clampVal(facX, 0, 1);
+          facY = clampVal(facY, 0, 1);
+          facZ = clampVal(facZ, 0, 1);
+        }
+      }
       const a = inputs['A'] || { x: 0, y: 0, z: 0 };
       const b = inputs['B'] || { x: 0, y: 0, z: 0 };
+      // Field support: if any input is a Field, return a Field
+      if (isField(a) || isField(b) || isField(facX) || isField(facY) || isField(facZ)) {
+        return { outputs: [new Field('vector', (el) => {
+          const av = isField(a) ? resolveField(a, el) : a;
+          const bv = isField(b) ? resolveField(b, el) : b;
+          const fx = isField(facX) ? resolveField(facX, el) : facX;
+          const fy = isField(facY) ? resolveField(facY, el) : facY;
+          const fz = isField(facZ) ? resolveField(facZ, el) : facZ;
+          return {
+            x: lerp(av.x ?? 0, bv.x ?? 0, fx),
+            y: lerp(av.y ?? 0, bv.y ?? 0, fy),
+            z: lerp(av.z ?? 0, bv.z ?? 0, fz),
+          };
+        })] };
+      }
       return { outputs: [{
-        x: lerp(a.x, b.x, fac),
-        y: lerp(a.y, b.y, fac),
-        z: lerp(a.z, b.z, fac),
+        x: lerp(a.x, b.x, facX),
+        y: lerp(a.y, b.y, facY),
+        z: lerp(a.z, b.z, facZ),
       }] };
     },
   },

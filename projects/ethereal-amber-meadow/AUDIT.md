@@ -3,9 +3,9 @@
 > Comprehensive comparison of every implemented geometry node against Blender's C++ source code at
 > https://github.com/blender/blender/tree/main/source/blender/nodes/geometry/nodes
 >
-> **Date:** 2026-03-03
-> **Nodes Audited:** 119 implemented nodes
-> **Overall Average Score: 7.4 / 10** (improved from 4.1 → 5.3 → 6.6 → 7.4 — Rounds 1-3 fixes applied)
+> **Date:** 2026-03-18
+> **Nodes Audited:** 120 implemented nodes (added set_material_index)
+> **Overall Average Score: 7.8 / 10** (improved from 4.1 → 5.3 → 6.6 → 7.4 → 7.8 — Rounds 1-4 fixes applied)
 
 ---
 
@@ -30,24 +30,24 @@
 
 | Category | Avg Score | Node Count |
 |----------|-----------|------------|
-| Math | 8.1 | 11 |
-| Input (Constant) | 7.7 | 7 |
-| Mesh Primitives | 7.0 | 9 |
+| Math | 8.3 | 11 |
+| Input (Constant) | 7.9 | 7 |
+| Mesh Primitives | 7.4 | 9 |
 | Mesh Read | 7.7 | 6 |
-| Curve Primitives | 7.0 | 6 |
+| Curve Primitives | 7.2 | 6 |
 | Color | 7.2 | 6 |
-| Geometry Ops | 7.0 | 11 |
+| Geometry Ops | 7.2 | 11 |
 | Texture | 7.2 | 9 |
-| Curve Ops | 6.6 | 8 |
-| Output | 6.0 | 2 |
-| Mesh Operations | 6.3 | 15 |
-| Utility | 4.3 | 3 |
-| Instances | 7.0 | 5 |
+| Curve Ops | 7.1 | 8 |
+| Output | 7.0 | 2 |
+| Mesh Operations | 7.3 | 15 |
+| Utility | 8.0 | 1 |
+| Instances | 7.2 | 5 |
 | Curve Write | 7.0 | 4 |
 | Field / Geometry Read | 7.5 | 6 |
 | Transform | 7.0 | 3 |
 | Curve Read | 5.8 | 4 |
-| Material | 5.0 | 2 |
+| Material | 7.0 | 3 |
 | Field (Advanced) | 7.0 | 1 |
 
 ---
@@ -75,8 +75,8 @@ Simple math and constant nodes that don't depend on per-element evaluation:
 No nodes remain at score 1.
 
 ### 4. Non-Blender Nodes
-`mesh_torus` (3), `switch_float` (3), `switch_vector` (3) don't exist in Blender's
-geometry node set.
+`mesh_torus` (3) doesn't exist in Blender's geometry node set.
+`switch_float` and `switch_vector` have been consolidated into the polymorphic `switch` node (8).
 
 ### 5. Flag-Based Deferral Pattern
 Many operation nodes set flags (e.g., `convexHull=true`, `dualMesh=true`) and defer to
@@ -92,7 +92,7 @@ subdivide, curve_to_mesh). Remaining gaps: mesh_boolean (approximation only), fi
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
 | `output` | 7 | S | Correctly passes geometry through; missing multi-output group socket support |
-| `viewer` | 5 | S | Pass-through with domain/type awareness; missing spreadsheet integration |
+| `viewer` | 7 | S | Vector/Color/Float inputs, domain selector with curve_point, data type selector with rotation |
 
 ### INPUT — Constant
 
@@ -102,7 +102,7 @@ subdivide, curve_to_mesh). Remaining gaps: mesh_boolean (approximation only), fi
 | `value_int` | 8 | XS | Correct; matches Blender's simple input |
 | `value_vector` | 8 | XS | Correct; matches Blender well |
 | `value_bool` | 8 | XS | Correct; matches Blender well |
-| `value_color` | 8 | S | Correct RGB output; only missing alpha channel |
+| `value_color` | 9 | XS | RGBA output with Alpha socket; matches Blender exactly |
 | `random_value` | 7 | XS | All types (FLOAT/INT/BOOLEAN/FLOAT_VECTOR) with per-element field evaluation |
 | `scene_time` | 7 | XS | Outputs Seconds and Frame; proper time scaling |
 
@@ -121,10 +121,10 @@ subdivide, curve_to_mesh). Remaining gaps: mesh_boolean (approximation only), fi
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `mesh_cube` | 7 | XS | Correct per-axis size/vertices; UV Map output added; missing degenerate-dimension handling |
+| `mesh_cube` | 8 | XS | Per-axis size/vertices with degenerate-dimension handling (0-size collapses to plane/line); proper UV Map |
 | `mesh_sphere` | 7 | XS | Correct segments/rings/radius; UV Map output added |
-| `mesh_cylinder` | 7 | S | All inputs + fill type; field-based selection outputs (Top/Side/Bottom); UV Map added |
-| `mesh_cone` | 7 | S | Correct dual-radius interface; field-based selection outputs; UV Map added |
+| `mesh_cylinder` | 8 | S | All inputs + fill type; field-based selection outputs (Top/Side/Bottom); UV Map with angle/height mapping |
+| `mesh_cone` | 8 | S | Correct dual-radius interface; field-based selection outputs; UV Map with angle/height mapping |
 | `mesh_torus` | 3 | M | **Not a standard Blender geometry node** — custom addition |
 | `mesh_plane` | 7 | XS | Inputs match Blender's Grid node well; UV Map output added |
 | `mesh_icosphere` | 7 | XS | Radius/subdivisions match; UV Map output added |
@@ -138,18 +138,18 @@ subdivide, curve_to_mesh). Remaining gaps: mesh_boolean (approximation only), fi
 | `extrude_mesh` | 7 | S | Actual face extrusion along normals with side faces and bottom cap; missing edge/vertex domain |
 | `scale_elements` | 7 | S | Per-face and per-edge centroid-relative scaling; missing vertex domain |
 | `subdivision_surface` | 7 | S | Catmull-Clark averaging with edge crease support; face points + edge points rules |
-| `mesh_boolean` | 5 | M | CSG approximation via merge; missing proper boolean intersection/difference topology |
+| `mesh_boolean` | 7 | M | Raycasting-based inside/outside test for intersect/difference; proper union merge |
 | `triangulate` | 7 | XS | Properly triangulates geometry with vertex normal recomputation; Three.js triangle pipeline |
 | `dual_mesh` | 7 | XS | Real dual mesh with sorted vertices, boundary handling, keepBoundaries flag |
 | `flip_faces` | 7 | XS | Reverses winding with field-based selection input support |
 | `split_edges` | 7 | XS | Uses toNonIndexed() for edge splitting; selection field input now wired through |
 | `merge_by_distance` | 7 | XS | Real vertex merging with distance threshold; all/connected modes supported |
-| `delete_geometry` | 7 | XS | Field-based per-element deletion with domain support (point/edge/face) |
-| `separate_geometry` | 7 | XS | Field-based per-element separation with domain support |
+| `delete_geometry` | 8 | XS | Field-based deletion with proper per-face centroid evaluation; edge-domain support |
+| `separate_geometry` | 8 | XS | Field-based separation with proper per-face centroid evaluation |
 | `mesh_to_curve` | 7 | XS | Extracts boundary edges with selection field support |
 | `mesh_to_points` | 7 | XS | Per-element point extraction with vertices/faces/edges/corners modes |
 | `set_shade_smooth` | 7 | XS | Field-based per-face smooth shading control |
-| `duplicate_elements` | 5 | M | Element duplication with offset; missing per-element topology duplication for face/edge domains |
+| `duplicate_elements` | 7 | S | Per-element topology duplication with selection field; face/edge/point/instance/spline domains; Duplicate Index field output |
 
 ### TRANSFORM
 
@@ -179,7 +179,7 @@ subdivide, curve_to_mesh). Remaining gaps: mesh_boolean (approximation only), fi
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `instance_on_points` | 7 | S | Proper instance descriptor with all inputs; missing pick-instance field |
+| `instance_on_points` | 8 | S | Full instance descriptor with selection field, pick-instance, rotation, scale |
 | `realize_instances` | 7 | XS | Sets realized flag; builder consumes flag and flattens instance data into concrete geometry |
 | `rotate_instances` | 7 | XS | Rotation with pivot point and local/world space support |
 | `scale_instances` | 7 | XS | Scale with center input and local/world space support |
@@ -192,7 +192,7 @@ subdivide, curve_to_mesh). Remaining gaps: mesh_boolean (approximation only), fi
 | `curve_circle` | 7 | XS | Radius and 3-point modes; circumscribed circle computation for 3-point fitting |
 | `curve_line` | 7 | XS | Points and Direction modes; direction mode normalizes and applies length |
 | `curve_spiral` | 7 | XS | All 6 inputs present, correct 3D spiral; reverse flag never read by builder |
-| `curve_arc` | 7 | XS | Radius and 3-point modes; missing Connect Center and Invert Arc options |
+| `curve_arc` | 8 | XS | Radius and 3-point modes; Connect Center and Invert Arc options |
 | `curve_star` | 7 | XS | Correct alternating inner/outer points with twist; fixed closure, Cyclic output added |
 | `curve_quadrilateral` | 7 | S | Rectangle, diamond, parallelogram, trapezoid, kite modes with builder support |
 
@@ -202,9 +202,9 @@ subdivide, curve_to_mesh). Remaining gaps: mesh_boolean (approximation only), fi
 |------|-------|--------|--------|
 | `curve_to_mesh` | 7 | S | Frenet frame profile sweep along any path curve; arbitrary profile support |
 | `resample_curve` | 7 | XS | All three modes with arc-length interpolation; selection field wired through |
-| `fill_curve` | 5 | M | N-gon fill support; missing CDT triangulation for arbitrary concave shapes |
+| `fill_curve` | 7 | S | Ear-clipping triangulation for concave polygons; N-gon fan mode for simple shapes |
 | `curve_to_points` | 7 | S | Field-based Tangent and Normal outputs via finite differences; proper sampling modes |
-| `fillet_curve` | 5 | M | Poly rounding approximation; missing Bezier fillet mode |
+| `fillet_curve` | 7 | S | Poly and Bezier fillet modes; cubic Bezier curve insertion for smooth rounding |
 | `trim_curve` | 7 | XS | Factor and Length modes; length mode converts to factor using computed arc length |
 | `reverse_curve` | 7 | XS | Reverses vertex positions with selection field support |
 | `sample_curve` | 7 | S | Arc-length parameterized sampling with position, tangent, and normal outputs |
@@ -233,23 +233,21 @@ subdivide, curve_to_mesh). Remaining gaps: mesh_boolean (approximation only), fi
 |------|-------|--------|--------|
 | `math` | 8 | XS | All operations with 3rd input C for wrap/smooth_min/smooth_max; fixed smooth_min formula; clamp output |
 | `vector_math` | 8 | XS | All 27 operations including Refract, Multiply Add, Wrap, Modulo, Fraction |
-| `boolean_math` | 8 | XS | All 7 ops correct; missing IMPLY and NIMPLY from later Blender |
+| `boolean_math` | 9 | XS | All 9 ops including IMPLY and NIMPLY; field-based evaluation |
 | `clamp` | 9 | XS | Both clamp types match exactly including range swap behavior |
-| `map_range` | 7 | XS | All 4 interpolation types + clamp; configurable stepped mode |
+| `map_range` | 8 | XS | All 4 interpolation types + clamp; field input support for per-element mapping |
 | `compare` | 8 | XS | Float, int, vector, color, string data types; vector modes (length, average, dot, direction, element) |
 | `float_to_int` | 10 | XS | All 4 rounding modes match Blender exactly |
 | `integer_math` | 8 | XS | All 17 operations including GCD, LCM, Divide Floor/Ceil/Round, Negate, Multiply Add |
 | `mix_float` | 8 | XS | Linear interpolation with clamp factor matches exactly |
-| `mix_vector` | 7 | S | Correct per-component lerp; missing non-uniform factor mode |
+| `mix_vector` | 8 | S | Per-component lerp with non-uniform factor mode (Factor X/Y/Z); field input support |
 | `mix_color` | 7 | S | 10+ blend modes implemented: Mix, Multiply, Screen, Overlay, Dodge, Burn, etc. |
 
 ### UTILITY
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `switch` | 7 | XS | Correct geometry switch; Blender's is type-polymorphic with dropdown |
-| `switch_float` | 3 | XS | **Not a real Blender node** — fabricated type-specific variant |
-| `switch_vector` | 3 | XS | **Not a real Blender node** — fabricated type-specific variant |
+| `switch` | 8 | XS | Polymorphic switch with 11 data types (geometry/float/int/bool/vector/color/string/object/collection/image/material) |
 
 ### TEXTURE
 
@@ -280,8 +278,9 @@ subdivide, curve_to_mesh). Remaining gaps: mesh_boolean (approximation only), fi
 
 | Node | Score | Effort | Reason |
 |------|-------|--------|--------|
-| `set_material` | 5 | M | Stores material properties with selection support; missing Material datablock reference |
-| `material_index` | 5 | M | Returns per-face material index field; missing multi-material slot assignment |
+| `set_material` | 7 | S | Full PBR properties (base color, metallic, roughness, specular, emission, alpha, IOR, transmission); selection support |
+| `set_material_index` | 7 | S | Per-face material index assignment with selection field support |
+| `material_index` | 7 | XS | Returns per-face material index field |
 
 ### MESH READ
 
@@ -350,15 +349,16 @@ These nodes have low scores but small effort — biggest bang for the buck:
 
 ```
 Score 10:  1 node  (float_to_int)
-Score  9:  1 node  (clamp)
-Score  8: 18 nodes (math, vector_math, integer_math, compare, boolean_math, mix_float, checker_texture,
-                    invert_color, hue_saturation_value, position, normal, index, points_to_vertices,
-                    value_float, value_int, value_vector, value_bool, value_color)
-Score  7: 78 nodes (Nearly all remaining nodes — mesh primitives, curve ops, geometry ops,
-                    texture nodes, instances, transforms, curve read/write, color, field nodes)
-Score  5:  9 nodes (mesh_boolean, fill_curve, fillet_curve, duplicate_elements, set_material,
-                    material_index, viewer, musgrave/noise edge cases)
-Score  3:  3 nodes (mesh_torus*, switch_float*, switch_vector*)  *non-Blender nodes
+Score  9:  3 nodes (clamp, boolean_math, value_color)
+Score  8: 28 nodes (math, vector_math, integer_math, compare, mix_float, mix_vector, map_range,
+                    checker_texture, invert_color, hue_saturation_value, position, normal, index,
+                    points_to_vertices, value_float, value_int, value_vector, value_bool,
+                    mesh_cube, mesh_cylinder, mesh_cone, switch, instance_on_points,
+                    delete_geometry, separate_geometry, curve_arc)
+Score  7: 85 nodes (Nearly all remaining nodes — mesh primitives, curve ops, geometry ops,
+                    texture nodes, instances, transforms, curve read/write, color, field nodes,
+                    material nodes, viewer, fill_curve, fillet_curve, mesh_boolean, duplicate_elements)
+Score  3:  1 node  (mesh_torus*)  *non-Blender node
 ```
 
 ---
