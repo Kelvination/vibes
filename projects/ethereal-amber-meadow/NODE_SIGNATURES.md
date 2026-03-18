@@ -14,7 +14,7 @@
 
 ---
 
-## Geometry Nodes (`geo/nodes.js`)
+## Geometry Nodes (`geo/nodes_v2_*.js`)
 
 ### Output / Input
 
