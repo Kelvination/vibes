@@ -517,13 +517,22 @@ export class CurveComponent {
       const all = [];
       const totalCount = this.pointCount;
       let globalIdx = 0;
-      for (const spline of this.splines) {
-        for (let i = 0; i < spline.positions.length; i++) {
+      for (let si = 0; si < this.splines.length; si++) {
+        const spline = this.splines[si];
+        const pointsInSpline = spline.positions.length;
+        for (let i = 0; i < pointsInSpline; i++) {
           all.push({
             index: globalIdx,
             count: totalCount,
             position: cloneVec(spline.positions[i]),
             normal: { x: 0, y: 0, z: 1 },
+            // Curve-specific context for field evaluation
+            splineIndex: si,
+            splineCount: this.splines.length,
+            localIndex: i,
+            localCount: pointsInSpline,
+            // Parameter t along spline (0..1)
+            parameter: pointsInSpline > 1 ? i / (pointsInSpline - 1) : 0,
           });
           globalIdx++;
         }

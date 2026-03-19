@@ -39,8 +39,15 @@ export function registerOperationNodes(registry) {
     outputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
     ],
-    defaults: {},
-    props: [],
+    defaults: { domain: 'POINT' },
+    props: [
+      { key: 'domain', label: 'Domain', type: 'select', options: [
+        { value: 'POINT', label: 'Point' },
+        { value: 'FACE', label: 'Face' },
+        { value: 'EDGE', label: 'Edge' },
+        { value: 'CURVE_POINT', label: 'Spline Point' },
+      ]},
+    ],
     evaluate(values, inputs) {
       const geo = inputs['Geometry'];
       if (!geo) return { outputs: [new GeometrySet()] };
@@ -407,6 +414,8 @@ export function registerOperationNodes(registry) {
     inputs: [
       { name: 'Geometry 1', type: SocketType.GEOMETRY },
       { name: 'Geometry 2', type: SocketType.GEOMETRY },
+      { name: 'Geometry 3', type: SocketType.GEOMETRY },
+      { name: 'Geometry 4', type: SocketType.GEOMETRY },
     ],
     outputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
@@ -414,13 +423,12 @@ export function registerOperationNodes(registry) {
     defaults: {},
     props: [],
     evaluate(values, inputs) {
-      const geo1 = inputs['Geometry 1'];
-      const geo2 = inputs['Geometry 2'];
-
       const result = new GeometrySet();
 
-      if (geo1) result.join(geo1);
-      if (geo2) result.join(geo2);
+      if (inputs['Geometry 1']) result.join(inputs['Geometry 1']);
+      if (inputs['Geometry 2']) result.join(inputs['Geometry 2']);
+      if (inputs['Geometry 3']) result.join(inputs['Geometry 3']);
+      if (inputs['Geometry 4']) result.join(inputs['Geometry 4']);
 
       return { outputs: [result] };
     },
