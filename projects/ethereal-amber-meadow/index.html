@@ -28,15 +28,15 @@
       <!-- Graph type tabs -->
       <div id="graph-tabs">
         <button class="tab-btn active" data-tab="geo">
-          <span class="tab-icon">△</span> Geometry
+          <span class="tab-icon">△</span><span class="tab-label"> Geometry</span>
         </button>
         <button class="tab-btn" data-tab="shader">
-          <span class="tab-icon">◉</span> Shader
+          <span class="tab-icon">◉</span><span class="tab-label"> Shader</span>
         </button>
       </div>
 
       <div class="topbar-right">
-        <button id="btn-run" class="action-btn run-btn">▶ Run</button>
+        <button id="btn-run" class="action-btn run-btn">▶</button>
         <button id="btn-toggle-view" class="icon-btn" aria-label="Toggle 3D View">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M10 2L18 7V13L10 18L2 13V7L10 2Z"/>
@@ -54,6 +54,9 @@
       </div>
       <input type="text" id="node-search" placeholder="Search nodes..." autocomplete="off" />
       <div id="node-categories"></div>
+      <div class="side-menu-footer">
+        <button id="btn-clear-graph" class="action-btn clear-btn">Clear Graph</button>
+      </div>
     </aside>
     <div id="menu-overlay" class="hidden"></div>
 

@@ -526,13 +526,14 @@ describe('Graph clear()', () => {
     assert.equal(graph.nextId, 1);
   });
 
-  it('should re-add output node when addOutput=true', () => {
+  it('should re-add group_input and output nodes when addOutput=true', () => {
     const graph = new NodeGraph('geo');
     graph.addNode('mesh_cube', 0, 0);
     graph.clear(true);
 
-    assert.equal(graph.nodes.length, 1);
-    assert.equal(graph.nodes[0].type, 'output');
+    assert.equal(graph.nodes.length, 2);
+    const types = graph.nodes.map(n => n.type).sort();
+    assert.deepEqual(types, ['group_input', 'output']);
   });
 
   it('should re-add shader_output for shader graphs', () => {

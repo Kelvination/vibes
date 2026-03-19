@@ -483,13 +483,40 @@ export function registerPrimitiveNodes(registry) {
     inputs: [],
     outputs: [
       { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Value 1', type: SocketType.FLOAT },
+      { name: 'Value 2', type: SocketType.FLOAT },
+      { name: 'Value 3', type: SocketType.FLOAT },
+      { name: 'Vector', type: SocketType.VECTOR },
+      { name: 'Integer', type: SocketType.INT },
+      { name: 'Boolean', type: SocketType.BOOL },
     ],
-    defaults: {},
-    props: [],
-    evaluate(values, inputs) {
-      // In standalone mode, Group Input provides an empty geometry.
-      // A host application could inject geometry here via a hook.
-      return { outputs: [new GeometrySet()] };
+    defaults: {
+      value1: 0, value2: 0, value3: 0,
+      vecX: 0, vecY: 0, vecZ: 0,
+      intVal: 0, boolVal: false,
+    },
+    props: [
+      { key: 'value1', label: 'Value 1', type: 'float', min: -10000, max: 10000, step: 0.1 },
+      { key: 'value2', label: 'Value 2', type: 'float', min: -10000, max: 10000, step: 0.1 },
+      { key: 'value3', label: 'Value 3', type: 'float', min: -10000, max: 10000, step: 0.1 },
+      { key: 'vecX', label: 'Vector X', type: 'float', min: -10000, max: 10000, step: 0.1 },
+      { key: 'vecY', label: 'Vector Y', type: 'float', min: -10000, max: 10000, step: 0.1 },
+      { key: 'vecZ', label: 'Vector Z', type: 'float', min: -10000, max: 10000, step: 0.1 },
+      { key: 'intVal', label: 'Integer', type: 'int', min: -10000, max: 10000, step: 1 },
+      { key: 'boolVal', label: 'Boolean', type: 'bool' },
+    ],
+    evaluate(values) {
+      return {
+        outputs: [
+          new GeometrySet(),
+          values.value1 ?? 0,
+          values.value2 ?? 0,
+          values.value3 ?? 0,
+          { x: values.vecX ?? 0, y: values.vecY ?? 0, z: values.vecZ ?? 0 },
+          values.intVal ?? 0,
+          !!values.boolVal,
+        ],
+      };
     },
   });
 

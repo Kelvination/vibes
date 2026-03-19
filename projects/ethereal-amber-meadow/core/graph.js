@@ -234,8 +234,12 @@ export class NodeGraph {
     this.connections = [];
     this.nextId = 1;
     if (addOutput) {
-      const outputType = this.graphType === 'shader' ? 'shader_output' : 'output';
-      this.addNode(outputType, 200, 100);
+      if (this.graphType === 'geo') {
+        this.addNode('group_input', -100, 100);
+        this.addNode('output', 200, 100);
+      } else {
+        this.addNode('shader_output', 200, 100);
+      }
     }
   }
 

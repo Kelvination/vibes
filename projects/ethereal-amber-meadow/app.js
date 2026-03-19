@@ -1010,6 +1010,11 @@ import { compileShader } from './shader/compiler.js';
   btnCloseMenu.addEventListener('click', closeMenu);
   menuOverlay.addEventListener('click', closeMenu);
 
+  document.getElementById('btn-clear-graph').addEventListener('click', () => {
+    closeMenu();
+    clearGraph();
+  });
+
   nodeSearch.addEventListener('input', () => {
     buildNodeList(nodeSearch.value);
   });
