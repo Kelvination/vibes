@@ -48,14 +48,19 @@ html, body {
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center;
   justify-content: space-between;
-  padding: 0 8px;
+  padding: 0 6px;
+  gap: 4px;
   z-index: 100;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .topbar-left, .topbar-right {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 4px;
+  flex-shrink: 0;
 }
+.topbar-left { min-width: 0; }
+#graph-tabs { flex-shrink: 1; min-width: 0; }
 
 .topbar-title {
   font-size: 15px; font-weight: 700;
@@ -210,6 +215,30 @@ html, body {
   flex-shrink: 0;
 }
 .node-list-item .node-label { font-size: 13px; }
+
+/* Side menu footer with clear button */
+.side-menu-footer {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.clear-btn {
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.15s;
+}
+.clear-btn:active {
+  background: var(--danger);
+  color: white;
+}
 
 #menu-overlay, #props-overlay {
   position: fixed; inset: 0;
@@ -557,6 +586,26 @@ html, body {
 }
 
 .running #btn-run { animation: pulse 1s infinite; }
+
+/* ===== Mobile small screen ===== */
+@media (max-width: 420px) {
+  :root { --topbar-h: 42px; --bottombar-h: 46px; }
+  .topbar-title { display: none; }
+  .tab-label { display: none; }
+  .tab-btn { padding: 5px 10px; font-size: 13px; }
+  .tab-icon { font-size: 13px; }
+  .run-btn { padding: 5px 10px; font-size: 12px; }
+  .icon-btn { width: 32px; height: 32px; }
+  .icon-btn.large { width: 40px; height: 40px; }
+  #bottombar { padding: 0 4px; gap: 2px; }
+  #status-text { font-size: 10px; }
+}
+
+/* ===== Mobile medium screen ===== */
+@media (min-width: 421px) and (max-width: 600px) {
+  .topbar-title { display: none; }
+  .tab-btn { padding: 5px 10px; font-size: 12px; }
+}
 
 /* ===== Landscape tweaks ===== */
 @media (orientation: landscape) and (max-height: 500px) {
