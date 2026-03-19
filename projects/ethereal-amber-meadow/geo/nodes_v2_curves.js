@@ -64,6 +64,166 @@ export function registerCurveNodes(registry) {
   // ── Category ────────────────────────────────────────────────────────────
   registry.addCategory('geo', 'CURVE', { name: 'Curve', color: '#FFC107', icon: '〰' });
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SET CURVE RADIUS
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Blender reference: node_geo_set_curve_radius.cc
+  //
+  // Sets the radius attribute on curve control points. The radius is used by
+  // Curve to Mesh to scale the profile at each point, and by other nodes
+  // that read the radius attribute.
+  //
+  // Inputs:
+  //   Curve     - source geometry with curve component
+  //   Selection - bool field on CURVE_POINT domain (which points to modify)
+  //   Radius    - float field (new radius value)
+  //
+  // Output:
+  //   Curve     - modified geometry
+
+  registry.addNode('geo', 'set_curve_radius', {
+    label: 'Set Curve Radius',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
+      { name: 'Radius', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: { radius: 0.005 },
+    props: [
+      { key: 'radius', label: 'Radius', type: 'float', min: 0, max: 100, step: 0.001 },
+    ],
+    evaluate(values, inputs) {
+      const geo = inputs['Curve'];
+      if (!geo || !geo.curve || geo.curve.splineCount === 0) {
+        return { outputs: [geo || new GeometrySet()] };
+      }
+
+      const result = geo.copy();
+      const curve = result.curve;
+      const elements = curve.buildElements(DOMAIN.CURVE_POINT);
+
+      // Evaluate selection
+      const selectionInput = inputs['Selection'];
+      let selection = null;
+      if (selectionInput != null) {
+        selection = isField(selectionInput)
+          ? selectionInput.evaluateAll(elements)
+          : new Array(elements.length).fill(!!selectionInput);
+      }
+
+      // Evaluate radius field
+      const radiusInput = inputs['Radius'] ?? values.radius;
+      const radii = isField(radiusInput)
+        ? radiusInput.evaluateAll(elements)
+        : new Array(elements.length).fill(
+            typeof radiusInput === 'number' ? radiusInput : values.radius
+          );
+
+      // Apply radius to each control point
+      let globalIdx = 0;
+      for (const spline of curve.splines) {
+        if (!spline.radii) {
+          spline.radii = new Array(spline.positions.length).fill(1);
+        }
+        for (let i = 0; i < spline.positions.length; i++) {
+          if (selection && !selection[globalIdx]) {
+            globalIdx++;
+            continue;
+          }
+          spline.radii[i] = radii[globalIdx] ?? values.radius;
+          globalIdx++;
+        }
+      }
+
+      return { outputs: [result] };
+    },
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SET CURVE TILT
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Blender reference: node_geo_set_curve_tilt.cc
+  //
+  // Sets the tilt attribute on curve control points. Tilt rotates the curve's
+  // normal around the tangent, affecting how profiles are oriented when using
+  // Curve to Mesh or when computing the Frenet frame.
+  //
+  // Inputs:
+  //   Curve     - source geometry with curve component
+  //   Selection - bool field on CURVE_POINT domain (which points to modify)
+  //   Tilt      - float field (tilt angle in radians)
+  //
+  // Output:
+  //   Curve     - modified geometry
+
+  registry.addNode('geo', 'set_curve_tilt', {
+    label: 'Set Curve Tilt',
+    category: 'CURVE',
+    inputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+      { name: 'Selection', type: SocketType.BOOL },
+      { name: 'Tilt', type: SocketType.FLOAT },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: { tilt: 0 },
+    props: [
+      { key: 'tilt', label: 'Tilt', type: 'float', min: -6.28318, max: 6.28318, step: 0.01745 },
+    ],
+    evaluate(values, inputs) {
+      const geo = inputs['Curve'];
+      if (!geo || !geo.curve || geo.curve.splineCount === 0) {
+        return { outputs: [geo || new GeometrySet()] };
+      }
+
+      const result = geo.copy();
+      const curve = result.curve;
+      const elements = curve.buildElements(DOMAIN.CURVE_POINT);
+
+      // Evaluate selection
+      const selectionInput = inputs['Selection'];
+      let selection = null;
+      if (selectionInput != null) {
+        selection = isField(selectionInput)
+          ? selectionInput.evaluateAll(elements)
+          : new Array(elements.length).fill(!!selectionInput);
+      }
+
+      // Evaluate tilt field
+      const tiltInput = inputs['Tilt'] ?? values.tilt;
+      const tilts = isField(tiltInput)
+        ? tiltInput.evaluateAll(elements)
+        : new Array(elements.length).fill(
+            typeof tiltInput === 'number' ? tiltInput : values.tilt
+          );
+
+      // Apply tilt to each control point
+      let globalIdx = 0;
+      for (const spline of curve.splines) {
+        if (!spline.tilts) {
+          spline.tilts = new Array(spline.positions.length).fill(0);
+        }
+        for (let i = 0; i < spline.positions.length; i++) {
+          if (selection && !selection[globalIdx]) {
+            globalIdx++;
+            continue;
+          }
+          spline.tilts[i] = tilts[globalIdx] ?? values.tilt;
+          globalIdx++;
+        }
+      }
+
+      return { outputs: [result] };
+    },
+  });
+
   // ── resample_curve ──────────────────────────────────────────────────────
   registry.addNode('geo', 'resample_curve', {
     label: 'Resample Curve',

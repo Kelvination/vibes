@@ -353,6 +353,39 @@ export function registerPrimitiveNodes(registry) {
     },
   });
 
+  // ── Group Input Node ────────────────────────────────────────────────────
+  //
+  // Blender reference: node_group_input in node_group.cc
+  //
+  // In Blender, the Group Input node provides the inputs to a node group.
+  // For a top-level geometry nodes modifier, it provides the mesh of the
+  // object the modifier is applied to.
+  //
+  // In our standalone system (no host object), Group Input outputs an
+  // empty geometry by default. This node is singular — only one per graph.
+  // Additional typed outputs (Float, Vector, etc.) can be added to match
+  // Blender's behavior of exposing group interface sockets.
+  //
+  // Output:
+  //   Geometry - empty GeometrySet (or future: host geometry)
+
+  registry.addNode('geo', 'group_input', {
+    label: 'Group Input',
+    category: 'INPUT',
+    singular: true,
+    inputs: [],
+    outputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+    ],
+    defaults: {},
+    props: [],
+    evaluate(values, inputs) {
+      // In standalone mode, Group Input provides an empty geometry.
+      // A host application could inject geometry here via a hook.
+      return { outputs: [new GeometrySet()] };
+    },
+  });
+
   // ── Output Node ─────────────────────────────────────────────────────────
 
   registry.addNode('geo', 'output', {
