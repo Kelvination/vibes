@@ -811,53 +811,72 @@ export function createMeshGrid(sizeX, sizeY, verticesX, verticesY) {
  * Create a cube/box mesh (like Blender's Mesh Cube node).
  */
 export function createMeshCube(sizeX, sizeY, sizeZ, verticesX, verticesY, verticesZ) {
-  verticesX = Math.max(2, Math.round(verticesX || 2));
-  verticesY = Math.max(2, Math.round(verticesY || 2));
-  verticesZ = Math.max(2, Math.round(verticesZ || 2));
+  const vx = Math.max(2, Math.round(verticesX || 2));
+  const vy = Math.max(2, Math.round(verticesY || 2));
+  const vz = Math.max(2, Math.round(verticesZ || 2));
 
-  // For a simple cube (2x2x2 vertices), build it directly
   const mesh = new MeshComponent();
   const hx = sizeX / 2, hy = sizeY / 2, hz = sizeZ / 2;
 
-  // 8 vertices
-  const v = [
-    { x: -hx, y: -hy, z: -hz }, // 0: left bottom back
-    { x:  hx, y: -hy, z: -hz }, // 1: right bottom back
-    { x:  hx, y:  hy, z: -hz }, // 2: right top back
-    { x: -hx, y:  hy, z: -hz }, // 3: left top back
-    { x: -hx, y: -hy, z:  hz }, // 4: left bottom front
-    { x:  hx, y: -hy, z:  hz }, // 5: right bottom front
-    { x:  hx, y:  hy, z:  hz }, // 6: right top front
-    { x: -hx, y:  hy, z:  hz }, // 7: left top front
-  ];
-  mesh.positions = v;
+  // Build a subdivided box: 6 face grids with shared edge/corner vertices.
+  // Blender ref: bke_mesh_primitive_cuboid_calc
+  const vertMap = new Map();
+  const edgeSet = new Set();
 
-  // 6 quad faces (CCW winding when viewed from outside)
-  const faces = [
-    [0, 3, 2, 1], // back  (-Z)
-    [4, 5, 6, 7], // front (+Z)
-    [0, 1, 5, 4], // bottom (-Y)
-    [2, 3, 7, 6], // top (+Y)
-    [0, 4, 7, 3], // left (-X)
-    [1, 2, 6, 5], // right (+X)
-  ];
-  for (const f of faces) {
-    mesh.faceVertCounts.push(4);
-    mesh.cornerVerts.push(...f);
+  function addVert(px, py, pz) {
+    const kx = Math.round(px * 1e6) / 1e6;
+    const ky = Math.round(py * 1e6) / 1e6;
+    const kz = Math.round(pz * 1e6) / 1e6;
+    const key = `${kx},${ky},${kz}`;
+    if (vertMap.has(key)) return vertMap.get(key);
+    const idx = mesh.positions.length;
+    mesh.positions.push({ x: px, y: py, z: pz });
+    vertMap.set(key, idx);
+    return idx;
   }
 
-  // 12 edges
-  const edgeSet = new Set();
-  for (const f of faces) {
-    for (let i = 0; i < f.length; i++) {
-      const a = f[i], b = f[(i + 1) % f.length];
-      const key = Math.min(a, b) + ',' + Math.max(a, b);
-      if (!edgeSet.has(key)) {
-        edgeSet.add(key);
-        mesh.edges.push([Math.min(a, b), Math.max(a, b)]);
+  function addEdge(a, b) {
+    const key = Math.min(a, b) + ',' + Math.max(a, b);
+    if (!edgeSet.has(key)) {
+      edgeSet.add(key);
+      mesh.edges.push([Math.min(a, b), Math.max(a, b)]);
+    }
+  }
+
+  function addFaceGrid(resU, resV, posFunc, ccw) {
+    const grid = [];
+    for (let iv = 0; iv < resV; iv++) {
+      const row = [];
+      for (let iu = 0; iu < resU; iu++) {
+        const p = posFunc(iu / (resU - 1), iv / (resV - 1));
+        row.push(addVert(p.x, p.y, p.z));
+      }
+      grid.push(row);
+    }
+    for (let iv = 0; iv < resV - 1; iv++) {
+      for (let iu = 0; iu < resU - 1; iu++) {
+        const bl = grid[iv][iu], br = grid[iv][iu + 1];
+        const tr = grid[iv + 1][iu + 1], tl = grid[iv + 1][iu];
+        mesh.faceVertCounts.push(4);
+        if (ccw) mesh.cornerVerts.push(bl, br, tr, tl);
+        else mesh.cornerVerts.push(bl, tl, tr, br);
+        addEdge(bl, br); addEdge(br, tr); addEdge(tr, tl); addEdge(tl, bl);
       }
     }
   }
+
+  // -Z back face
+  addFaceGrid(vx, vy, (u, v) => ({ x: -hx + u * sizeX, y: -hy + v * sizeY, z: -hz }), false);
+  // +Z front face
+  addFaceGrid(vx, vy, (u, v) => ({ x: -hx + u * sizeX, y: -hy + v * sizeY, z: hz }), true);
+  // -Y bottom face
+  addFaceGrid(vx, vz, (u, v) => ({ x: -hx + u * sizeX, y: -hy, z: -hz + v * sizeZ }), true);
+  // +Y top face
+  addFaceGrid(vx, vz, (u, v) => ({ x: -hx + u * sizeX, y: hy, z: -hz + v * sizeZ }), false);
+  // -X left face
+  addFaceGrid(vz, vy, (u, v) => ({ x: -hx, y: -hy + v * sizeY, z: -hz + u * sizeZ }), true);
+  // +X right face
+  addFaceGrid(vz, vy, (u, v) => ({ x: hx, y: -hy + v * sizeY, z: -hz + u * sizeZ }), false);
 
   return mesh;
 }

@@ -458,8 +458,8 @@ import { compileShader } from './shader/compiler.js';
           headerRow.appendChild(linkBtn);
           group.appendChild(headerRow);
 
-          // Create sliders for each axis
-          const axisControls = [];
+          // Create value bars for each axis
+          const axisBars = [];
           grp.props.forEach((ap, ai) => {
             const axisLabel = ['X', 'Y', 'Z'][ai];
             const row = document.createElement('div');
@@ -470,64 +470,18 @@ import { compileShader } from './shader/compiler.js';
             axTag.style.cssText = `font-size:11px;font-weight:600;color:${['#e06060','#60c060','#6080e0'][ai]};width:14px;text-align:center;flex-shrink:0;`;
             row.appendChild(axTag);
 
-            const slider = document.createElement('input');
-            slider.type = 'range';
-            slider.className = 'prop-slider';
-            slider.style.flex = '1';
-            slider.min = ap.min ?? 0;
-            slider.max = ap.max ?? 10;
-            slider.step = ap.step ?? 0.1;
-            slider.value = node.values[ap.key] ?? 0;
-
-            const numInput = document.createElement('input');
-            numInput.type = 'number';
-            numInput.className = 'prop-input';
-            numInput.style.cssText = 'width:60px;flex:none;';
-            numInput.min = ap.min ?? '';
-            numInput.max = ap.max ?? '';
-            numInput.step = ap.step ?? '';
-            numInput.value = node.values[ap.key] ?? 0;
-
-            axisControls.push({ slider, numInput, prop: ap });
-
-            slider.addEventListener('input', () => {
-              let v = ap.type === 'int' ? parseInt(slider.value) : parseFloat(slider.value);
-              activeGraph.setNodeValue(node.id, ap.key, v);
-              numInput.value = v;
-              if (node.values[linkKey]) {
-                // Update all three axes
-                grp.keys.forEach((k, ki) => {
-                  activeGraph.setNodeValue(node.id, k, v);
-                  if (ki !== ai && axisControls[ki]) {
-                    axisControls[ki].slider.value = v;
-                    axisControls[ki].numInput.value = v;
-                  }
-                });
-              }
-              saveGraph();
-              autoRun();
-            });
-
-            numInput.addEventListener('change', () => {
-              let v = ap.type === 'int' ? parseInt(numInput.value) : parseFloat(numInput.value);
-              if (isNaN(v)) v = 0;
-              activeGraph.setNodeValue(node.id, ap.key, v);
-              slider.value = v;
+            const bar = createValueBar(node, ap, (v) => {
               if (node.values[linkKey]) {
                 grp.keys.forEach((k, ki) => {
                   activeGraph.setNodeValue(node.id, k, v);
-                  if (ki !== ai && axisControls[ki]) {
-                    axisControls[ki].slider.value = v;
-                    axisControls[ki].numInput.value = v;
-                  }
+                  if (ki !== ai && axisBars[ki]) axisBars[ki]._updateDisplay();
                 });
               }
-              saveGraph();
-              autoRun();
             });
+            bar.style.flex = '1';
+            axisBars.push(bar);
 
-            row.appendChild(slider);
-            row.appendChild(numInput);
+            row.appendChild(bar);
             group.appendChild(row);
           });
 
@@ -547,54 +501,8 @@ import { compileShader } from './shader/compiler.js';
         switch (prop.type) {
           case 'float':
           case 'int': {
-            const wrap = document.createElement('div');
-            wrap.className = 'prop-slider-wrap';
-
-            const slider = document.createElement('input');
-            slider.type = 'range';
-            slider.className = 'prop-slider';
-            slider.min = prop.min ?? 0;
-            slider.max = prop.max ?? 10;
-            slider.step = prop.step ?? (prop.type === 'int' ? 1 : 0.1);
-            slider.value = node.values[prop.key] ?? 0;
-
-            const valDisplay = document.createElement('span');
-            valDisplay.className = 'prop-slider-val';
-            valDisplay.textContent = formatNum(slider.value, prop.type);
-
-            const numInput = document.createElement('input');
-            numInput.type = 'number';
-            numInput.className = 'prop-input';
-            numInput.style.width = '70px';
-            numInput.style.flex = 'none';
-            numInput.min = prop.min ?? '';
-            numInput.max = prop.max ?? '';
-            numInput.step = prop.step ?? '';
-            numInput.value = node.values[prop.key] ?? 0;
-
-            slider.addEventListener('input', () => {
-              let v = prop.type === 'int' ? parseInt(slider.value) : parseFloat(slider.value);
-              activeGraph.setNodeValue(node.id, prop.key, v);
-              valDisplay.textContent = formatNum(v, prop.type);
-              numInput.value = v;
-              saveGraph();
-              autoRun();
-            });
-
-            numInput.addEventListener('change', () => {
-              let v = prop.type === 'int' ? parseInt(numInput.value) : parseFloat(numInput.value);
-              if (isNaN(v)) v = 0;
-              activeGraph.setNodeValue(node.id, prop.key, v);
-              slider.value = v;
-              valDisplay.textContent = formatNum(v, prop.type);
-              saveGraph();
-              autoRun();
-            });
-
-            wrap.appendChild(slider);
-            wrap.appendChild(valDisplay);
-            group.appendChild(wrap);
-            group.appendChild(numInput);
+            // Blender-style value bar: scrub to change, tap to type
+            group.appendChild(createValueBar(node, prop));
             break;
           }
 
@@ -675,6 +583,145 @@ import { compileShader } from './shader/compiler.js';
   function formatNum(v, type) {
     if (type === 'int') return Math.round(v).toString();
     return parseFloat(v).toFixed(2);
+  }
+
+  /**
+   * Create a Blender-style value bar for the properties panel.
+   * Supports: drag/scrub to change, tap to type a value.
+   *
+   * @param {Object} node - The node being edited
+   * @param {Object} prop - The property definition { key, type, min, max, step, label }
+   * @param {Function} [onChange] - Optional callback after value changes (for linked XYZ)
+   * @returns {HTMLElement} The value bar container
+   */
+  function createValueBar(node, prop, onChange) {
+    const bar = document.createElement('div');
+    bar.className = 'value-bar';
+
+    const fill = document.createElement('div');
+    fill.className = 'value-bar-fill';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'value-bar-label';
+    labelEl.textContent = prop.label;
+
+    const valEl = document.createElement('span');
+    valEl.className = 'value-bar-value';
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'value-bar-input hidden';
+    input.inputMode = 'decimal';
+    input.step = prop.step ?? (prop.type === 'int' ? 1 : 0.1);
+    if (prop.min != null) input.min = prop.min;
+    if (prop.max != null) input.max = prop.max;
+
+    bar.appendChild(fill);
+    bar.appendChild(labelEl);
+    bar.appendChild(valEl);
+    bar.appendChild(input);
+
+    const min = prop.min ?? 0;
+    const max = prop.max ?? 1;
+    const range = max - min;
+
+    function updateDisplay() {
+      const v = node.values[prop.key] ?? 0;
+      valEl.textContent = formatNum(v, prop.type);
+      const frac = range > 0 ? Math.max(0, Math.min(1, (v - min) / range)) : 0;
+      fill.style.width = (frac * 100) + '%';
+    }
+    updateDisplay();
+
+    // Scrub handling
+    let scrubStartX = 0, scrubStartVal = 0, scrubMoved = false;
+    const step = prop.step ?? (prop.type === 'int' ? 1 : 0.1);
+
+    function onPointerDown(e) {
+      if (input.classList.contains('editing')) return;
+      e.preventDefault();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      scrubStartX = clientX;
+      scrubStartVal = node.values[prop.key] ?? 0;
+      scrubMoved = false;
+      bar.classList.add('scrubbing');
+
+      function onPointerMove(e2) {
+        const cx = e2.touches ? e2.touches[0].clientX : e2.clientX;
+        if (Math.abs(cx - scrubStartX) > 3) scrubMoved = true;
+        if (!scrubMoved) return;
+        const delta = (cx - scrubStartX) * step * 0.5;
+        let v = scrubStartVal + delta;
+        v = Math.max(min, Math.min(max, v));
+        if (prop.type === 'int') v = Math.round(v);
+        else v = Math.round(v * 1000) / 1000;
+        activeGraph.setNodeValue(node.id, prop.key, v);
+        updateDisplay();
+        if (onChange) onChange(v);
+      }
+
+      function onPointerUp() {
+        bar.classList.remove('scrubbing');
+        document.removeEventListener('mousemove', onPointerMove);
+        document.removeEventListener('mouseup', onPointerUp);
+        document.removeEventListener('touchmove', onPointerMove);
+        document.removeEventListener('touchend', onPointerUp);
+        document.removeEventListener('touchcancel', onPointerUp);
+        if (!scrubMoved) {
+          // Tap → show input
+          labelEl.style.display = 'none';
+          valEl.style.display = 'none';
+          input.classList.remove('hidden');
+          input.classList.add('editing');
+          input.value = node.values[prop.key] ?? 0;
+          input.focus();
+          input.select();
+        } else {
+          saveGraph();
+          autoRun();
+        }
+      }
+
+      document.addEventListener('mousemove', onPointerMove);
+      document.addEventListener('mouseup', onPointerUp);
+      document.addEventListener('touchmove', onPointerMove, { passive: false });
+      document.addEventListener('touchend', onPointerUp);
+      document.addEventListener('touchcancel', onPointerUp);
+    }
+
+    bar.addEventListener('mousedown', onPointerDown);
+    bar.addEventListener('touchstart', onPointerDown, { passive: false });
+
+    function commitInput() {
+      let v = prop.type === 'int' ? parseInt(input.value) : parseFloat(input.value);
+      if (isNaN(v)) v = 0;
+      v = Math.max(min, Math.min(max, v));
+      activeGraph.setNodeValue(node.id, prop.key, v);
+      input.classList.add('hidden');
+      input.classList.remove('editing');
+      labelEl.style.display = '';
+      valEl.style.display = '';
+      updateDisplay();
+      if (onChange) onChange(v);
+      saveGraph();
+      autoRun();
+    }
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commitInput(); }
+      if (e.key === 'Escape') {
+        input.classList.add('hidden');
+        input.classList.remove('editing');
+        labelEl.style.display = '';
+        valEl.style.display = '';
+      }
+    });
+    input.addEventListener('blur', () => {
+      if (input.classList.contains('editing')) commitInput();
+    });
+
+    bar._updateDisplay = updateDisplay;
+    return bar;
   }
 
   // ===== 3D Viewport (Geo) =====
@@ -823,6 +870,60 @@ import { compileShader } from './shader/compiler.js';
       // Open the add-node drop menu at the cursor position
       openAddMenuAt(info);
     };
+
+    // Inline value edit: tap on a value field without dragging
+    const inlineEdit = document.getElementById('inline-edit');
+    const inlineInput = document.getElementById('inline-edit-input');
+    let inlineEditNode = null;
+    let inlineEditProp = null;
+
+    renderer.onValueFieldTap = (node, prop, screenRect) => {
+      inlineEditNode = node;
+      inlineEditProp = prop;
+
+      // Position the overlay over the value field
+      const canvasRect = graphCanvas.getBoundingClientRect();
+      inlineEdit.style.left = (canvasRect.left + screenRect.x) + 'px';
+      inlineEdit.style.top = (canvasRect.top + screenRect.y) + 'px';
+      inlineEdit.style.width = screenRect.w + 'px';
+      inlineEdit.style.height = screenRect.h + 'px';
+      inlineEdit.classList.remove('hidden');
+
+      inlineInput.value = node.values[prop.key] ?? 0;
+      inlineInput.step = prop.step ?? (prop.type === 'int' ? 1 : 0.1);
+      if (prop.min != null) inlineInput.min = prop.min;
+      if (prop.max != null) inlineInput.max = prop.max;
+      inlineInput.focus();
+      inlineInput.select();
+    };
+
+    function commitInlineEdit() {
+      if (!inlineEditNode || !inlineEditProp) return;
+      let v = inlineEditProp.type === 'int'
+        ? parseInt(inlineInput.value)
+        : parseFloat(inlineInput.value);
+      if (isNaN(v)) v = 0;
+      activeGraph.setNodeValue(inlineEditNode.id, inlineEditProp.key, v);
+      inlineEdit.classList.add('hidden');
+      inlineEditNode = null;
+      inlineEditProp = null;
+      saveGraph();
+      autoRun();
+    }
+
+    inlineInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitInlineEdit();
+      } else if (e.key === 'Escape') {
+        inlineEdit.classList.add('hidden');
+        inlineEditNode = null;
+        inlineEditProp = null;
+      }
+    });
+    inlineInput.addEventListener('blur', () => {
+      if (inlineEditNode) commitInlineEdit();
+    });
   }
 
   /** Open add-node menu at a specific screen/world position (for double-click on empty space). */
