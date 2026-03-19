@@ -537,13 +537,18 @@ import { compileShader } from './shader/compiler.js';
             select.className = 'prop-select';
             for (const opt of (prop.options || [])) {
               const option = document.createElement('option');
-              option.value = opt.value;
-              option.textContent = opt.label;
-              if (node.values[prop.key] === opt.value) option.selected = true;
+              // Support both plain strings and {value, label} objects
+              const val = typeof opt === 'string' ? opt : opt.value;
+              const lbl = typeof opt === 'string' ? opt : (opt.label || opt.value);
+              option.value = val;
+              option.textContent = lbl;
+              if (node.values[prop.key] === val) option.selected = true;
               select.appendChild(option);
             }
             select.addEventListener('change', () => {
               activeGraph.setNodeValue(node.id, prop.key, select.value);
+              // Refresh properties panel when mode/type selector changes
+              openProperties(node);
               saveGraph();
               autoRun();
             });

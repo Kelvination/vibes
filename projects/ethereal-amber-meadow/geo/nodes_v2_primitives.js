@@ -294,6 +294,104 @@ export function registerPrimitiveNodes(registry) {
     },
   });
 
+  // ── Bezier Segment ──────────────────────────────────────────────────────
+  // Blender ref: node_geo_curve_primitive_bezier_segment.cc
+  // Creates a single Bezier segment from start/end positions and handles.
+
+  registry.addNode('geo', 'bezier_segment', {
+    label: 'Bezier Segment',
+    category: 'CURVE_PRIMITIVES',
+    inputs: [
+      { name: 'Resolution', type: SocketType.INT },
+      { name: 'Start', type: SocketType.VECTOR },
+      { name: 'Start Handle', type: SocketType.VECTOR },
+      { name: 'End Handle', type: SocketType.VECTOR },
+      { name: 'End', type: SocketType.VECTOR },
+    ],
+    outputs: [
+      { name: 'Curve', type: SocketType.GEOMETRY },
+    ],
+    defaults: {
+      mode: 'POSITION', resolution: 16,
+      startX: -1, startY: 0, startZ: 0,
+      startHandleX: -0.5, startHandleY: 0.5, startHandleZ: 0,
+      endHandleX: 0.5, endHandleY: 0.5, endHandleZ: 0,
+      endX: 1, endY: 0, endZ: 0,
+    },
+    props: [
+      { key: 'mode', label: 'Mode', type: 'select', options: [
+        { value: 'POSITION', label: 'Position' },
+        { value: 'OFFSET', label: 'Offset' },
+      ]},
+      { key: 'resolution', label: 'Resolution', type: 'int', min: 2, max: 256, step: 1 },
+      { key: 'startX', label: 'Start X', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'startY', label: 'Start Y', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'startZ', label: 'Start Z', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'startHandleX', label: 'Start Handle X', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'startHandleY', label: 'Start Handle Y', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'startHandleZ', label: 'Start Handle Z', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'endHandleX', label: 'End Handle X', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'endHandleY', label: 'End Handle Y', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'endHandleZ', label: 'End Handle Z', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'endX', label: 'End X', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'endY', label: 'End Y', type: 'float', min: -1000, max: 1000, step: 0.1 },
+      { key: 'endZ', label: 'End Z', type: 'float', min: -1000, max: 1000, step: 0.1 },
+    ],
+    evaluate(values, inputs) {
+      const resolution = Math.max(2, inputs['Resolution'] ?? values.resolution);
+      const start = inputs['Start'] ?? { x: values.startX, y: values.startY, z: values.startZ };
+      const end = inputs['End'] ?? { x: values.endX, y: values.endY, z: values.endZ };
+      let startHandle = inputs['Start Handle'] ?? { x: values.startHandleX, y: values.startHandleY, z: values.startHandleZ };
+      let endHandle = inputs['End Handle'] ?? { x: values.endHandleX, y: values.endHandleY, z: values.endHandleZ };
+
+      // OFFSET mode: handles are relative to their control point
+      if (values.mode === 'OFFSET') {
+        startHandle = {
+          x: start.x + startHandle.x,
+          y: start.y + startHandle.y,
+          z: start.z + startHandle.z,
+        };
+        endHandle = {
+          x: end.x + endHandle.x,
+          y: end.y + endHandle.y,
+          z: end.z + endHandle.z,
+        };
+      }
+
+      // Sample the cubic Bezier curve
+      const positions = [];
+      for (let i = 0; i < resolution; i++) {
+        const t = i / (resolution - 1);
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const mt = 1 - t;
+        const mt2 = mt * mt;
+        const mt3 = mt2 * mt;
+        positions.push({
+          x: mt3 * start.x + 3 * mt2 * t * startHandle.x + 3 * mt * t2 * endHandle.x + t3 * end.x,
+          y: mt3 * start.y + 3 * mt2 * t * startHandle.y + 3 * mt * t2 * endHandle.y + t3 * end.y,
+          z: mt3 * start.z + 3 * mt2 * t * startHandle.z + 3 * mt * t2 * endHandle.z + t3 * end.z,
+        });
+      }
+
+      const curve = new CurveComponent();
+      curve.splines.push({
+        type: 'POLY',
+        positions,
+        handleLeft: null,
+        handleRight: null,
+        radii: new Array(positions.length).fill(1),
+        tilts: new Array(positions.length).fill(0),
+        cyclic: false,
+        resolution: 12,
+      });
+
+      const gs = new GeometrySet();
+      gs.curve = curve;
+      return { outputs: [gs] };
+    },
+  });
+
   // ── Input Nodes ─────────────────────────────────────────────────────────
 
   registry.addNode('geo', 'value_float', {
