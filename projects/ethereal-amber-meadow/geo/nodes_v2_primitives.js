@@ -63,22 +63,31 @@ export function registerPrimitiveNodes(registry) {
       { name: 'Size X', type: SocketType.FLOAT },
       { name: 'Size Y', type: SocketType.FLOAT },
       { name: 'Size Z', type: SocketType.FLOAT },
+      { name: 'Vertices X', type: SocketType.INT },
+      { name: 'Vertices Y', type: SocketType.INT },
+      { name: 'Vertices Z', type: SocketType.INT },
     ],
     outputs: [
       { name: 'Mesh', type: SocketType.GEOMETRY },
     ],
-    defaults: { sizeX: 1, sizeY: 1, sizeZ: 1 },
+    defaults: { sizeX: 1, sizeY: 1, sizeZ: 1, verticesX: 2, verticesY: 2, verticesZ: 2 },
     props: [
       { key: 'sizeX', label: 'Size X', type: 'float', min: 0.01, max: 100, step: 0.1 },
       { key: 'sizeY', label: 'Size Y', type: 'float', min: 0.01, max: 100, step: 0.1 },
       { key: 'sizeZ', label: 'Size Z', type: 'float', min: 0.01, max: 100, step: 0.1 },
+      { key: 'verticesX', label: 'Vertices X', type: 'int', min: 2, max: 100, step: 1 },
+      { key: 'verticesY', label: 'Vertices Y', type: 'int', min: 2, max: 100, step: 1 },
+      { key: 'verticesZ', label: 'Vertices Z', type: 'int', min: 2, max: 100, step: 1 },
     ],
     evaluate(values, inputs) {
       const sizeX = inputs['Size X'] ?? values.sizeX;
       const sizeY = inputs['Size Y'] ?? values.sizeY;
       const sizeZ = inputs['Size Z'] ?? values.sizeZ;
+      const verticesX = inputs['Vertices X'] ?? values.verticesX;
+      const verticesY = inputs['Vertices Y'] ?? values.verticesY;
+      const verticesZ = inputs['Vertices Z'] ?? values.verticesZ;
       const gs = new GeometrySet();
-      gs.mesh = createMeshCube(sizeX, sizeY, sizeZ);
+      gs.mesh = createMeshCube(sizeX, sizeY, sizeZ, verticesX, verticesY, verticesZ);
       return { outputs: [gs] };
     },
   });
@@ -400,6 +409,46 @@ export function registerPrimitiveNodes(registry) {
     props: [],
     evaluate(values, inputs) {
       return { outputs: [], geometry: inputs['Geometry'] || null };
+    },
+  });
+
+  // ── Viewer Node ───────────────────────────────────────────────────────
+  //
+  // Blender reference: node_geo_viewer.cc
+  //
+  // The Viewer node displays a geometry (or field evaluated on a geometry)
+  // in the viewport as an overlay. It's a terminal node like Group Output
+  // but doesn't affect the final output - it's purely for debugging.
+  //
+  // In Blender, connecting a field to the Value input colors the geometry
+  // overlay by that field's value. We support passing the geometry through
+  // for display in the 3D viewport.
+  //
+  // The graph evaluator explicitly finds and evaluates Viewer nodes even
+  // though they're not connected to the output path.
+  //
+  // Inputs:
+  //   Geometry - geometry to display
+  //   Value    - optional field to color/visualize (stored but not rendered yet)
+  //
+  // Outputs: (none - terminal node)
+
+  registry.addCategory('geo', 'VIEWER', { name: 'Viewer', color: '#78909C', icon: '👁' });
+
+  registry.addNode('geo', 'viewer', {
+    label: 'Viewer',
+    category: 'VIEWER',
+    inputs: [
+      { name: 'Geometry', type: SocketType.GEOMETRY },
+      { name: 'Value', type: SocketType.FLOAT },
+    ],
+    outputs: [],
+    defaults: {},
+    props: [],
+    evaluate(values, inputs) {
+      const geo = inputs['Geometry'] || null;
+      // viewerGeometry is picked up by the graph evaluator
+      return { outputs: [], viewerGeometry: geo };
     },
   });
 }

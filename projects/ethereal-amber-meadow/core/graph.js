@@ -178,6 +178,18 @@ export class NodeGraph {
     };
 
     const outputResult = evalNode(outputNode.id);
+
+    // Also evaluate any viewer nodes (they're not connected to the output)
+    const viewerResults = [];
+    for (const node of this.nodes) {
+      if (node.type === 'viewer') {
+        const result = evalNode(node.id);
+        if (result?.viewerGeometry) {
+          viewerResults.push(result.viewerGeometry);
+        }
+      }
+    }
+
     const evalTime = (performance.now() - startTime).toFixed(1);
 
     // Extract results based on graph type
@@ -194,6 +206,10 @@ export class NodeGraph {
     let geometries = [];
     if (geoData) {
       geometries = Array.isArray(geoData) ? geoData.filter(Boolean) : [geoData];
+    }
+    // Add viewer geometries
+    for (const vg of viewerResults) {
+      geometries.push(vg);
     }
 
     return {

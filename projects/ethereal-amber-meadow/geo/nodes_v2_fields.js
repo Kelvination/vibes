@@ -670,6 +670,21 @@ export function registerFieldNodes(registry) {
     { value: 'BOOLEAN', label: 'Boolean' },
   ];
 
+  // Robust hash combining index, seed, and channel.
+  // Blender ref: hash_float_to_float in BLI_hash.hh - uses multiple mixing rounds
+  // so that small seed changes (0→1→2) produce very different outputs.
+  function hashIndexSeed(index, seed, channel) {
+    let h = (seed * 374761393 + 3266489917) | 0;
+    h = (h + (index * 668265263)) | 0;
+    h = (h + (channel * 1274126177)) | 0;
+    h ^= h >>> 15;
+    h = Math.imul(h, 2246822519);
+    h ^= h >>> 13;
+    h = Math.imul(h, 3266489917);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  }
+
   registry.addNode('geo', 'random_value', {
     label: 'Random Value',
     category: 'MATH',
@@ -694,32 +709,41 @@ export function registerFieldNodes(registry) {
       const maxVal = inputs['Max'] ?? values.max;
       const seed = inputs['Seed'] ?? values.seed;
 
-      // Always return a Field for per-element randomness
-      const fieldType = dataType === 'FLOAT_VECTOR' ? 'vector' : (dataType === 'BOOLEAN' ? 'bool' : 'float');
+      // Determine output field type from data_type.
+      // The output socket type stays FLOAT for graph wiring compatibility,
+      // but the field carries the correct runtime type so downstream nodes
+      // (Set Position, Instance on Points, etc.) interpret values correctly.
+      const fieldType = dataType === 'FLOAT_VECTOR' ? 'vector'
+        : dataType === 'BOOLEAN' ? 'bool'
+        : dataType === 'INT' ? 'int'
+        : 'float';
 
       const result = new Field(fieldType, (el) => {
         const idx = el.index ?? 0;
-        const rMin = isField(minVal) ? minVal.evaluateAt(el) : minVal;
-        const rMax = isField(maxVal) ? maxVal.evaluateAt(el) : maxVal;
-        const rSeed = isField(seed) ? seed.evaluateAt(el) : seed;
+        const rMin = isField(minVal) ? minVal.evaluateAt(el) : (typeof minVal === 'number' ? minVal : values.min);
+        const rMax = isField(maxVal) ? maxVal.evaluateAt(el) : (typeof maxVal === 'number' ? maxVal : values.max);
+        const rSeed = isField(seed) ? seed.evaluateAt(el) : (typeof seed === 'number' ? seed : values.seed);
 
         switch (dataType) {
           case 'FLOAT': {
-            const r = seededRandom((idx * 73856093) ^ rSeed);
+            const r = hashIndexSeed(idx, rSeed, 0);
             return rMin + r * (rMax - rMin);
           }
           case 'INT': {
-            const r = seededRandom((idx * 73856093) ^ rSeed);
-            return Math.floor(rMin + r * (rMax + 1 - rMin));
+            const r = hashIndexSeed(idx, rSeed, 0);
+            const lo = Math.ceil(rMin);
+            const hi = Math.floor(rMax);
+            if (hi < lo) return lo;
+            return lo + Math.floor(r * (hi - lo + 1));
           }
           case 'BOOLEAN': {
-            const r = seededRandom((idx * 73856093) ^ rSeed);
+            const r = hashIndexSeed(idx, rSeed, 0);
             return r > 0.5;
           }
           case 'FLOAT_VECTOR': {
-            const rx = seededRandom((idx * 73856093) ^ rSeed);
-            const ry = seededRandom((idx * 19349663) ^ rSeed);
-            const rz = seededRandom((idx * 83492791) ^ rSeed);
+            const rx = hashIndexSeed(idx, rSeed, 0);
+            const ry = hashIndexSeed(idx, rSeed, 1);
+            const rz = hashIndexSeed(idx, rSeed, 2);
             return {
               x: rMin + rx * (rMax - rMin),
               y: rMin + ry * (rMax - rMin),

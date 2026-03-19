@@ -48,6 +48,7 @@ export class GraphRenderer {
     this.onNodeValueChanged = null;
     this.onEmptyDoubleTap = null;
     this.onStatusUpdate = null;
+    this.onValueFieldTap = null; // (node, prop, screenRect) - tap without drag on value field
 
     this._setupEvents();
     this._resize();
@@ -255,7 +256,7 @@ export class GraphRenderer {
       return;
     }
 
-    // Check for value field hit (scrub)
+    // Check for value field hit (scrub or tap-to-edit)
     const vf = this.hitTestValueField(world.x, world.y);
     if (vf) {
       this.scrubbing = {
@@ -267,7 +268,13 @@ export class GraphRenderer {
         min: vf.prop.min ?? -10000,
         max: vf.prop.max ?? 10000,
         propType: vf.prop.type,
+        moved: false,
+        _vfNode: vf.node,
+        _vfProp: vf.prop,
+        _vfSocketIdx: vf.socketIdx,
       };
+      this.selectedNode = vf.node.id;
+      if (this.onNodeSelected) this.onNodeSelected(vf.node);
       return;
     }
 
@@ -351,7 +358,11 @@ export class GraphRenderer {
     const pos = this._getTouchPos(e.touches[0]);
 
     if (this.scrubbing) {
-      this._handleScrub(pos.x);
+      // Only start actual scrubbing after a minimum drag distance (5px)
+      if (Math.abs(pos.x - this.scrubbing.startX) > 5) {
+        this.scrubbing.moved = true;
+        this._handleScrub(pos.x);
+      }
       return;
     }
 
@@ -381,6 +392,21 @@ export class GraphRenderer {
 
   _onTouchEnd(e) {
     if (this.scrubbing) {
+      if (!this.scrubbing.moved && this.onValueFieldTap) {
+        // Tap without drag → open numeric input
+        const node = this.scrubbing._vfNode;
+        const prop = this.scrubbing._vfProp;
+        const socketIdx = this.scrubbing._vfSocketIdx;
+        const rect = this._getValueFieldRect(node, socketIdx);
+        const screenTL = this.worldToScreen(rect.x, rect.y);
+        const screenBR = this.worldToScreen(rect.x + rect.w, rect.y + rect.h);
+        this.onValueFieldTap(node, prop, {
+          x: screenTL.x,
+          y: screenTL.y,
+          w: screenBR.x - screenTL.x,
+          h: screenBR.y - screenTL.y,
+        });
+      }
       this.scrubbing = null;
       return;
     }
@@ -448,7 +474,7 @@ export class GraphRenderer {
       return;
     }
 
-    // Check for value field hit (scrub)
+    // Check for value field hit (scrub or tap-to-edit)
     const vf = this.hitTestValueField(world.x, world.y);
     if (vf) {
       this.scrubbing = {
@@ -460,8 +486,11 @@ export class GraphRenderer {
         min: vf.prop.min ?? -10000,
         max: vf.prop.max ?? 10000,
         propType: vf.prop.type,
+        moved: false,
+        _vfNode: vf.node,
+        _vfProp: vf.prop,
+        _vfSocketIdx: vf.socketIdx,
       };
-      // Select the node too
       this.selectedNode = vf.node.id;
       if (this.onNodeSelected) this.onNodeSelected(vf.node);
       return;
@@ -496,7 +525,10 @@ export class GraphRenderer {
     const pos = { x: e.offsetX, y: e.offsetY };
 
     if (this.scrubbing) {
-      this._handleScrub(pos.x);
+      if (Math.abs(pos.x - this.scrubbing.startX) > 5) {
+        this.scrubbing.moved = true;
+        this._handleScrub(pos.x);
+      }
       return;
     }
 
@@ -529,6 +561,20 @@ export class GraphRenderer {
 
   _onMouseUp(e) {
     if (this.scrubbing) {
+      if (!this.scrubbing.moved && this.onValueFieldTap) {
+        const node = this.scrubbing._vfNode;
+        const prop = this.scrubbing._vfProp;
+        const socketIdx = this.scrubbing._vfSocketIdx;
+        const rect = this._getValueFieldRect(node, socketIdx);
+        const screenTL = this.worldToScreen(rect.x, rect.y);
+        const screenBR = this.worldToScreen(rect.x + rect.w, rect.y + rect.h);
+        this.onValueFieldTap(node, prop, {
+          x: screenTL.x,
+          y: screenTL.y,
+          w: screenBR.x - screenTL.x,
+          h: screenBR.y - screenTL.y,
+        });
+      }
       this.scrubbing = null;
       return;
     }
@@ -837,15 +883,19 @@ export class GraphRenderer {
           const prop = this._getInputPropKey(node, def, i);
           if (prop) {
             this._drawValueField(ctx, node, i, inp, prop, rowY);
-            continue; // skip normal label since field draws its own
+          } else {
+            ctx.fillStyle = '#ccc';
+            ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(inp.name, sx + this.socketSize + 6, sy + 1);
           }
+        } else {
+          // Normal label (for connected inputs or non-numeric types)
+          ctx.fillStyle = connected ? '#999' : '#ccc';
+          ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(inp.name, sx + this.socketSize + 6, sy + 1);
         }
-
-        // Normal label (for connected inputs or non-numeric types)
-        ctx.fillStyle = connected ? '#999' : '#ccc';
-        ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(inp.name, sx + this.socketSize + 6, sy + 1);
       }
 
       // Output socket

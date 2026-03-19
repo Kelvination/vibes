@@ -462,6 +462,89 @@ html, body {
 }
 #drop-menu-overlay.hidden { display: none; }
 
+/* ===== Value Bar (Blender-style scrub/tap field) ===== */
+.value-bar {
+  position: relative;
+  height: 32px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: ew-resize;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.value-bar.scrubbing {
+  border-color: var(--accent);
+}
+.value-bar-fill {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  background: rgba(79,195,247,0.12);
+  pointer-events: none;
+  transition: width 0.05s;
+}
+.value-bar.scrubbing .value-bar-fill {
+  background: rgba(79,195,247,0.22);
+}
+.value-bar-label {
+  position: absolute;
+  left: 10px;
+  top: 50%; transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+.value-bar-value {
+  position: absolute;
+  right: 10px;
+  top: 50%; transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+.value-bar-input {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  padding: 0 10px;
+  background: var(--bg-input);
+  border: none;
+  color: var(--text-bright);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  outline: none;
+  text-align: right;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.value-bar-input.hidden { display: none; }
+
+/* ===== Inline Number Edit ===== */
+#inline-edit {
+  position: fixed;
+  z-index: 300;
+  pointer-events: auto;
+}
+#inline-edit.hidden { display: none; }
+#inline-edit-input {
+  width: 100%;
+  height: 100%;
+  padding: 0 6px;
+  background: var(--bg-input);
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text-bright);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  outline: none;
+  text-align: right;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
