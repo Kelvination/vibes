@@ -205,6 +205,24 @@ export class NodeGraph {
     // The viewport uses geo/converter.js to convert them to Three.js objects
   }
 
+  /**
+   * Clear all nodes and connections, resetting the graph to empty state.
+   * Optionally re-adds the output node (singular, required).
+   *
+   * @param {boolean} addOutput - If true, re-add the output/shader_output node
+   * @returns {void}
+   */
+  clear(addOutput = true) {
+    this.saveUndo();
+    this.nodes = [];
+    this.connections = [];
+    this.nextId = 1;
+    if (addOutput) {
+      const outputType = this.graphType === 'shader' ? 'shader_output' : 'output';
+      this.addNode(outputType, 200, 100);
+    }
+  }
+
   toJSON() {
     return JSON.stringify({
       graphType: this.graphType,

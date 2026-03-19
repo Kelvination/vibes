@@ -11,12 +11,16 @@ import { registerPrimitiveNodes } from './geo/nodes_v2_primitives.js';
 import { registerOperationNodes } from './geo/nodes_v2_operations.js';
 import { registerCurveNodes } from './geo/nodes_v2_curves.js';
 import { registerFieldNodes } from './geo/nodes_v2_fields.js';
+import { registerPointOpNodes } from './geo/nodes_v2_point_ops.js';
+import { registerRotationNodes } from './geo/nodes_v2_rotation.js';
 
 // Register all v2 geometry nodes
 registerPrimitiveNodes(registry);
 registerOperationNodes(registry);
 registerCurveNodes(registry);
 registerFieldNodes(registry);
+registerPointOpNodes(registry);
+registerRotationNodes(registry);
 
 // Import shader nodes (unchanged)
 import './shader/nodes.js';
@@ -783,13 +787,7 @@ import { compileShader } from './shader/compiler.js';
   // ===== Renderer callbacks =====
   function clearGraph() {
     if (!confirm('Clear all nodes? This cannot be undone.')) return;
-    activeGraph.nodes = [];
-    activeGraph.connections = [];
-    activeGraph.nextId = 1;
-    activeGraph.undoStack = [];
-    // Re-add output node
-    const outputType = activeGraphType === 'shader' ? 'shader_output' : 'output';
-    activeGraph.addNode(outputType, 200, 100);
+    activeGraph.clear(true);
     renderer.selectedNode = null;
     closeProperties();
     statusText.textContent = 'Graph cleared';
