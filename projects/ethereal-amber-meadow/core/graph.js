@@ -125,7 +125,15 @@ export class NodeGraph {
   }
 
   getNodeDef(node) {
-    return registry.getNodeDef(this.graphType, node.type);
+    const baseDef = registry.getNodeDef(this.graphType, node.type);
+    if (!baseDef) return null;
+    // Support dynamic inputs/outputs based on node values
+    if (!baseDef.getInputs && !baseDef.getOutputs) return baseDef;
+    return {
+      ...baseDef,
+      inputs: baseDef.getInputs ? baseDef.getInputs(node.values) : baseDef.inputs,
+      outputs: baseDef.getOutputs ? baseDef.getOutputs(node.values) : baseDef.outputs,
+    };
   }
 
   /**
