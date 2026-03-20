@@ -205,11 +205,8 @@ import { compileShader } from './shader/compiler.js';
     const nodeTypes = registry.getNodeTypes(activeGraphType);
     const categories = registry.getCategories(activeGraphType);
 
-    const outputTypeId = activeGraphType === 'shader' ? 'shader_output' : 'output';
-
     const grouped = {};
     for (const [typeId, def] of Object.entries(nodeTypes)) {
-      if (typeId === outputTypeId) continue;
       if (lowerFilter && !def.label.toLowerCase().includes(lowerFilter)) continue;
 
       const cat = def.category;
@@ -247,13 +244,24 @@ import { compileShader } from './shader/compiler.js';
   }
 
   function addNodeToCenter(typeId) {
+    const def = registry.getNodeDef(activeGraphType, typeId);
+    // Check if singular node already exists (like Blender: "only one allowed")
+    if (def?.singular) {
+      const existing = activeGraph.nodes.find(n => n.type === typeId);
+      if (existing) {
+        statusText.textContent = `Only one ${def.label} node allowed`;
+        // Select and focus on the existing one
+        renderer.selectedNode = existing.id;
+        if (renderer.onNodeSelected) renderer.onNodeSelected(existing);
+        return;
+      }
+    }
     const center = renderer.screenToWorld(renderer.viewWidth / 2, renderer.viewHeight / 2);
     const x = center.x - renderer.nodeWidth / 2 + (Math.random() - 0.5) * 40;
     const y = center.y - 40 + (Math.random() - 0.5) * 40;
     const node = activeGraph.addNode(typeId, x, y);
     if (node) {
       renderer.selectedNode = node.id;
-      const def = registry.getNodeDef(activeGraphType, typeId);
       statusText.textContent = `Added ${def?.label || typeId}`;
       saveGraph();
       autoRun();
@@ -265,13 +273,11 @@ import { compileShader } from './shader/compiler.js';
     pendingDrop = info;
     const nodeTypes = registry.getNodeTypes(activeGraphType);
     const categories = registry.getCategories(activeGraphType);
-    const outputTypeId = activeGraphType === 'shader' ? 'shader_output' : 'output';
-
     // Filter to compatible nodes
     const compatible = [];
     for (const [typeId, def] of Object.entries(nodeTypes)) {
-      if (typeId === outputTypeId) continue;
-      if (def.singular) continue;
+      // Skip singular nodes that already exist in the graph
+      if (def.singular && activeGraph.nodes.find(n => n.type === typeId)) continue;
 
       if (info.isOutput) {
         // Dragged from an output: need nodes with a matching INPUT
@@ -389,14 +395,18 @@ import { compileShader } from './shader/compiler.js';
     propsTitle.textContent = def.label;
     propsContent.innerHTML = '';
 
-    if (!def.props || def.props.length === 0) {
+    // Support dynamic props (e.g., Random Value shows different fields per data_type)
+    const baseDef = registry.getNodeDef(activeGraphType, node.type);
+    const effectiveProps = baseDef?.getProps ? baseDef.getProps(node.values) : def.props;
+
+    if (!effectiveProps || effectiveProps.length === 0) {
       propsContent.innerHTML = '<p style="color:var(--text-dim);font-size:13px;padding:8px 0;">No editable properties</p>';
     } else {
       // Detect XYZ triplets for uniform link toggle
       const xyzGroups = new Set();
       const xyzGroupMap = {};
-      for (let i = 0; i < def.props.length - 2; i++) {
-        const p = def.props[i], q = def.props[i+1], r = def.props[i+2];
+      for (let i = 0; i < effectiveProps.length - 2; i++) {
+        const p = effectiveProps[i], q = effectiveProps[i+1], r = effectiveProps[i+2];
         if ((p.type === 'float' || p.type === 'int') && p.type === q.type && q.type === r.type) {
           const lp = p.label, lq = q.label, lr = r.label;
           if (lp.endsWith('X') && lq.endsWith('Y') && lr.endsWith('Z') &&
@@ -410,9 +420,9 @@ import { compileShader } from './shader/compiler.js';
       }
 
       const rendered = new Set();
-      for (let pi = 0; pi < def.props.length; pi++) {
+      for (let pi = 0; pi < effectiveProps.length; pi++) {
         if (rendered.has(pi)) continue;
-        const prop = def.props[pi];
+        const prop = effectiveProps[pi];
 
         // XYZ group rendering
         if (xyzGroups.has(pi)) {
@@ -547,6 +557,16 @@ import { compileShader } from './shader/compiler.js';
             }
             select.addEventListener('change', () => {
               activeGraph.setNodeValue(node.id, prop.key, select.value);
+              // Clean up connections that reference sockets that no longer exist
+              // (e.g., when Random Value switches data_type)
+              const newDef = activeGraph.getNodeDef(node);
+              if (newDef) {
+                activeGraph.connections = activeGraph.connections.filter(c => {
+                  if (c.fromNode === node.id && c.fromSocket >= newDef.outputs.length) return false;
+                  if (c.toNode === node.id && c.toSocket >= newDef.inputs.length) return false;
+                  return true;
+                });
+              }
               // Refresh properties panel when mode/type selector changes
               openProperties(node);
               saveGraph();

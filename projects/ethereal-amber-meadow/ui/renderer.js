@@ -101,20 +101,27 @@ export class GraphRenderer {
     const def = this.graph.getNodeDef(node);
     if (!def) return this.nodeHeaderH;
     if (node.collapsed) return this.nodeHeaderH;
-    const rows = Math.max(def.inputs.length, def.outputs.length);
+    // Blender layout: outputs on top, then inputs below (each on own row)
+    const rows = def.outputs.length + def.inputs.length;
     return this.nodeHeaderH + rows * this.socketRowH + this.nodePadding;
   }
 
   getSocketPos(node, isOutput, socketIdx) {
+    const def = this.graph.getNodeDef(node);
     const x = isOutput ? node.x + this.nodeWidth : node.x;
-    const y = node.y + this.nodeHeaderH + socketIdx * this.socketRowH + this.socketRowH / 2;
+    // Outputs at top, inputs below all outputs
+    const outputCount = def ? def.outputs.length : 0;
+    const rowIdx = isOutput ? socketIdx : outputCount + socketIdx;
+    const y = node.y + this.nodeHeaderH + rowIdx * this.socketRowH + this.socketRowH / 2;
     return { x, y };
   }
 
   /** Get the bounding box of the inline value field for an input socket. */
   _getValueFieldRect(node, socketIdx) {
+    const def = this.graph.getNodeDef(node);
+    const outputCount = def ? def.outputs.length : 0;
     const x = node.x + this.socketSize + 4;
-    const rowY = node.y + this.nodeHeaderH + socketIdx * this.socketRowH;
+    const rowY = node.y + this.nodeHeaderH + (outputCount + socketIdx) * this.socketRowH;
     const fieldW = this.nodeWidth - this.socketSize * 2 - 8;
     return { x, y: rowY + 2, w: fieldW, h: this.socketRowH - 4 };
   }
@@ -847,12 +854,14 @@ export class GraphRenderer {
 
     if (node.collapsed) return;
 
-    // Draw sockets
-    const maxRows = Math.max(def.inputs.length, def.outputs.length);
-    for (let i = 0; i < maxRows; i++) {
-      const rowY = y + this.nodeHeaderH + i * this.socketRowH;
+    // Blender layout: outputs at top, then inputs below
+    let rowIdx = 0;
 
-      if (i > 0) {
+    // Draw output sockets first (top of node body)
+    for (let i = 0; i < def.outputs.length; i++) {
+      const rowY = y + this.nodeHeaderH + rowIdx * this.socketRowH;
+
+      if (rowIdx > 0) {
         ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -861,63 +870,75 @@ export class GraphRenderer {
         ctx.stroke();
       }
 
-      // Input socket
-      if (i < def.inputs.length) {
-        const inp = def.inputs[i];
-        const sx = x;
-        const sy = rowY + this.socketRowH / 2;
-        const color = SocketColors[inp.type] || '#90a4ae';
-        const connected = this.graph.getInputConnection(node.id, i);
+      const out = def.outputs[i];
+      const sx = x + w;
+      const sy = rowY + this.socketRowH / 2;
+      const color = SocketColors[out.type] || '#90a4ae';
 
-        // Socket circle
-        ctx.fillStyle = connected ? color : '#232b3e';
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(sx, sy, this.socketSize, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#bbb';
+      ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(out.name, sx - this.socketSize - 6, sy + 1);
+
+      rowIdx++;
+    }
+
+    // Draw input sockets below outputs
+    for (let i = 0; i < def.inputs.length; i++) {
+      const rowY = y + this.nodeHeaderH + rowIdx * this.socketRowH;
+
+      if (rowIdx > 0) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(sx, sy, this.socketSize, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.moveTo(x + 4, rowY);
+        ctx.lineTo(x + w - 4, rowY);
         ctx.stroke();
+      }
 
-        if (!connected && (inp.type === 'float' || inp.type === 'int')) {
-          // Draw Blender-style inline value field
-          const prop = this._getInputPropKey(node, def, i);
-          if (prop) {
-            this._drawValueField(ctx, node, i, inp, prop, rowY);
-          } else {
-            ctx.fillStyle = '#ccc';
-            ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
-            ctx.textAlign = 'left';
-            ctx.fillText(inp.name, sx + this.socketSize + 6, sy + 1);
-          }
+      const inp = def.inputs[i];
+      const sx = x;
+      const sy = rowY + this.socketRowH / 2;
+      const color = SocketColors[inp.type] || '#90a4ae';
+      const connected = this.graph.getInputConnection(node.id, i);
+
+      // Socket circle
+      ctx.fillStyle = connected ? color : '#232b3e';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(sx, sy, this.socketSize, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      if (!connected && (inp.type === 'float' || inp.type === 'int')) {
+        // Draw Blender-style inline value field
+        const prop = this._getInputPropKey(node, def, i);
+        if (prop) {
+          this._drawValueField(ctx, node, i, inp, prop, rowY);
         } else {
-          // Normal label (for connected inputs or non-numeric types)
-          ctx.fillStyle = connected ? '#999' : '#ccc';
+          ctx.fillStyle = '#ccc';
           ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
           ctx.textAlign = 'left';
           ctx.fillText(inp.name, sx + this.socketSize + 6, sy + 1);
         }
-      }
-
-      // Output socket
-      if (i < def.outputs.length) {
-        const out = def.outputs[i];
-        const sx = x + w;
-        const sy = rowY + this.socketRowH / 2;
-        const color = SocketColors[out.type] || '#90a4ae';
-
-        ctx.fillStyle = color;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(sx, sy, this.socketSize, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = '#bbb';
+      } else {
+        // Normal label (for connected inputs or non-numeric types)
+        ctx.fillStyle = connected ? '#999' : '#ccc';
         ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
-        ctx.textAlign = 'right';
-        ctx.fillText(out.name, sx - this.socketSize - 6, sy + 1);
+        ctx.textAlign = 'left';
+        ctx.fillText(inp.name, sx + this.socketSize + 6, sy + 1);
       }
+
+      rowIdx++;
     }
 
     ctx.textAlign = 'left';

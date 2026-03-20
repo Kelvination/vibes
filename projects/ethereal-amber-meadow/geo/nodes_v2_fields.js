@@ -688,31 +688,126 @@ export function registerFieldNodes(registry) {
   registry.addNode('geo', 'random_value', {
     label: 'Random Value',
     category: 'MATH',
+    // Static fallback inputs/outputs (used if getInputs/getOutputs not called)
     inputs: [
       { name: 'Min', type: SocketType.FLOAT },
       { name: 'Max', type: SocketType.FLOAT },
+      { name: 'ID', type: SocketType.INT },
       { name: 'Seed', type: SocketType.INT },
     ],
     outputs: [
       { name: 'Value', type: SocketType.FLOAT },
     ],
-    defaults: { data_type: 'FLOAT', min: 0, max: 1, seed: 0 },
+    // Dynamic inputs based on data_type (matches Blender's FunctionNodeRandomValue)
+    getInputs(values) {
+      const dt = values.data_type || 'FLOAT';
+      switch (dt) {
+        case 'FLOAT':
+          return [
+            { name: 'Min', type: SocketType.FLOAT },
+            { name: 'Max', type: SocketType.FLOAT },
+            { name: 'ID', type: SocketType.INT },
+            { name: 'Seed', type: SocketType.INT },
+          ];
+        case 'INT':
+          return [
+            { name: 'Min', type: SocketType.INT },
+            { name: 'Max', type: SocketType.INT },
+            { name: 'ID', type: SocketType.INT },
+            { name: 'Seed', type: SocketType.INT },
+          ];
+        case 'FLOAT_VECTOR':
+          return [
+            { name: 'Min', type: SocketType.VECTOR },
+            { name: 'Max', type: SocketType.VECTOR },
+            { name: 'ID', type: SocketType.INT },
+            { name: 'Seed', type: SocketType.INT },
+          ];
+        case 'BOOLEAN':
+          return [
+            { name: 'Probability', type: SocketType.FLOAT },
+            { name: 'ID', type: SocketType.INT },
+            { name: 'Seed', type: SocketType.INT },
+          ];
+        default:
+          return [
+            { name: 'Min', type: SocketType.FLOAT },
+            { name: 'Max', type: SocketType.FLOAT },
+            { name: 'ID', type: SocketType.INT },
+            { name: 'Seed', type: SocketType.INT },
+          ];
+      }
+    },
+    // Dynamic output type based on data_type (matches Blender)
+    getOutputs(values) {
+      const dt = values.data_type || 'FLOAT';
+      switch (dt) {
+        case 'FLOAT':   return [{ name: 'Value', type: SocketType.FLOAT }];
+        case 'INT':      return [{ name: 'Value', type: SocketType.INT }];
+        case 'FLOAT_VECTOR': return [{ name: 'Value', type: SocketType.VECTOR }];
+        case 'BOOLEAN':  return [{ name: 'Value', type: SocketType.BOOL }];
+        default:         return [{ name: 'Value', type: SocketType.FLOAT }];
+      }
+    },
+    defaults: { data_type: 'FLOAT', min: 0, max: 1, probability: 0.5, id: 0, seed: 0,
+      min_x: 0, min_y: 0, min_z: 0, max_x: 1, max_y: 1, max_z: 1 },
     props: [
       { key: 'data_type', label: 'Data Type', type: 'select', options: randomValueDataTypes },
       { key: 'min', label: 'Min', type: 'float', min: -10000, max: 10000, step: 0.1 },
       { key: 'max', label: 'Max', type: 'float', min: -10000, max: 10000, step: 0.1 },
+      { key: 'probability', label: 'Probability', type: 'float', min: 0, max: 1, step: 0.01 },
+      { key: 'id', label: 'ID', type: 'int', min: 0, max: 100000, step: 1 },
       { key: 'seed', label: 'Seed', type: 'int', min: 0, max: 100000, step: 1 },
     ],
+    // Dynamic props: show/hide fields based on data_type (matches Blender)
+    getProps(values) {
+      const dt = values.data_type || 'FLOAT';
+      const base = [{ key: 'data_type', label: 'Data Type', type: 'select', options: randomValueDataTypes }];
+      switch (dt) {
+        case 'FLOAT':
+          return [...base,
+            { key: 'min', label: 'Min', type: 'float', min: -10000, max: 10000, step: 0.1 },
+            { key: 'max', label: 'Max', type: 'float', min: -10000, max: 10000, step: 0.1 },
+            { key: 'id', label: 'ID', type: 'int', min: 0, max: 100000, step: 1 },
+            { key: 'seed', label: 'Seed', type: 'int', min: 0, max: 100000, step: 1 },
+          ];
+        case 'INT':
+          return [...base,
+            { key: 'min', label: 'Min', type: 'int', min: -10000, max: 10000, step: 1 },
+            { key: 'max', label: 'Max', type: 'int', min: -10000, max: 10000, step: 1 },
+            { key: 'id', label: 'ID', type: 'int', min: 0, max: 100000, step: 1 },
+            { key: 'seed', label: 'Seed', type: 'int', min: 0, max: 100000, step: 1 },
+          ];
+        case 'FLOAT_VECTOR':
+          return [...base,
+            { key: 'min_x', label: 'Min X', type: 'float', min: -10000, max: 10000, step: 0.1 },
+            { key: 'min_y', label: 'Min Y', type: 'float', min: -10000, max: 10000, step: 0.1 },
+            { key: 'min_z', label: 'Min Z', type: 'float', min: -10000, max: 10000, step: 0.1 },
+            { key: 'max_x', label: 'Max X', type: 'float', min: -10000, max: 10000, step: 0.1 },
+            { key: 'max_y', label: 'Max Y', type: 'float', min: -10000, max: 10000, step: 0.1 },
+            { key: 'max_z', label: 'Max Z', type: 'float', min: -10000, max: 10000, step: 0.1 },
+            { key: 'id', label: 'ID', type: 'int', min: 0, max: 100000, step: 1 },
+            { key: 'seed', label: 'Seed', type: 'int', min: 0, max: 100000, step: 1 },
+          ];
+        case 'BOOLEAN':
+          return [...base,
+            { key: 'probability', label: 'Probability', type: 'float', min: 0, max: 1, step: 0.01 },
+            { key: 'id', label: 'ID', type: 'int', min: 0, max: 100000, step: 1 },
+            { key: 'seed', label: 'Seed', type: 'int', min: 0, max: 100000, step: 1 },
+          ];
+        default:
+          return [...base,
+            { key: 'min', label: 'Min', type: 'float', min: -10000, max: 10000, step: 0.1 },
+            { key: 'max', label: 'Max', type: 'float', min: -10000, max: 10000, step: 0.1 },
+            { key: 'id', label: 'ID', type: 'int', min: 0, max: 100000, step: 1 },
+            { key: 'seed', label: 'Seed', type: 'int', min: 0, max: 100000, step: 1 },
+          ];
+      }
+    },
     evaluate(values, inputs) {
       const dataType = values.data_type;
-      const minVal = inputs['Min'] ?? values.min;
-      const maxVal = inputs['Max'] ?? values.max;
       const seed = inputs['Seed'] ?? values.seed;
 
-      // Determine output field type from data_type.
-      // The output socket type stays FLOAT for graph wiring compatibility,
-      // but the field carries the correct runtime type so downstream nodes
-      // (Set Position, Instance on Points, etc.) interpret values correctly.
       const fieldType = dataType === 'FLOAT_VECTOR' ? 'vector'
         : dataType === 'BOOLEAN' ? 'bool'
         : dataType === 'INT' ? 'int'
@@ -720,16 +815,22 @@ export function registerFieldNodes(registry) {
 
       const result = new Field(fieldType, (el) => {
         const idx = el.index ?? 0;
-        const rMin = isField(minVal) ? minVal.evaluateAt(el) : (typeof minVal === 'number' ? minVal : values.min);
-        const rMax = isField(maxVal) ? maxVal.evaluateAt(el) : (typeof maxVal === 'number' ? maxVal : values.max);
         const rSeed = isField(seed) ? seed.evaluateAt(el) : (typeof seed === 'number' ? seed : values.seed);
 
         switch (dataType) {
           case 'FLOAT': {
+            const minVal = inputs['Min'] ?? values.min;
+            const maxVal = inputs['Max'] ?? values.max;
+            const rMin = isField(minVal) ? minVal.evaluateAt(el) : (typeof minVal === 'number' ? minVal : values.min);
+            const rMax = isField(maxVal) ? maxVal.evaluateAt(el) : (typeof maxVal === 'number' ? maxVal : values.max);
             const r = hashIndexSeed(idx, rSeed, 0);
             return rMin + r * (rMax - rMin);
           }
           case 'INT': {
+            const minVal = inputs['Min'] ?? values.min;
+            const maxVal = inputs['Max'] ?? values.max;
+            const rMin = isField(minVal) ? minVal.evaluateAt(el) : (typeof minVal === 'number' ? minVal : values.min);
+            const rMax = isField(maxVal) ? maxVal.evaluateAt(el) : (typeof maxVal === 'number' ? maxVal : values.max);
             const r = hashIndexSeed(idx, rSeed, 0);
             const lo = Math.ceil(rMin);
             const hi = Math.floor(rMax);
@@ -737,17 +838,43 @@ export function registerFieldNodes(registry) {
             return lo + Math.floor(r * (hi - lo + 1));
           }
           case 'BOOLEAN': {
+            const prob = inputs['Probability'] ?? values.probability;
+            const rProb = isField(prob) ? prob.evaluateAt(el) : (typeof prob === 'number' ? prob : values.probability);
             const r = hashIndexSeed(idx, rSeed, 0);
-            return r > 0.5;
+            return r < rProb;
           }
           case 'FLOAT_VECTOR': {
+            // Use per-component min/max from node values or connected vector inputs
+            const minInput = inputs['Min'];
+            const maxInput = inputs['Max'];
+            let minX, minY, minZ, maxX, maxY, maxZ;
+            if (minInput && isField(minInput)) {
+              const v = minInput.evaluateAt(el);
+              minX = typeof v === 'object' ? (v.x ?? 0) : v;
+              minY = typeof v === 'object' ? (v.y ?? 0) : v;
+              minZ = typeof v === 'object' ? (v.z ?? 0) : v;
+            } else if (minInput && typeof minInput === 'object') {
+              minX = minInput.x ?? 0; minY = minInput.y ?? 0; minZ = minInput.z ?? 0;
+            } else {
+              minX = values.min_x ?? 0; minY = values.min_y ?? 0; minZ = values.min_z ?? 0;
+            }
+            if (maxInput && isField(maxInput)) {
+              const v = maxInput.evaluateAt(el);
+              maxX = typeof v === 'object' ? (v.x ?? 1) : v;
+              maxY = typeof v === 'object' ? (v.y ?? 1) : v;
+              maxZ = typeof v === 'object' ? (v.z ?? 1) : v;
+            } else if (maxInput && typeof maxInput === 'object') {
+              maxX = maxInput.x ?? 1; maxY = maxInput.y ?? 1; maxZ = maxInput.z ?? 1;
+            } else {
+              maxX = values.max_x ?? 1; maxY = values.max_y ?? 1; maxZ = values.max_z ?? 1;
+            }
             const rx = hashIndexSeed(idx, rSeed, 0);
             const ry = hashIndexSeed(idx, rSeed, 1);
             const rz = hashIndexSeed(idx, rSeed, 2);
             return {
-              x: rMin + rx * (rMax - rMin),
-              y: rMin + ry * (rMax - rMin),
-              z: rMin + rz * (rMax - rMin),
+              x: minX + rx * (maxX - minX),
+              y: minY + ry * (maxY - minY),
+              z: minZ + rz * (maxZ - minZ),
             };
           }
           default: return 0;
