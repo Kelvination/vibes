@@ -21,64 +21,27 @@ import {
   indexField,
   resolveScalar,
 } from '../core/field.js';
-import { seededRandom } from '../core/utils.js';
+import {
+  seededRandom,
+  vecLength,
+  vecNormalize,
+  vecDot,
+  vecCross,
+  vecDistance,
+  vecReflect,
+  vecProject,
+  vecFaceforward,
+  ensureVec,
+} from '../core/utils.js';
 
 // ── Vector Helpers ──────────────────────────────────────────────────────────
 
 function vecOp(a, b, fn) {
-  // Apply fn component-wise to two vectors
   return { x: fn(a.x, b.x), y: fn(a.y, b.y), z: fn(a.z, b.z) };
 }
 
 function vecUnary(v, fn) {
   return { x: fn(v.x), y: fn(v.y), z: fn(v.z) };
-}
-
-function vecLength(v) {
-  return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-}
-
-function vecNormalize(v) {
-  const len = vecLength(v) || 1;
-  return { x: v.x / len, y: v.y / len, z: v.z / len };
-}
-
-function vecDot(a, b) {
-  return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-function vecCross(a, b) {
-  return {
-    x: a.y * b.z - a.z * b.y,
-    y: a.z * b.x - a.x * b.z,
-    z: a.x * b.y - a.y * b.x,
-  };
-}
-
-function vecDistance(a, b) {
-  const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
-
-function vecReflect(v, n) {
-  const d = 2 * vecDot(v, n);
-  return { x: v.x - d * n.x, y: v.y - d * n.y, z: v.z - d * n.z };
-}
-
-function vecProject(a, b) {
-  const bLenSq = vecDot(b, b);
-  if (bLenSq === 0) return { x: 0, y: 0, z: 0 };
-  const s = vecDot(a, b) / bLenSq;
-  return { x: b.x * s, y: b.y * s, z: b.z * s };
-}
-
-function vecFaceforward(v, incident, reference) {
-  return vecDot(reference, incident) < 0 ? v : { x: -v.x, y: -v.y, z: -v.z };
-}
-
-function ensureVec(v) {
-  if (v && typeof v === 'object' && 'x' in v) return v;
-  return { x: 0, y: 0, z: 0 };
 }
 
 // ── Math Operation Helpers ──────────────────────────────────────────────────

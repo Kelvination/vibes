@@ -1,6 +1,70 @@
 /**
- * core/utils.js - Shared math utilities (noise, PRNG, interpolation).
+ * core/utils.js - Shared math utilities (noise, PRNG, interpolation, vector ops).
  */
+
+// ── Vector Math ──────────────────────────────────────────────────────────────
+// Shared 3D vector operations used across geometry node modules.
+
+export function vecAdd(a, b) {
+  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+}
+
+export function vecSub(a, b) {
+  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
+}
+
+export function vecScale(v, s) {
+  return { x: v.x * s, y: v.y * s, z: v.z * s };
+}
+
+export function vecDot(a, b) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+export function vecCross(a, b) {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  };
+}
+
+export function vecLength(v) {
+  return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+export function vecNormalize(v) {
+  const len = vecLength(v) || 1;
+  return { x: v.x / len, y: v.y / len, z: v.z / len };
+}
+
+export function vecDistance(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+export function vecReflect(v, n) {
+  const d = 2 * vecDot(v, n);
+  return { x: v.x - d * n.x, y: v.y - d * n.y, z: v.z - d * n.z };
+}
+
+export function vecProject(a, b) {
+  const bLenSq = vecDot(b, b);
+  if (bLenSq === 0) return { x: 0, y: 0, z: 0 };
+  const s = vecDot(a, b) / bLenSq;
+  return { x: b.x * s, y: b.y * s, z: b.z * s };
+}
+
+export function vecFaceforward(v, incident, reference) {
+  return vecDot(reference, incident) < 0 ? v : { x: -v.x, y: -v.y, z: -v.z };
+}
+
+export function ensureVec(v) {
+  if (v && typeof v === 'object' && 'x' in v) return v;
+  return { x: 0, y: 0, z: 0 };
+}
+
+// ── Scalar Math ──────────────────────────────────────────────────────────────
 
 // Seeded PRNG (mulberry32)
 export function seededRandom(seed) {
@@ -94,59 +158,6 @@ export function fbmNoise3D(x, y, z, octaves, roughness, lacunarity) {
     freq *= lac;
   }
   return val / maxVal;
-}
-
-// Geometry data helpers
-export function cloneGeo(geo) {
-  if (!geo) return null;
-  if (Array.isArray(geo)) return geo.map(g => cloneGeo(g));
-
-  // Preserve Field objects and other non-serializable values
-  const clone = {};
-  for (const key of Object.keys(geo)) {
-    const val = geo[key];
-    if (val === null || val === undefined) {
-      clone[key] = val;
-    } else if (val && val.isField) {
-      // Fields are immutable — safe to share reference
-      clone[key] = val;
-    } else if (typeof val === 'object' && val._fieldSetPosition) {
-      // Preserve nested field references
-      clone[key] = cloneGeo(val);
-    } else if (Array.isArray(val)) {
-      clone[key] = val.map(item =>
-        item && typeof item === 'object' && !item.isField
-          ? JSON.parse(JSON.stringify(item))
-          : item
-      );
-    } else if (typeof val === 'object') {
-      // Check if this sub-object has fields
-      const hasFields = Object.values(val).some(v => v && v.isField);
-      if (hasFields) {
-        clone[key] = { ...val }; // shallow copy preserves field references
-      } else {
-        try {
-          clone[key] = JSON.parse(JSON.stringify(val));
-        } catch (e) {
-          clone[key] = val; // fallback: share reference
-        }
-      }
-    } else {
-      clone[key] = val; // primitives
-    }
-  }
-  return clone;
-}
-
-export function geoToArray(geo) {
-  if (!geo) return [];
-  return Array.isArray(geo) ? geo : [geo];
-}
-
-export function mapGeo(geo, fn) {
-  if (!geo) return null;
-  if (Array.isArray(geo)) return geo.map(g => fn(cloneGeo(g)));
-  return fn(cloneGeo(geo));
 }
 
 // Distance metric helpers for Voronoi

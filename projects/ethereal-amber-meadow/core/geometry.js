@@ -188,19 +188,41 @@ export class MeshComponent {
   get faceCount() { return this.faceVertCounts.length; }
   get cornerCount() { return this.cornerVerts.length; }
 
+  /**
+   * Build a cached array of corner offsets for O(1) face lookup.
+   * Lazily computed and invalidated when face topology changes.
+   */
+  _ensureCornerOffsets() {
+    if (this._cornerOffsets && this._cornerOffsets.length === this.faceVertCounts.length) {
+      return this._cornerOffsets;
+    }
+    const offsets = new Array(this.faceVertCounts.length);
+    let offset = 0;
+    for (let i = 0; i < this.faceVertCounts.length; i++) {
+      offsets[i] = offset;
+      offset += this.faceVertCounts[i];
+    }
+    this._cornerOffsets = offsets;
+    return offsets;
+  }
+
+  /** Invalidate the corner offset cache (call after modifying face topology). */
+  invalidateCornerOffsets() {
+    this._cornerOffsets = null;
+  }
+
   /** Get the vertex indices of a specific face. */
   getFaceVertices(faceIdx) {
-    let offset = 0;
-    for (let i = 0; i < faceIdx; i++) offset += this.faceVertCounts[i];
+    const offsets = this._ensureCornerOffsets();
+    const offset = offsets[faceIdx];
     const count = this.faceVertCounts[faceIdx];
     return this.cornerVerts.slice(offset, offset + count);
   }
 
   /** Get the starting corner offset for a face. */
   getFaceCornerStart(faceIdx) {
-    let offset = 0;
-    for (let i = 0; i < faceIdx; i++) offset += this.faceVertCounts[i];
-    return offset;
+    const offsets = this._ensureCornerOffsets();
+    return offsets[faceIdx];
   }
 
   /** Compute the center position of a face. */

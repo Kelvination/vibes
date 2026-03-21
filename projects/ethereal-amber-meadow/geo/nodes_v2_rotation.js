@@ -10,29 +10,7 @@
 
 import { SocketType } from '../core/registry.js';
 import { Field, isField, combineFields, resolveField } from '../core/field.js';
-
-// ── Vector/Matrix Helpers ───────────────────────────────────────────────────
-
-function vecNormalize(v) {
-  const len = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) || 1;
-  return { x: v.x / len, y: v.y / len, z: v.z / len };
-}
-
-function vecCross(a, b) {
-  return {
-    x: a.y * b.z - a.z * b.y,
-    y: a.z * b.x - a.x * b.z,
-    z: a.x * b.y - a.y * b.x,
-  };
-}
-
-function vecDot(a, b) {
-  return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-function vecLength(v) {
-  return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-}
+import { vecNormalize, vecCross, vecDot, vecLength } from '../core/utils.js';
 
 /**
  * Compute Euler XYZ rotation from a 3x3 rotation matrix given as three
