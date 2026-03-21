@@ -183,6 +183,22 @@ This repository exists for rapid ideation and deployment. Don't overthink it:
 - Perfect is the enemy of shipped
 - Have fun with it
 
+## ethereal-amber-meadow: Blender Geometry Nodes Project
+
+**CRITICAL RULE**: For every change to the geometry nodes editor (`projects/ethereal-amber-meadow/`), you MUST compare your implementation against Blender's actual source code. Do NOT assume how a node works or improvise its behavior. Reference the actual Blender source files:
+
+- Node definitions: `source/blender/nodes/geometry/nodes/node_geo_*.cc`
+- Function nodes: `source/blender/nodes/function/nodes/node_fn_*.cc`
+- Node UI/layout: `source/blender/editors/space_node/node_draw.cc`
+- Geometry types: `source/blender/blenkernel/intern/geometry_component_*.cc`
+- Math utilities: `source/blender/blenlib/BLI_math_*.h`
+
+Key Blender conventions to follow:
+- **Node layout**: Outputs are drawn at the TOP of the node body, inputs BELOW them. Each socket gets its own row.
+- **Socket visibility**: Nodes with mode dropdowns (Random Value, Math, etc.) show/hide sockets based on the selected mode. Hidden sockets keep their index but aren't drawn.
+- **Socket types**: When a mode changes the output type (e.g., Random Value Float→Vector), the output socket type actually changes.
+- **Field evaluation**: Fields are lazy per-element functions evaluated against domain elements.
+
 ## Response Format
 
 At the end of every response, provide a link to create a new PR for the current branch. Use this format:
