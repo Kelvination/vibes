@@ -599,3 +599,138 @@ describe('Full Pipeline: Instance on Points', () => {
     assert.equal(geo.mesh.vertexCount, 72);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BEZIER SEGMENT NODE
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Bezier Segment Node', () => {
+  it('should create a curve from bezier control points', () => {
+    const def = registry.getNodeDef('geo', 'bezier_segment');
+    assert.ok(def, 'bezier_segment should be registered');
+
+    const result = def.evaluate(
+      {
+        mode: 'POSITION', resolution: 8,
+        startX: -1, startY: 0, startZ: 0,
+        startHandleX: -0.5, startHandleY: 0.5, startHandleZ: 0,
+        endHandleX: 0.5, endHandleY: 0.5, endHandleZ: 0,
+        endX: 1, endY: 0, endZ: 0,
+      },
+      {}
+    );
+
+    const gs = result.outputs[0];
+    assert.ok(gs instanceof GeometrySet);
+    assert.ok(gs.curve);
+    assert.equal(gs.curve.splineCount, 1);
+    assert.equal(gs.curve.pointCount, 8);
+    // Start point should be at (-1, 0, 0)
+    assert.ok(Math.abs(gs.curve.splines[0].positions[0].x - (-1)) < 0.01);
+    // End point should be at (1, 0, 0)
+    assert.ok(Math.abs(gs.curve.splines[0].positions[7].x - 1) < 0.01);
+  });
+
+  it('should handle OFFSET mode', () => {
+    const def = registry.getNodeDef('geo', 'bezier_segment');
+    const result = def.evaluate(
+      {
+        mode: 'OFFSET', resolution: 4,
+        startX: 0, startY: 0, startZ: 0,
+        startHandleX: 0.5, startHandleY: 0.5, startHandleZ: 0,
+        endHandleX: -0.5, endHandleY: 0.5, endHandleZ: 0,
+        endX: 2, endY: 0, endZ: 0,
+      },
+      {}
+    );
+    const gs = result.outputs[0];
+    assert.equal(gs.curve.pointCount, 4);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CORNER ATTRS FILTERING IN FACE DELETION
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Delete Geometry - Corner Attribute Integrity', () => {
+  it('should filter cornerAttrs when faces are deleted', () => {
+    const geo = new GeometrySet();
+    const mesh = new MeshComponent();
+    mesh.positions = [
+      { x: 0, y: 0, z: 0 },
+      { x: 1, y: 0, z: 0 },
+      { x: 1, y: 1, z: 0 },
+      { x: 0, y: 1, z: 0 },
+      { x: 2, y: 0, z: 0 },
+      { x: 2, y: 1, z: 0 },
+    ];
+    mesh.faceVertCounts = [3, 3];
+    mesh.cornerVerts = [0, 1, 2, 3, 4, 5];
+    // Add per-corner UV data
+    mesh.cornerAttrs.set('uv_map', 'FLOAT2', [
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 },
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 },
+    ]);
+    geo.mesh = mesh;
+
+    // Delete first face (index 0)
+    const selField = new Field('bool', (el) => el.index === 0);
+    const def = registry.getNodeDef('geo', 'delete_geometry');
+    const result = def.evaluate(
+      { domain: 'FACE', mode: 'all' },
+      { 'Geometry': geo, 'Selection': selField }
+    ).outputs[0];
+
+    // Should have 1 face left
+    assert.equal(result.mesh.faceCount, 1);
+    assert.equal(result.mesh.cornerVerts.length, 3);
+
+    // Corner attrs should match corner count
+    const uvData = result.mesh.cornerAttrs.get('uv_map');
+    assert.ok(uvData, 'Corner attrs should exist after face deletion');
+    assert.equal(uvData.length, 3, 'Corner attrs should match remaining corner count');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ATTRIBUTE PRESERVATION IN JOIN GEOMETRY
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Join Geometry - Attribute Preservation', () => {
+  it('should preserve attributes when joining geometries with different attrs', () => {
+    // Geo 1 has 'weight' attribute
+    const geo1 = new GeometrySet();
+    const mesh1 = new MeshComponent();
+    mesh1.positions = [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }];
+    mesh1.pointAttrs.set('weight', 'FLOAT', [0.5, 1.0]);
+    geo1.mesh = mesh1;
+
+    // Geo 2 has 'color' attribute but no 'weight'
+    const geo2 = new GeometrySet();
+    const mesh2 = new MeshComponent();
+    mesh2.positions = [{ x: 2, y: 0, z: 0 }];
+    mesh2.pointAttrs.set('color', 'FLOAT_VECTOR', [{ x: 1, y: 0, z: 0 }]);
+    geo2.mesh = mesh2;
+
+    const joinDef = registry.getNodeDef('geo', 'join_geometry');
+    const result = joinDef.evaluate(
+      {},
+      { 'Geometry 1': geo1, 'Geometry 2': geo2 }
+    ).outputs[0];
+
+    assert.equal(result.mesh.vertexCount, 3);
+
+    // 'weight' should have 3 values: [0.5, 1.0, 0] (default for geo2's element)
+    const weights = result.mesh.pointAttrs.get('weight');
+    assert.ok(weights, 'weight attribute should exist');
+    assert.equal(weights.length, 3);
+    assert.equal(weights[0], 0.5);
+    assert.equal(weights[1], 1.0);
+    assert.equal(weights[2], 0); // default
+
+    // 'color' should have 3 values: [default, default, {1,0,0}]
+    const colors = result.mesh.pointAttrs.get('color');
+    assert.ok(colors, 'color attribute should exist');
+    assert.equal(colors.length, 3);
+  });
+});

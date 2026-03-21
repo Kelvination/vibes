@@ -80,6 +80,20 @@ export function resolveScalar(value, fallback = 0) {
   return value ?? fallback;
 }
 
+/**
+ * Resolve a boolean field/scalar to a per-element boolean array.
+ * Commonly used for Selection inputs on geometry operations.
+ *
+ * @param {*} value - Field, boolean, or null/undefined
+ * @param {Array} elements - Element contexts
+ * @returns {boolean[]|null} Per-element booleans, or null if input is null/undefined
+ */
+export function resolveSelection(value, elements) {
+  if (value == null) return null;
+  if (isField(value)) return value.evaluateAll(elements);
+  return new Array(elements.length).fill(!!value);
+}
+
 // ── Built-in Field Constructors ──────────────────────────────────────────────
 
 /** Position field: returns the element's vertex position as {x, y, z}. */

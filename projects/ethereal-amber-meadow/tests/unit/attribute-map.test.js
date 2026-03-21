@@ -154,3 +154,69 @@ describe('MeshComponent corner offset caching', () => {
     assert.deepEqual(verts, [0, 1, 2, 3]);
   });
 });
+
+describe('AttributeMap.append() padding', () => {
+  it('should pad new attribute with defaults for existing elements', () => {
+    const map1 = new MeshComponent();
+    map1.positions = [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }];
+    map1.pointAttrs.set('weight', ATTR_TYPE.FLOAT, [1.0, 2.0]);
+
+    const map2 = new MeshComponent();
+    map2.positions = [{ x: 2, y: 0, z: 0 }];
+    map2.pointAttrs.set('weight', ATTR_TYPE.FLOAT, [3.0]);
+    map2.pointAttrs.set('color', ATTR_TYPE.FLOAT_VECTOR, [{ x: 1, y: 0, z: 0 }]);
+
+    map1.pointAttrs.append(map2.pointAttrs);
+
+    // 'weight' should be [1, 2, 3]
+    assert.deepEqual(map1.pointAttrs.get('weight'), [1.0, 2.0, 3.0]);
+
+    // 'color' should be [{default}, {default}, {1,0,0}] - padded for existing 2 elements
+    const colors = map1.pointAttrs.get('color');
+    assert.equal(colors.length, 3);
+    assert.deepEqual(colors[0], { x: 0, y: 0, z: 0 }); // default
+    assert.deepEqual(colors[1], { x: 0, y: 0, z: 0 }); // default
+    assert.deepEqual(colors[2], { x: 1, y: 0, z: 0 }); // actual value
+  });
+
+  it('should pad existing attributes missing from other', () => {
+    const map1 = new MeshComponent();
+    map1.positions = [{ x: 0, y: 0, z: 0 }];
+    map1.pointAttrs.set('weight', ATTR_TYPE.FLOAT, [1.0]);
+    map1.pointAttrs.set('extra', ATTR_TYPE.INT, [42]);
+
+    const map2 = new MeshComponent();
+    map2.positions = [{ x: 1, y: 0, z: 0 }];
+    map2.pointAttrs.set('weight', ATTR_TYPE.FLOAT, [2.0]);
+    // 'extra' not in map2
+
+    map1.pointAttrs.append(map2.pointAttrs);
+
+    // 'weight' should be [1, 2]
+    assert.deepEqual(map1.pointAttrs.get('weight'), [1.0, 2.0]);
+
+    // 'extra' should be [42, 0] - padded with default for INT
+    const extra = map1.pointAttrs.get('extra');
+    assert.equal(extra.length, 2);
+    assert.equal(extra[0], 42);
+    assert.equal(extra[1], 0); // default for INT
+  });
+
+  it('should handle both sides having unique attributes', () => {
+    const map1 = new MeshComponent();
+    map1.positions = [{ x: 0, y: 0, z: 0 }];
+    map1.pointAttrs.set('a', ATTR_TYPE.FLOAT, [1.0]);
+
+    const map2 = new MeshComponent();
+    map2.positions = [{ x: 1, y: 0, z: 0 }];
+    map2.pointAttrs.set('b', ATTR_TYPE.FLOAT, [2.0]);
+
+    map1.pointAttrs.append(map2.pointAttrs);
+
+    // 'a' should be [1, 0] - padded for other
+    assert.deepEqual(map1.pointAttrs.get('a'), [1.0, 0]);
+
+    // 'b' should be [0, 2] - padded for existing
+    assert.deepEqual(map1.pointAttrs.get('b'), [0, 2.0]);
+  });
+});

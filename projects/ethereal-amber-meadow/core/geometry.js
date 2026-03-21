@@ -125,15 +125,36 @@ class AttributeMap {
 
   /** Append another AttributeMap's data (for join operations). */
   append(other) {
+    const mySize = this.size;
+    const otherSize = other.size;
+
+    // Pad attributes that exist in 'this' but not in 'other'
+    // so they maintain correct length after appending
+    for (const [name, myAttr] of this._attrs) {
+      if (!other._attrs.has(name)) {
+        const def = defaultForType(myAttr.type);
+        for (let i = 0; i < otherSize; i++) {
+          myAttr.data.push(cloneAttrValue(def, myAttr.type));
+        }
+      }
+    }
+
+    // Append other's data, padding for attributes new to 'this'
     for (const [name, otherAttr] of other._attrs) {
       const mine = this._attrs.get(name);
       if (mine) {
         mine.data.push(...otherAttr.data);
       } else {
-        // Attribute exists only in other — need to pad with defaults for existing data
+        // Attribute exists only in other — pad with defaults for existing elements
+        const def = defaultForType(otherAttr.type);
+        const padded = [];
+        for (let i = 0; i < mySize; i++) {
+          padded.push(cloneAttrValue(def, otherAttr.type));
+        }
+        padded.push(...otherAttr.data);
         this._attrs.set(name, {
           type: otherAttr.type,
-          data: [...otherAttr.data],
+          data: padded,
         });
       }
     }

@@ -5,6 +5,7 @@
 import { SocketType } from '../core/registry.js';
 import {
   GeometrySet,
+  CurveComponent,
   createMeshGrid,
   createMeshCube,
   createMeshCylinder,
