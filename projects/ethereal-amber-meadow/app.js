@@ -249,7 +249,7 @@ import { compileShader } from './shader/compiler.js';
     if (def?.singular) {
       const existing = activeGraph.nodes.find(n => n.type === typeId);
       if (existing) {
-        statusText.textContent = `Only one ${def.label} node allowed`;
+        statusText.textContent = `Only one ${def.label} node is allowed per node tree`;
         // Select and focus on the existing one
         renderer.selectedNode = existing.id;
         if (renderer.onNodeSelected) renderer.onNodeSelected(existing);
