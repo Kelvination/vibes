@@ -21,42 +21,16 @@ import {
   ATTR_TYPE,
 } from '../core/geometry.js';
 import { Field, isField, resolveField, resolveScalar } from '../core/field.js';
-import { seededRandom } from '../core/utils.js';
-
-// ── Vector Helpers ──────────────────────────────────────────────────────────
-
-function vecSub(a, b) {
-  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
-}
-
-function vecAdd(a, b) {
-  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
-}
-
-function vecScale(v, s) {
-  return { x: v.x * s, y: v.y * s, z: v.z * s };
-}
-
-function vecCross(a, b) {
-  return {
-    x: a.y * b.z - a.z * b.y,
-    y: a.z * b.x - a.x * b.z,
-    z: a.x * b.y - a.y * b.x,
-  };
-}
-
-function vecLength(v) {
-  return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-}
-
-function vecNormalize(v) {
-  const len = vecLength(v) || 1;
-  return { x: v.x / len, y: v.y / len, z: v.z / len };
-}
-
-function vecDot(a, b) {
-  return a.x * b.x + a.y * b.y + a.z * b.z;
-}
+import {
+  seededRandom,
+  vecSub,
+  vecAdd,
+  vecScale,
+  vecCross,
+  vecLength,
+  vecNormalize,
+  vecDot,
+} from '../core/utils.js';
 
 // ── Triangle Helpers ────────────────────────────────────────────────────────
 

@@ -5,33 +5,13 @@
 import { SocketType } from '../core/registry.js';
 import { GeometrySet, MeshComponent, CurveComponent, DOMAIN } from '../core/geometry.js';
 import { Field, isField, resolveField, resolveScalar } from '../core/field.js';
-
-// ── Vector Helpers ──────────────────────────────────────────────────────────
-
-function cross(a, b) {
-  return {
-    x: a.y * b.z - a.z * b.y,
-    y: a.z * b.x - a.x * b.z,
-    z: a.x * b.y - a.y * b.x,
-  };
-}
-
-function normalize(v) {
-  const len = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) || 1;
-  return { x: v.x / len, y: v.y / len, z: v.z / len };
-}
-
-function vecSub(a, b) {
-  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
-}
-
-function vecAdd(a, b) {
-  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
-}
-
-function vecScale(v, s) {
-  return { x: v.x * s, y: v.y * s, z: v.z * s };
-}
+import {
+  vecCross as cross,
+  vecNormalize as normalize,
+  vecSub,
+  vecAdd,
+  vecScale,
+} from '../core/utils.js';
 
 // ── Frenet Frame ────────────────────────────────────────────────────────────
 

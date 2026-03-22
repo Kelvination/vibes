@@ -92,8 +92,11 @@ export class NodeGraph {
   addConnection(fromNode, fromSocket, toNode, toSocket) {
     const fromNodeObj = this.nodes.find(n => n.id === fromNode);
     const toNodeObj = this.nodes.find(n => n.id === toNode);
-    const fromDef = registry.getNodeDef(this.graphType, fromNodeObj?.type);
-    const toDef = registry.getNodeDef(this.graphType, toNodeObj?.type);
+    if (!fromNodeObj || !toNodeObj) return false;
+
+    // Use dynamic definitions so type checks work for nodes with getInputs/getOutputs
+    const fromDef = this.getNodeDef(fromNodeObj);
+    const toDef = this.getNodeDef(toNodeObj);
     if (!fromDef || !toDef) return false;
 
     const fromType = fromDef.outputs[fromSocket]?.type;
@@ -147,16 +150,26 @@ export class NodeGraph {
 
     const evaluated = {};
     const errors = [];
+    const visiting = new Set(); // cycle detection
     const startTime = performance.now();
 
     const evalNode = (nodeId) => {
       if (evaluated[nodeId] !== undefined) return evaluated[nodeId];
 
+      // Cycle detection: if we're already visiting this node, we have a cycle
+      if (visiting.has(nodeId)) {
+        errors.push(`Cycle detected at node ${nodeId}`);
+        return null;
+      }
+
       const node = this.nodes.find(n => n.id === nodeId);
       if (!node) return null;
 
-      const def = registry.getNodeDef(this.graphType, node.type);
+      // Use dynamic definitions so getInputs/getOutputs are resolved
+      const def = this.getNodeDef(node);
       if (!def) return null;
+
+      visiting.add(nodeId);
 
       // Gather inputs by recursively evaluating upstream
       const inputValues = {};
@@ -181,6 +194,7 @@ export class NodeGraph {
         errors.push(`${def.label}: ${e.message}`);
       }
 
+      visiting.delete(nodeId);
       evaluated[nodeId] = result;
       return result;
     };

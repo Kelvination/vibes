@@ -15,7 +15,7 @@ import {
   applyTransform,
   rotateEulerXYZ,
 } from '../core/geometry.js';
-import { Field, isField, resolveField, resolveScalar } from '../core/field.js';
+import { Field, isField, resolveField, resolveScalar, resolveSelection } from '../core/field.js';
 
 export function registerOperationNodes(registry) {
   // ── Categories ──────────────────────────────────────────────────────────
@@ -61,13 +61,7 @@ export function registerOperationNodes(registry) {
       if (result.mesh && result.mesh.vertexCount > 0) {
         const elements = result.mesh.buildElements(DOMAIN.POINT);
 
-        // Evaluate selection (bool per element)
-        let selection = null;
-        if (selectionInput != null) {
-          selection = isField(selectionInput)
-            ? selectionInput.evaluateAll(elements)
-            : new Array(elements.length).fill(!!selectionInput);
-        }
+        const selection = resolveSelection(selectionInput, elements);
 
         // Evaluate position field
         if (posField != null) {
@@ -110,12 +104,7 @@ export function registerOperationNodes(registry) {
       if (result.curve && result.curve.splineCount > 0) {
         const elements = result.curve.buildElements(DOMAIN.CURVE_POINT);
 
-        let selection = null;
-        if (selectionInput != null) {
-          selection = isField(selectionInput)
-            ? selectionInput.evaluateAll(elements)
-            : new Array(elements.length).fill(!!selectionInput);
-        }
+        const selection = resolveSelection(selectionInput, elements);
 
         // Flatten all spline positions into a single indexable list
         const allPositions = [];
@@ -293,9 +282,8 @@ export function registerOperationNodes(registry) {
 
       if (domain === 'POINT') {
         const elements = mesh.buildElements(DOMAIN.POINT);
-        const selValues = isField(selectionInput)
-          ? selectionInput.evaluateAll(elements)
-          : new Array(elements.length).fill(!!selectionInput);
+        const selValues = resolveSelection(selectionInput, elements)
+          || new Array(elements.length).fill(true);
 
         // Determine which vertices to keep
         const keepVertex = new Array(mesh.vertexCount).fill(false);
@@ -351,22 +339,22 @@ export function registerOperationNodes(registry) {
         }
         mesh.faceVertCounts = newFaceVertCounts;
         mesh.cornerVerts = newCornerVerts;
+        mesh.invalidateCornerOffsets();
 
       } else if (domain === 'FACE') {
         const elements = mesh.buildElements(DOMAIN.FACE);
-        const selValues = isField(selectionInput)
-          ? selectionInput.evaluateAll(elements)
-          : new Array(elements.length).fill(!!selectionInput);
+        const selValues = resolveSelection(selectionInput, elements)
+          || new Array(elements.length).fill(true);
 
-        // Determine which faces to keep
+        // Determine which faces and corners to keep
         const newFaceVertCounts = [];
         const newCornerVerts = [];
         const keptFaceIndices = [];
+        const keptCornerIndices = [];
         let cornerIdx = 0;
         for (let fi = 0; fi < mesh.faceVertCounts.length; fi++) {
           const count = mesh.faceVertCounts[fi];
           const faceCorners = mesh.cornerVerts.slice(cornerIdx, cornerIdx + count);
-          cornerIdx += count;
 
           const selected = !!selValues[fi];
           const keep = mode === 'all' ? !selected : selected;
@@ -374,19 +362,25 @@ export function registerOperationNodes(registry) {
             newFaceVertCounts.push(count);
             newCornerVerts.push(...faceCorners);
             keptFaceIndices.push(fi);
+            for (let ci = 0; ci < count; ci++) {
+              keptCornerIndices.push(cornerIdx + ci);
+            }
           }
+          cornerIdx += count;
         }
+
         mesh.faceVertCounts = newFaceVertCounts;
         mesh.cornerVerts = newCornerVerts;
         mesh.faceAttrs.filter(keptFaceIndices);
+        mesh.cornerAttrs.filter(keptCornerIndices);
+        mesh.invalidateCornerOffsets();
 
         // Positions and edges remain (only faces removed)
 
       } else if (domain === 'EDGE') {
         const elements = mesh.buildElements(DOMAIN.EDGE);
-        const selValues = isField(selectionInput)
-          ? selectionInput.evaluateAll(elements)
-          : new Array(elements.length).fill(!!selectionInput);
+        const selValues = resolveSelection(selectionInput, elements)
+          || new Array(elements.length).fill(true);
 
         const keptEdgeIndices = [];
         const newEdges = [];
@@ -476,12 +470,7 @@ export function registerOperationNodes(registry) {
       const scaleInput = inputs['Scale'];
 
       // Evaluate fields against elements
-      let selection = null;
-      if (selectionInput != null) {
-        selection = isField(selectionInput)
-          ? selectionInput.evaluateAll(elements)
-          : new Array(elements.length).fill(!!selectionInput);
-      }
+      const selection = resolveSelection(selectionInput, elements);
 
       let rotations = null;
       if (rotationInput != null) {

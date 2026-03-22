@@ -229,6 +229,58 @@ function curveToThreeJS(curve) {
 
 // ── Instances Conversion ─────────────────────────────────────────────────────
 
+/**
+ * Convert Euler XYZ rotation from Blender's Z-up to Three.js Y-up coordinate system.
+ *
+ * We build the rotation matrix in Blender space, apply the Z-up→Y-up axis swap,
+ * then extract Euler angles in Three.js convention. This is mathematically correct
+ * unlike naive component swapping, because Euler rotations don't commute.
+ */
+function convertRotationZUpToYUp(rx, ry, rz) {
+  // Build rotation matrix in Z-up (Blender) space: R = Rz * Ry * Rx
+  const cx = Math.cos(rx), sx = Math.sin(rx);
+  const cy = Math.cos(ry), sy = Math.sin(ry);
+  const cz = Math.cos(rz), sz = Math.sin(rz);
+
+  // Combined matrix columns (Blender Z-up space)
+  // m[row][col] for row-major indexing
+  const m00 = cy * cz;
+  const m01 = sx * sy * cz - cx * sz;
+  const m02 = cx * sy * cz + sx * sz;
+  const m10 = cy * sz;
+  const m11 = sx * sy * sz + cx * cz;
+  const m12 = cx * sy * sz - sx * cz;
+  const m20 = -sy;
+  const m21 = sx * cy;
+  const m22 = cx * cy;
+
+  // Apply coordinate swap: Blender (x,y,z) → Three.js (x,z,-y)
+  // The swap matrix S maps: x'=x, y'=z, z'=-y
+  // New rotation = S * R * S^(-1)
+  // S^(-1): x=x', y=-z', z=y'
+  //
+  // Result matrix R' = S * R * S^(-1):
+  // Row 0 (x): R'[0][0]=m00, R'[0][1]=m02, R'[0][2]=-m01
+  // Row 1 (y→z): R'[1][0]=m20, R'[1][1]=m22, R'[1][2]=-m21
+  // Row 2 (z→-y): R'[2][0]=-m10, R'[2][1]=-m12, R'[2][2]=m11
+  const r00 = m00,  r01 = m02,  r02 = -m01;
+  const r10 = m20,  r11 = m22,  r12 = -m21;
+  const r20 = -m10, r21 = -m12, r22 = m11;
+
+  // Extract Euler XYZ from the converted matrix (Three.js convention)
+  const outRy = Math.asin(-Math.max(-1, Math.min(1, r20)));
+  let outRx, outRz;
+  if (Math.abs(r20) < 0.9999) {
+    outRx = Math.atan2(r21, r22);
+    outRz = Math.atan2(r10, r00);
+  } else {
+    outRx = Math.atan2(-r12, r11);
+    outRz = 0;
+  }
+
+  return { x: outRx, y: outRy, z: outRz };
+}
+
 function instancesToThreeJS(instances, wireframe) {
   if (instances.instanceCount === 0) return null;
 
@@ -241,11 +293,15 @@ function instancesToThreeJS(instances, wireframe) {
 
     const converted = geometrySetToThreeJS(ref, wireframe);
     for (const obj of converted.objects) {
-      // Apply instance transform (with Z-up to Y-up conversion)
+      // Position: Z-up to Y-up conversion
       const pos = zUpToYUp(transform.position.x, transform.position.y, transform.position.z);
       obj.position.set(pos.x, pos.y, pos.z);
-      // Rotation: swap Y↔Z axes
-      obj.rotation.set(transform.rotation.x, transform.rotation.z, -transform.rotation.y);
+      // Rotation: proper matrix-based coordinate conversion
+      const rot = convertRotationZUpToYUp(
+        transform.rotation.x, transform.rotation.y, transform.rotation.z
+      );
+      obj.rotation.set(rot.x, rot.y, rot.z);
+      // Scale: swap Y↔Z axes (safe for diagonal scale)
       obj.scale.set(transform.scale.x, transform.scale.z, transform.scale.y);
       results.objects.push(obj);
     }
