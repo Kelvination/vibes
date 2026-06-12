@@ -1,87 +1,12 @@
-# 3D Raycast Car Physics
+# WallRush
 
-A real 3D car simulation using Three.js with raycast-based wheel physics and suspension system.
+A browser-based, Trackmania-style time-trial racing game with a twist: hugging designated wall zones at corner entries, apexes, and exits charges an ERS-style energy reserve you can deploy (hold or toggle) for sustained extra engine power. Touching the wall voids the zone — only a clean near-miss pays.
 
-## Controls
+**Status:** PRD stage — see [PRD.md](./PRD.md) for the full product requirements document. This project folder is being repurposed for WallRush; the files currently deployed (`index.html`, `game.js`, `style.css`) are the previous **3D Raycast Car Physics** demo (Three.js raycast-wheel car sim), kept as reference code until the WallRush build replaces it.
 
-- **W** - Accelerate
-- **S** - Brake / Reverse
-- **A** - Turn Left
-- **D** - Turn Right
-- **Space** - Handbrake
+## Key pillars
 
-## Features
-
-### Raycast Physics System
-- **4 independent raycasts** shooting down from each wheel position
-- Real-time ground detection for each wheel
-- Visual ray helpers (green when grounded, red when in air)
-- Dynamic suspension compression based on raycast hit distance
-
-### Suspension System
-- Spring-damper suspension on each wheel
-- Configurable suspension stiffness and damping
-- Suspension travel visualization (wheels move up/down)
-- Individual wheel ground contact detection
-
-### Car Physics
-- **Mass-based physics** (1200kg car)
-- **Gravity** and vertical dynamics
-- **Engine force** applied through rear wheels
-- **Steering** with angular velocity
-- **Drag** and rolling resistance
-- **Torque calculation** for realistic body roll and pitch
-
-### Visual Features
-- 3D car model with body, cabin, and wheels
-- Rotating wheels based on speed
-- Front wheels turn with steering input
-- Dynamic camera that follows the car
-- Terrain with gentle height variation
-- Real-time HUD showing:
-  - Speed (km/h)
-  - Number of wheels on ground
-  - Car height above ground
-
-## How It Works
-
-### Raycast Wheel Detection
-Each frame, the game:
-1. Calculates the world position of each wheel
-2. Casts a ray downward from each wheel
-3. Detects intersection with the ground mesh
-4. Measures the distance to ground
-5. Uses this distance to calculate suspension compression
-
-### Suspension Physics
-For each wheel touching the ground:
-- **Spring Force** = compression × stiffness
-- **Damper Force** = compression velocity × damping
-- Combined force pushes the car up and absorbs bumps
-
-### Movement Physics
-- Engine force is applied along the car's forward vector
-- Steering creates angular torque around the Y axis
-- All forces are integrated into velocity
-- Velocity is integrated into position
-- Car naturally pitches and rolls based on suspension forces
-
-## Technical Details
-
-- **Engine**: Three.js (WebGL)
-- **Physics**: Custom implementation
-- **Timestep**: Fixed 60 FPS
-- **Raycasting**: Three.js raycaster for ground detection
-- **Camera**: Smooth follow camera with lerp
-
-## Future Enhancements
-
-- Wheel friction and sliding
-- Better terrain with ramps and obstacles
-- Multiple cars
-- Collision detection with objects
-- Improved car models
-- Sound effects
-- Different camera modes
-- Tire marks
-- More realistic suspension geometry
+- Trackmania-like arcade handling: speed-sensitive understeer, controllable brake-induced rotation, instant restarts
+- Hug-zone ERS: marked wall segments on corner entry/apex/exit, each a one-shot award per run scaled by closest approach (contact voids it); deploy for a sustained power increase (F1 ERS style, not a turbo spike)
+- Block-based map builder with a Trackmania-style block catalog (roads, banked curves, ramps, loops, wallrides, dirt, boosters)
+- Local PBs, medals, and deterministic ghost replays; maps shareable via export codes
