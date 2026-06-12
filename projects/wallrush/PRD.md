@@ -10,7 +10,7 @@
 
 WallRush is a browser-based arcade time-trial racing game inspired by Trackmania 2020. Players race a single car against the clock on user-built tracks, chasing the fastest possible time. There are no opponents on track, no collisions with other players, and no items — just you, the track, and the timer.
 
-The signature twist: **hugging designated wall zones charges an ERS-style energy reserve**. Marked wall segments at corner entries, apexes, and exits reward driving millimeters from the wall — but actually touching it gives nothing and costs speed. The player can deploy stored energy at any time (hold or toggle) for a general power increase — not a turbo spike, but a sustained engine boost similar to ERS deployment in Formula 1. This creates a constant risk/reward tension: the closer you dare, the more you gain, and contact ruins it.
+The signature twist: **hugging designated wall zones charges an ERS-style energy reserve**. Marked wall segments at corner entries, apexes, and exits each pay out once per run, scaled by how close the car got at its closest point — driving millimeters from the wall pays the most, while actually touching it voids the zone and costs speed. The player can deploy stored energy at any time (hold or toggle) for a general power increase — not a turbo spike, but a sustained engine boost similar to ERS deployment in Formula 1. This creates a constant risk/reward tension: the closer you dare, the more you gain, and contact ruins it.
 
 ### Vision statement
 
@@ -116,16 +116,18 @@ This gives the classic TM technique: tap brake mid-corner to tighten the line / 
 
 ## 5. Wall Energy System (ERS) — the signature mechanic
 
-### 5.1 Charging: designated wall-hug zones, proximity only — contact gives nothing
+### 5.1 Charging: one-shot hug zones, scored by closest approach — contact gives nothing
 
-Charging does **not** happen along arbitrary walls. It happens only inside **designated wall-hug zones**: visually marked wall segments placed at the **entry, apex, and exit of corners** (and wherever the map builder adds them — see §5.4). This makes the mechanic legible — the track itself tells you where the risk/reward moments are — and lets corner shape dictate which phases apply (a tightening corner might have apex + exit zones only; a fast kink might be apex-only).
+Charging does **not** happen along arbitrary walls, and it is not a continuous trickle. Energy comes from **designated wall-hug zones**: visually marked wall segments placed at the **entry, apex, and exit of corners** (and wherever the map builder adds them — see §5.4). Each zone is a **one-shot award**, triggered at most **once per zone per run**, and the amount granted scales with **how close the car got to the wall at its closest point** during the pass. This makes the mechanic legible — the track itself tells you where the risk/reward moments are — and lets corner shape dictate which phases apply (a tightening corner might have apex + exit zones only; a fast kink might be apex-only).
 
-- While the car is alongside a hug zone, the game measures the distance from the car's side to the zone's wall surface (side shape-casts each tick).
-- **Inside the charge band** (e.g. < 1.5 car-widths from the zone wall), energy accumulates. Charge rate scales with:
-  - **Proximity** — closer = faster charge, maxing out when nearly scraping.
-  - **Speed** — charging requires meaningful speed (no parking next to a wall to farm energy; below a speed floor, charge rate is ~0).
-- **Touching the wall gives no charge.** On contact, charging stops immediately and stays suspended for a short lockout (~0.3–0.5 s, tuned) so scrape-flicker can't cheat the rule, and contact friction costs speed as normal. Accumulated reserve is kept — contact wastes the opportunity, it doesn't drain the bank. The skill expression is a clean millimeter near-miss at speed; the wall is purely a penalty, never a crutch.
-- Energy stores in a reserve with a fixed cap (e.g. 0–100). HUD shows it as a gauge.
+How a zone pass works:
+
+- Every zone starts a run **armed**. While the car is alongside an armed zone, the sim tracks its **closest approach** — the minimum side-distance to the zone wall over the whole pass.
+- When the car leaves the zone, energy is awarded as a single grant based on that closest approach: a near-touch (millimeters) pays the maximum, while skimming the outer edge of the charge band (~1.5 car-widths) pays a token amount. The curve is steep near the wall — the last few centimeters are worth disproportionately more, so daring is what's rewarded.
+- The award also scales with **speed at closest approach** (a crawling pass pays almost nothing — no creeping along walls to bank energy).
+- **Touching the wall voids the zone.** Any contact with the zone wall during the pass consumes the zone for zero energy — no partial credit for the approach before contact — plus the normal contact friction speed loss. The skill expression is a clean millimeter near-miss at speed; the wall is purely a penalty, never a crutch.
+- A consumed zone (whether paid out or voided) stays inert until the run restarts. No backing up to re-trigger it. (Multilap re-arming per lap is a v1.5 concern alongside the multilap block.) On checkpoint respawn, zone armed/consumed states restore to their snapshot at the checkpoint crossing, consistent with the ERS reserve (§7).
+- Energy stores in a reserve with a fixed cap (e.g. 0–100). HUD shows it as a gauge; each zone award lands as a visible chunk with a closeness rating (see §5.3).
 
 ### 5.2 Deployment: ERS, not turbo
 
@@ -138,15 +140,16 @@ Charging does **not** happen along arbitrary walls. It happens only inside **des
 ### 5.3 Design intent & balance
 
 - Wall-hugging must be a **meaningful but optional** layer: a clean no-ERS lap should still be competitive on maps with few hug zones; map builders control the mechanic's prominence via zone placement.
-- Risk/reward calibration: clipping the wall is strictly lose-lose (no charge + lockout + speed scrub), so greedy lines that touch should clearly lose to a slightly wider clean line; a clean near-miss through a full entry-apex-exit zone set should clearly beat ignoring the zones entirely.
-- HUD must communicate state instantly: charge gauge, an "in charge zone" indicator (gauge glows / particle ticks along the car's side near the zone wall), a visible "contact lockout" state (gauge briefly greys out on touch — instant feedback that you blew it), and a distinct deploy state (gauge drains, subtle speed-line VFX, engine pitch rises).
+- Award sizing (starting point, tuned in testing): a *perfect* zone pass grants ~20–25% of the bar, so roughly a full entry-apex-exit corner executed cleanly fills most of a bar; a timid mid-band pass grants ~5%. Voiding a zone by contact is strictly lose-lose (zero energy + speed scrub), so a greedy line that touches should clearly lose to a slightly wider clean line.
+- Per-pass feedback: on zone exit, a rating pops with the award ("+22 PERFECT" / "+12 CLOSE" / "+5 SAFE"; contact shows "VOID") so the player learns the proximity curve viscerally, run over run.
+- HUD must communicate state instantly: charge gauge with chunked award fills, an "in zone" indicator while alongside an armed zone (particle ticks along the car's side that intensify with closeness — live feedback on how the pass is scoring), a clear voided/consumed state, and a distinct deploy state (gauge drains, subtle speed-line VFX, engine pitch rises).
 
 ### 5.4 Builder interaction
 
 - **Curve blocks ship with built-in hug zones** at entry, apex, and exit (on the outside wall by default). Each zone is **individually toggleable per block** in the editor, because entry/exit zones aren't always applicable — e.g. a corner that opens straight into another corner has no meaningful exit phase, and a chicane's middle has no clean entry. Apex zones are the default-on baseline; entry/exit default on for standalone corners and are the builder's call elsewhere.
 - **Free-standing hug-zone wall piece**: a wall segment variant whose face is a charge zone, placeable anywhere (straights, tunnel walls, custom layouts) for builders who want zones outside the standard corner pattern.
 - Plain walls and borders never charge — they are only hazards. The marked zones are the entire ERS surface area of a map.
-- **Visual language:** hug zones are unmistakably marked — an emissive colored strip along the wall face (e.g. cyan), pulsing gently, brightening as the car gets close. Players should read the racing line's risk/reward at a glance from the track itself.
+- **Visual language:** hug zones are unmistakably marked — an emissive colored strip along the wall face (e.g. cyan), pulsing gently while **armed** and brightening as the car gets close. After the pass the strip changes state: dimmed steady glow if **paid out**, dark/red-tinged if **voided by contact**. Players should read the racing line's risk/reward — and what's already spent — at a glance from the track itself.
 
 ---
 
@@ -208,7 +211,7 @@ Each block defines: visual mesh, collision mesh, surface type per face, and whic
 
 - **Timer:** starts on first input after countdown (or on countdown end — TM starts on countdown end; we match TM), millisecond precision, monotonic with the fixed physics clock (never wall-clock).
 - **Checkpoints:** must all be collected (any order = no; sequential by trigger, TM-style "all checkpoints" set semantics: each CP counted once, finish only valid when all collected). Checkpoint splits shown vs. personal best delta (+/− in green/red).
-- **Respawn:** key to respawn at last checkpoint (standing start, ERS reserve restored to value at CP crossing); full restart key for the start line.
+- **Respawn:** key to respawn at last checkpoint (standing start; ERS reserve and hug-zone armed/consumed states restored to their snapshot at CP crossing); full restart key for the start line (re-arms all zones).
 - **Medals:** Author/Gold/Silver/Bronze per map, persisted locally.
 - **Personal best & ghosts:** PB per map stored locally (input-recording replay). Race against PB ghost (semi-transparent car, toggleable). Ghost export/import alongside map sharing (stretch: ghost embedded in shareable string).
 - **Leaderboard:** local-only in v1 (PB list per map). Online leaderboard is explicitly out of scope for v1 (would require a backend; revisit in v2 — see §11).
@@ -259,7 +262,7 @@ Steering smoothing: digital key input ramps the internal steering value over ~80
 | Language / build | TypeScript + Vite |
 | Rendering | Three.js (WebGL) |
 | Physics | **Custom arcade physics** on a fixed 100 Hz timestep. No off-the-shelf physics engine for the car — TM-feel and determinism demand bespoke code. Simple swept-shape collision vs. block collision meshes (boxes/convex pieces per block, spatial hash on the grid). |
-| Wall proximity | Side shape-casts each tick against hug-zone surfaces (zones registered in the grid spatial hash); distance feeds ERS charge; contact events trigger the charge lockout. |
+| Wall proximity | Side shape-casts each tick against hug-zone surfaces (zones registered in the grid spatial hash); per-zone state machine (armed → tracking closest approach → paid/voided) lives in the sim so ghosts and respawn snapshots capture it. |
 | Determinism | Fixed timestep, no `Math.random` in sim, inputs sampled per tick; render interpolates between sim states. Ghosts = recorded input streams replayed through the same sim. |
 | State/UI | Plain TS + lightweight DOM/CSS HUD; no heavy framework required (small React app acceptable for editor palette if it speeds development). |
 | Persistence | `localStorage` (maps, PBs, ghosts, settings) + file export/import. |
@@ -284,7 +287,7 @@ src/
 
 | Phase | Deliverable | Exit criteria |
 |---|---|---|
-| **M1 — Feel prototype** | Car on a flat plane with a few walls + hug-zone pieces; full handling model (§4) incl. understeer + brake-rotation; ERS charge/deploy with contact lockout (§5); debug tuning panel | "It feels like Trackmania" in blind playtest; brake-rotation is controllable; threading hug zones without touching is fun on a bare plane |
+| **M1 — Feel prototype** | Car on a flat plane with a few walls + hug-zone pieces; full handling model (§4) incl. understeer + brake-rotation; one-shot zone awards scored by closest approach, contact-void, ERS deploy (§5); debug tuning panel | "It feels like Trackmania" in blind playtest; brake-rotation is controllable; threading hug zones for a high rating without touching is fun on a bare plane |
 | **M2 — Race loop** | Start/CP/finish, timer, instant restart, respawn, medals, PB + ghost, HUD, 2 hand-coded test tracks | Complete time-trial loop, deterministic ghosts verified (replayed input = identical time) |
 | **M3 — Map builder** | Grid editor with full v1 block catalog, undo/redo, validation, test mode, save/load/export/import | A non-developer can build, validate, and share a playable map |
 | **M4 — Content & polish** | 5–8 campaign maps, audio, VFX, settings (incl. hold/toggle ERS), menus, map library UI | Shippable: new player goes menu → tutorial map → builds own map without instructions |
@@ -308,8 +311,8 @@ src/
 |---|---|---|
 | 1 | Does ERS persist through checkpoint respawn at the *crossing-time* value, or reset to 0? | Restore to value at CP crossing (stored with CP state) — prevents respawn-farming while not punishing crashes twice |
 | 2 | Should mid-air ERS deploy give thrust? | Yes, weak — but cut it if it trivializes jump design |
-| 3 | Contact lockout duration, and should heavy contact also drain some reserve? | ~0.3–0.5 s lockout; no reserve drain in v1 (contact already costs speed + the missed charge) |
-| 3b | Should curve blocks auto-disable entry/exit zones based on adjacent blocks (smart defaults), or leave it fully manual? | Manual toggles in v1 with sensible static defaults; auto-detection is a v2 editor nicety |
+| 3 | Zone boundary edge cases: what exactly ends a "pass" (leaving the zone's length, or dropping out of the charge band sideways)? Can a player exit the band mid-zone and re-enter to bank the award early? | A pass ends when the car exits the zone's length along the track; the zone pays once on that exit using the closest approach over the whole traversal — weaving out and back doesn't re-arm or double-pay |
+| 3b | Can curve-block entry/exit zone applicability be auto-detected from adjacent blocks, or does it have to be manual? | Genuinely undecided — prototype auto-detection during M3; manual per-zone toggles are the guaranteed fallback and ship either way (auto would just set the defaults) |
 | 4 | Timer start: on countdown end (TM) or first input? | Countdown end, matching TM |
 | 5 | Map grid size 64³ enough? | Start 64×64×16, make it a map property later |
 | 6 | Keyboard-only at launch? | Yes; gamepad if time allows in M4 |
