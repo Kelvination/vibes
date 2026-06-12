@@ -10,13 +10,13 @@
 
 WallRush is a browser-based arcade time-trial racing game inspired by Trackmania 2020. Players race a single car against the clock on user-built tracks, chasing the fastest possible time. There are no opponents on track, no collisions with other players, and no items — just you, the track, and the timer.
 
-The signature twist: **driving close to walls charges an ERS-style energy reserve**. The player can deploy that energy at any time (hold or toggle) for a general power increase — not a turbo spike, but a sustained engine boost similar to ERS deployment in Formula 1. This creates a constant risk/reward tension: hugging walls is dangerous but fuels your speed.
+The signature twist: **hugging designated wall zones charges an ERS-style energy reserve**. Marked wall segments at corner entries, apexes, and exits reward driving millimeters from the wall — but actually touching it gives nothing and costs speed. The player can deploy stored energy at any time (hold or toggle) for a general power increase — not a turbo spike, but a sustained engine boost similar to ERS deployment in Formula 1. This creates a constant risk/reward tension: the closer you dare, the more you gain, and contact ruins it.
 
 ### Vision statement
 
-> "The fastest line touches the wall."
+> "The fastest line *almost* touches the wall."
 
-In Trackmania, the optimal line avoids walls. In WallRush, the optimal line *flirts* with them. Every map becomes a question of how much risk the player is willing to trade for energy.
+In Trackmania, the optimal line avoids walls. In WallRush, the optimal line *flirts* with them. Every map becomes a question of how close the player dares to get for energy.
 
 ### Goals
 
@@ -116,13 +116,15 @@ This gives the classic TM technique: tap brake mid-corner to tighten the line / 
 
 ## 5. Wall Energy System (ERS) — the signature mechanic
 
-### 5.1 Charging: proximity, not contact
+### 5.1 Charging: designated wall-hug zones, proximity only — contact gives nothing
 
-- The game continuously measures the distance from the car's sides to the nearest wall surface (raycasts/shape-casts left and right, plus track border detection).
-- **Inside the charge zone** (e.g. < 1.5 car-widths from a wall), energy accumulates. Charge rate scales with:
+Charging does **not** happen along arbitrary walls. It happens only inside **designated wall-hug zones**: visually marked wall segments placed at the **entry, apex, and exit of corners** (and wherever the map builder adds them — see §5.4). This makes the mechanic legible — the track itself tells you where the risk/reward moments are — and lets corner shape dictate which phases apply (a tightening corner might have apex + exit zones only; a fast kink might be apex-only).
+
+- While the car is alongside a hug zone, the game measures the distance from the car's side to the zone's wall surface (side shape-casts each tick).
+- **Inside the charge band** (e.g. < 1.5 car-widths from the zone wall), energy accumulates. Charge rate scales with:
   - **Proximity** — closer = faster charge, maxing out when nearly scraping.
   - **Speed** — charging requires meaningful speed (no parking next to a wall to farm energy; below a speed floor, charge rate is ~0).
-- **Touching/scraping the wall** still charges (at max rate) but contact friction costs speed, so the optimal play is *almost* touching — the skill expression is millimeter wall-riding at speed.
+- **Touching the wall gives no charge.** On contact, charging stops immediately and stays suspended for a short lockout (~0.3–0.5 s, tuned) so scrape-flicker can't cheat the rule, and contact friction costs speed as normal. Accumulated reserve is kept — contact wastes the opportunity, it doesn't drain the bank. The skill expression is a clean millimeter near-miss at speed; the wall is purely a penalty, never a crutch.
 - Energy stores in a reserve with a fixed cap (e.g. 0–100). HUD shows it as a gauge.
 
 ### 5.2 Deployment: ERS, not turbo
@@ -135,14 +137,16 @@ This gives the classic TM technique: tap brake mid-corner to tighten the line / 
 
 ### 5.3 Design intent & balance
 
-- Wall-hugging must be a **meaningful but optional** layer: a clean no-ERS lap should still be competitive on maps without good wall sections; map builders control the mechanic's prominence via wall placement.
-- Risk/reward calibration: the time gained from a full bar should be on the order of the time lost by one wall-scrape mistake. Greedy wall-riding that clips the wall should roughly break even; clean wall-riding should clearly win.
-- HUD must communicate state instantly: charge gauge, an "in charge zone" indicator (gauge glows / particle ticks along the car's side near the wall), and a distinct deploy state (gauge drains, subtle speed-line VFX, engine pitch rises).
+- Wall-hugging must be a **meaningful but optional** layer: a clean no-ERS lap should still be competitive on maps with few hug zones; map builders control the mechanic's prominence via zone placement.
+- Risk/reward calibration: clipping the wall is strictly lose-lose (no charge + lockout + speed scrub), so greedy lines that touch should clearly lose to a slightly wider clean line; a clean near-miss through a full entry-apex-exit zone set should clearly beat ignoring the zones entirely.
+- HUD must communicate state instantly: charge gauge, an "in charge zone" indicator (gauge glows / particle ticks along the car's side near the zone wall), a visible "contact lockout" state (gauge briefly greys out on touch — instant feedback that you blew it), and a distinct deploy state (gauge drains, subtle speed-line VFX, engine pitch rises).
 
 ### 5.4 Builder interaction
 
-- Standard track walls and borders all charge ERS. Builders shape the mechanic by choosing open (no-wall) vs. walled sections.
-- Optional v1.5 block: "insulated wall" that does *not* charge, for maps that want walls without energy.
+- **Curve blocks ship with built-in hug zones** at entry, apex, and exit (on the outside wall by default). Each zone is **individually toggleable per block** in the editor, because entry/exit zones aren't always applicable — e.g. a corner that opens straight into another corner has no meaningful exit phase, and a chicane's middle has no clean entry. Apex zones are the default-on baseline; entry/exit default on for standalone corners and are the builder's call elsewhere.
+- **Free-standing hug-zone wall piece**: a wall segment variant whose face is a charge zone, placeable anywhere (straights, tunnel walls, custom layouts) for builders who want zones outside the standard corner pattern.
+- Plain walls and borders never charge — they are only hazards. The marked zones are the entire ERS surface area of a map.
+- **Visual language:** hug zones are unmistakably marked — an emissive colored strip along the wall face (e.g. cyan), pulsing gently, brightening as the car gets close. Players should read the racing line's risk/reward at a glance from the track itself.
 
 ---
 
@@ -165,13 +169,13 @@ A block-based 3D editor modeled on Trackmania's: the world is a grid; blocks sna
 
 Categories and minimum block set, mirroring TM2020's core inventory:
 
-**Road (asphalt, with side borders — borders are ERS-charging walls):**
-- Straight, Curve (1-, 2-, 3-block radius), Diagonal, Chicane
+**Road (asphalt, with side borders — plain walls, no charge):**
+- Straight, Curve (1-, 2-, 3-block radius), Diagonal, Chicane — curves include built-in entry/apex/exit hug zones with per-zone editor toggles (§5.4)
 - Slope up/down (gentle & steep), Slope-curve combinations
-- Banked curve (1-, 2-, 3-block radius)
-- Narrow road variant (walls closer together → richer ERS, higher risk)
+- Banked curve (1-, 2-, 3-block radius) — hug zones as above
+- Narrow road variant (walls closer together — higher risk, and tighter quarters for any hug zones placed there)
 
-**Platform (open-edged, no borders — you can fall off; no ERS charge at edges):**
+**Platform (open-edged, no borders — you can fall off):**
 - Flat platform, platform slope, platform curve
 
 **Dirt:**
@@ -183,13 +187,14 @@ Categories and minimum block set, mirroring TM2020's core inventory:
 - Booster pad (forced acceleration), Slow-motion-free — no gameplay gimmick pads beyond boost in v1
 - Jump/ramp (with takeoff lip), Gap-jump landing ramp
 - Loop (vertical 360°), Wallride (quarter-pipe / full vertical wall segments)
-- Tunnel (enclosed road — walls on both sides *and* ceiling; ERS heaven, low visibility)
+- Tunnel (enclosed road — walls on both sides *and* ceiling; claustrophobic, low visibility; supports hug-zone wall variants)
 - Decorative: pillars/supports auto-generated under elevated blocks (visual only)
 
-**Walls (free-standing, the ERS toy box):**
-- Straight wall segment, wall corner, half-height wall — placeable alongside any road/platform to create ERS charging zones wherever the builder wants.
+**Walls (free-standing):**
+- Straight wall segment, wall corner, half-height wall — plain hazard walls, placeable alongside any road/platform
+- **Hug-zone wall segment** — the charge-zone variant (§5.4), the builder's tool for placing ERS opportunities anywhere
 
-Each block defines: visual mesh, collision mesh, surface type per face, and which faces are ERS-charging.
+Each block defines: visual mesh, collision mesh, surface type per face, and which faces (if any) are hug zones, including the per-zone toggle state for curve blocks.
 
 ### 6.3 Map persistence & sharing
 
@@ -254,7 +259,7 @@ Steering smoothing: digital key input ramps the internal steering value over ~80
 | Language / build | TypeScript + Vite |
 | Rendering | Three.js (WebGL) |
 | Physics | **Custom arcade physics** on a fixed 100 Hz timestep. No off-the-shelf physics engine for the car — TM-feel and determinism demand bespoke code. Simple swept-shape collision vs. block collision meshes (boxes/convex pieces per block, spatial hash on the grid). |
-| Wall proximity | Side shape-casts each tick against collision geometry; distance feeds ERS charge. |
+| Wall proximity | Side shape-casts each tick against hug-zone surfaces (zones registered in the grid spatial hash); distance feeds ERS charge; contact events trigger the charge lockout. |
 | Determinism | Fixed timestep, no `Math.random` in sim, inputs sampled per tick; render interpolates between sim states. Ghosts = recorded input streams replayed through the same sim. |
 | State/UI | Plain TS + lightweight DOM/CSS HUD; no heavy framework required (small React app acceptable for editor palette if it speeds development). |
 | Persistence | `localStorage` (maps, PBs, ghosts, settings) + file export/import. |
@@ -279,7 +284,7 @@ src/
 
 | Phase | Deliverable | Exit criteria |
 |---|---|---|
-| **M1 — Feel prototype** | Car on a flat plane with a few wall pieces; full handling model (§4) incl. understeer + brake-rotation; ERS charge/deploy (§5); debug tuning panel | "It feels like Trackmania" in blind playtest; brake-rotation is controllable; wall-riding for energy is fun on a bare plane |
+| **M1 — Feel prototype** | Car on a flat plane with a few walls + hug-zone pieces; full handling model (§4) incl. understeer + brake-rotation; ERS charge/deploy with contact lockout (§5); debug tuning panel | "It feels like Trackmania" in blind playtest; brake-rotation is controllable; threading hug zones without touching is fun on a bare plane |
 | **M2 — Race loop** | Start/CP/finish, timer, instant restart, respawn, medals, PB + ghost, HUD, 2 hand-coded test tracks | Complete time-trial loop, deterministic ghosts verified (replayed input = identical time) |
 | **M3 — Map builder** | Grid editor with full v1 block catalog, undo/redo, validation, test mode, save/load/export/import | A non-developer can build, validate, and share a playable map |
 | **M4 — Content & polish** | 5–8 campaign maps, audio, VFX, settings (incl. hold/toggle ERS), menus, map library UI | Shippable: new player goes menu → tutorial map → builds own map without instructions |
@@ -290,7 +295,7 @@ src/
 ## 12. Success criteria
 
 1. **Feel:** players familiar with Trackmania describe the handling as "close to TM" unprompted; brake-rotation and understeer are used deliberately as techniques, not fought as bugs.
-2. **Mechanic:** on maps with wall sections, top local times all use wall-charging — and replays show distinct wall-hugging lines (the mechanic visibly changed the racing line).
+2. **Mechanic:** on maps with hug zones, top local times all use them — and replays show distinct near-miss lines through entry/apex/exit zones (the mechanic visibly changed the racing line) with clean, contact-free execution.
 3. **Retention loop:** median session includes ≥ 10 restarts on a single map (the "one more run" signal).
 4. **Builder:** a playable custom map can be built and shared (export string) in under 10 minutes.
 5. **Performance:** 60 FPS / fixed 100 Hz sim maintained on a mid-range laptop with a 500-block map.
@@ -303,7 +308,8 @@ src/
 |---|---|---|
 | 1 | Does ERS persist through checkpoint respawn at the *crossing-time* value, or reset to 0? | Restore to value at CP crossing (stored with CP state) — prevents respawn-farming while not punishing crashes twice |
 | 2 | Should mid-air ERS deploy give thrust? | Yes, weak — but cut it if it trivializes jump design |
-| 3 | Charge from ceiling (tunnels) and the wallride surface itself? | Tunnels: walls only, not ceiling. Wallrides: the surface you're driving on never charges (it's floor, not wall); side lips do |
+| 3 | Contact lockout duration, and should heavy contact also drain some reserve? | ~0.3–0.5 s lockout; no reserve drain in v1 (contact already costs speed + the missed charge) |
+| 3b | Should curve blocks auto-disable entry/exit zones based on adjacent blocks (smart defaults), or leave it fully manual? | Manual toggles in v1 with sensible static defaults; auto-detection is a v2 editor nicety |
 | 4 | Timer start: on countdown end (TM) or first input? | Countdown end, matching TM |
 | 5 | Map grid size 64³ enough? | Start 64×64×16, make it a map property later |
 | 6 | Keyboard-only at launch? | Yes; gamepad if time allows in M4 |
