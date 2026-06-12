@@ -2,7 +2,7 @@
 
 **Status:** Draft v1.0
 **Date:** 2026-06-12
-**Project folder:** `projects/wallrush/`
+**Project folder:** `projects/radiant-velvet-peak/`
 
 ---
 
