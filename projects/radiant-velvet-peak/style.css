@@ -242,6 +242,16 @@ body.touch #touch-controls { display: block; }
   -webkit-tap-highlight-color: transparent;
 }
 .tc-btn:active { background: rgba(24, 224, 255, 0.32); }
+/* Arrows are CSS-drawn triangles, not text glyphs — nothing for iOS to select
+   or pop a magnifier over on a long press. */
+.tc-arrow::before {
+  content: ''; display: block; width: 0; height: 0;
+  border: 15px solid transparent; pointer-events: none;
+}
+#tc-left::before  { border-right-color: var(--text); margin-right: 7px; }
+#tc-right::before { border-left-color: var(--text); margin-left: 7px; }
+#tc-gas::before   { border-bottom-color: var(--text); margin-bottom: 7px; }
+#tc-brake::before { border-top-color: var(--text); margin-top: 7px; }
 /* steering — bottom-left */
 #tc-left  { left: max(18px, env(safe-area-inset-left)); bottom: 28px; }
 #tc-right { left: calc(max(18px, env(safe-area-inset-left)) + 88px); bottom: 28px; }

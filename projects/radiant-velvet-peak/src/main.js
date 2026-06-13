@@ -334,15 +334,34 @@ function bindTouch() {
   if (!isTouch) return;
   document.body.classList.add('touch');
 
+  // Track which button each finger (pointerId) is holding so multi-touch works
+  // and nothing sticks: a touch that ends or is cancelled anywhere releases the
+  // exact button it started on.
+  const heldBy = new Map(); // pointerId -> touch key
+
   const hold = (id, key) => {
     const el = $(id);
-    const set = (v) => (e) => { e.preventDefault(); app.touch[key] = v; if (v) app.audio.ensure(); };
-    el.addEventListener('pointerdown', set(true));
-    el.addEventListener('pointerup', set(false));
-    el.addEventListener('pointercancel', set(false));
-    el.addEventListener('lostpointercapture', set(false));
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      // Drop implicit pointer capture so a finger sliding between buttons (or
+      // off one entirely) can't pin the original button "on".
+      try { el.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
+      heldBy.set(e.pointerId, key);
+      app.touch[key] = true;
+      app.audio.ensure();
+    });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
   };
+
+  const release = (e) => {
+    const key = heldBy.get(e.pointerId);
+    if (key === undefined) return;
+    heldBy.delete(e.pointerId);
+    app.touch[key] = false;
+  };
+  addEventListener('pointerup', release);
+  addEventListener('pointercancel', release);
+
   hold('tc-gas', 'gas');
   hold('tc-brake', 'brake');
   hold('tc-left', 'left');
