@@ -84,19 +84,30 @@ export class Renderer3D {
     const g = new THREE.Group();
     const mat = new THREE.MeshLambertMaterial({ color, transparent: opacity < 1, opacity });
     const dark = new THREE.MeshLambertMaterial({ color: 0x14181f, transparent: opacity < 1, opacity });
+
+    // Sprung mass (body + cabin + glow) — tilts with the suspension; the
+    // wheels stay planted on the ground so the body visibly rolls and dives.
+    const chassis = new THREE.Group();
+    g.add(chassis);
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.62, 4.2), mat);
     body.position.y = 0.55;
-    g.add(body);
+    chassis.add(body);
     const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 1.7), dark);
     cabin.position.set(0, 1.05, -0.35);
-    g.add(cabin);
+    chassis.add(cabin);
+
     const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.32, 10);
-    for (const [x, z] of [[-0.95, 1.35], [0.95, 1.35], [-0.95, -1.35], [0.95, -1.35]]) {
+    const frontWheels = [];
+    for (const [x, z, front] of [[-0.95, 1.35, true], [0.95, 1.35, true], [-0.95, -1.35, false], [0.95, -1.35, false]]) {
+      const pivot = new THREE.Group();        // steers (front) about vertical
+      pivot.position.set(x, 0.38, z);
       const w = new THREE.Mesh(wheelGeo, dark);
       w.rotation.z = Math.PI / 2;
-      w.position.set(x, 0.38, z);
-      g.add(w);
+      pivot.add(w);
+      g.add(pivot);
+      if (front) frontWheels.push(pivot);
     }
+
     // ERS exhaust glow (PRD §8.1)
     const glow = new THREE.Mesh(
       new THREE.ConeGeometry(0.45, 2.2, 8),
@@ -105,8 +116,10 @@ export class Renderer3D {
     glow.rotation.x = Math.PI / 2;
     glow.position.set(0, 0.55, -3.0);
     glow.visible = false;
-    g.add(glow);
+    chassis.add(glow);
     g.userData.glow = glow;
+    g.userData.chassis = chassis;
+    g.userData.frontWheels = frontWheels;
     return g;
   }
 
@@ -301,10 +314,18 @@ export class Renderer3D {
     }
   }
 
-  updateCar(group, x, z, h, deploying) {
+  updateCar(group, x, z, h, deploying, lean) {
     group.position.set(x, 0, z);
     group.rotation.y = h;
     if (group.userData.glow) group.userData.glow.visible = !!deploying;
+    const ch = group.userData.chassis;
+    if (ch) {
+      ch.rotation.x = lean ? lean.pitch : 0;
+      ch.rotation.z = lean ? lean.roll : 0;
+      ch.position.y = lean ? lean.heave : 0;
+    }
+    const fw = group.userData.frontWheels;
+    if (fw) { const s = lean ? lean.steer : 0; fw[0].rotation.y = s; fw[1].rotation.y = s; }
   }
 
   updateSparks(car, live) {
