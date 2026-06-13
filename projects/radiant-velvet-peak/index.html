@@ -1,30 +1,137 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Raycast Car Physics</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WallRush — the fastest line almost touches the wall</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.min.js" } }
+  </script>
 </head>
 <body>
-    <div class="game-container">
-        <canvas id="gameCanvas"></canvas>
-        <div class="hud">
-            <div class="speed">Speed: <span id="speedometer">0</span> km/h</div>
-            <div class="info">
-                <div>Wheels on ground: <span id="wheelsGrounded">0</span>/4</div>
-                <div>Height: <span id="carHeight">0</span>m</div>
-            </div>
-            <div class="controls">
-                <div>W - Accelerate</div>
-                <div>S - Brake/Reverse</div>
-                <div>A - Turn Left</div>
-                <div>D - Turn Right</div>
-                <div>Space - Handbrake</div>
-            </div>
-        </div>
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- ===== Main menu ===== -->
+  <div id="screen-menu" class="screen menu-screen active">
+    <div class="menu-box">
+      <h1>WALL<span>RUSH</span></h1>
+      <p class="tagline">The fastest line <em>almost</em> touches the wall.</p>
+      <button id="btn-campaign" class="big">Campaign</button>
+      <button id="btn-editor" class="big">Map Editor</button>
+      <button id="btn-library" class="big">My Maps</button>
+      <button id="btn-settings" class="big">Settings</button>
+      <button id="btn-help" class="big">How to Play</button>
+      <p class="dim small">Desktop browser + keyboard required</p>
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="game.js"></script>
+  </div>
+
+  <!-- ===== Campaign ===== -->
+  <div id="screen-campaign" class="screen menu-screen">
+    <div class="menu-box wide">
+      <h2>Campaign</h2>
+      <div id="campaign-list"></div>
+      <button class="btn-back">Back</button>
+    </div>
+  </div>
+
+  <!-- ===== Map library ===== -->
+  <div id="screen-library" class="screen menu-screen">
+    <div class="menu-box wide">
+      <h2>My Maps</h2>
+      <div id="library-list"></div>
+      <div class="import-row">
+        <input id="import-text" placeholder="Paste a WR1. share code…">
+        <button id="btn-import">Import</button>
+      </div>
+      <button class="btn-back">Back</button>
+    </div>
+  </div>
+
+  <!-- ===== Settings ===== -->
+  <div id="screen-settings" class="screen menu-screen">
+    <div class="menu-box">
+      <h2>Settings</h2>
+      <fieldset>
+        <legend>ERS deploy (PRD §5.2)</legend>
+        <label><input type="radio" name="ersmode" value="both"> Both — hold Shift or toggle E</label>
+        <label><input type="radio" name="ersmode" value="hold"> Hold Shift only</label>
+        <label><input type="radio" name="ersmode" value="toggle"> Toggle E only</label>
+      </fieldset>
+      <label class="check"><input type="checkbox" id="set-audio"> Audio</label>
+      <label class="check"><input type="checkbox" id="set-ghost"> PB ghost (G during race)</label>
+      <button class="btn-back">Back</button>
+    </div>
+  </div>
+
+  <!-- ===== Help ===== -->
+  <div id="screen-help" class="screen menu-screen">
+    <div class="menu-box wide help">
+      <h2>How to Play</h2>
+      <p><b>Drive:</b> W/↑ throttle · S/↓ brake (reverse at low speed) · A,D/←,→ steer ·
+        <b>Enter</b> respawn at checkpoint · <b>Backspace</b> instant restart · <b>C</b> camera · <b>G</b> ghost · <b>F2</b> tuning panel</p>
+      <p><b>Handling:</b> at speed the car understeers — brake while turning and the rear rotates you into the corner. Catch it with counter-steer; release the brake to recover.</p>
+      <p><b>Wall energy (ERS):</b> glowing cyan strips on walls are hug zones. Each pays <em>once per run</em>, scored by your closest approach at speed — millimeters pay the most. <b>Touching the wall voids the zone.</b>
+        Deploy stored energy with <b>Shift</b> (hold) or <b>E</b> (toggle) for sustained extra power.</p>
+      <p><b>Editor:</b> click to place · R rotate · right-click delete · 1/2/3 toggle hug zones on a hovered curve · Ctrl+Z/Y undo/redo ·
+        T test drive · finish a test run to set the author time (medals derive from it) · middle-drag/Shift-drag pan · wheel zoom · Q/E rotate camera.</p>
+      <button class="btn-back">Back</button>
+    </div>
+  </div>
+
+  <!-- ===== Driving HUD ===== -->
+  <div id="screen-game" class="screen hud-screen">
+    <div id="hud-time">00:00.000</div>
+    <div id="hud-split"></div>
+    <div id="hud-topright">
+      <div id="hud-pb">PB --:--.---</div>
+      <div id="hud-medals"></div>
+      <div id="hud-cp"></div>
+    </div>
+    <div id="hud-countdown"></div>
+    <div id="hud-popups"></div>
+    <div id="hud-bottom">
+      <div id="hud-speed-wrap"><span id="hud-speed">0</span><small>km/h</small></div>
+      <div id="hud-ers"><div id="hud-ers-fill"></div><span class="ers-label">ERS</span></div>
+      <div id="hud-zone"><span>IN ZONE</span><div class="zone-meter"><div id="hud-zone-fill"></div></div></div>
+    </div>
+
+    <div id="finish-panel">
+      <h2 id="finish-title">Finished</h2>
+      <div id="finish-time"></div>
+      <div id="finish-medal"></div>
+      <div id="finish-delta"></div>
+      <div class="finish-buttons">
+        <button id="btn-retry">Retry (Backspace)</button>
+        <button id="btn-next">Next map</button>
+        <button id="btn-back-editor">Back to editor</button>
+        <button id="btn-finish-menu">Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Editor UI ===== -->
+  <div id="screen-editor" class="screen hud-screen">
+    <div id="editor-toolbar">
+      <input id="editor-name" placeholder="Map name" maxlength="40">
+      <button id="editor-test">Test (T)</button>
+      <button id="editor-save">Save</button>
+      <button id="editor-export">Share</button>
+      <button id="editor-exit">Exit</button>
+      <span id="editor-author" class="dim"></span>
+    </div>
+    <div id="editor-palette"></div>
+    <div id="editor-status"></div>
+  </div>
+
+  <!-- ===== Debug tuning panel (PRD M1) ===== -->
+  <div id="tuning-panel">
+    <div class="tune-head"><b>Tuning (F2)</b><button id="tuning-reset">Reset</button></div>
+    <div id="tuning-body"></div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script type="module" src="src/main.js"></script>
 </body>
 </html>
