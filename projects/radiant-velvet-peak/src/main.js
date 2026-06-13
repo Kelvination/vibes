@@ -339,8 +339,21 @@ function bindTouch() {
   // exact button it started on.
   const heldBy = new Map(); // pointerId -> touch key
 
+  // Calling preventDefault on touchstart is what actually stops iOS from
+  // popping the long-press magnifier / selection over a control — the CSS
+  // user-select/touch-callout hints aren't reliable on their own. (Pointer
+  // events still fire, so our press handling below is unaffected.)
+  const noCallout = (el) =>
+    el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+
+  // Same treatment for the driving area itself (HUD text sits behind it).
+  $('gameCanvas').addEventListener('touchstart', (e) => {
+    if (app.mode === 'race') e.preventDefault();
+  }, { passive: false });
+
   const hold = (id, key) => {
     const el = $(id);
+    noCallout(el);
     el.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       // Drop implicit pointer capture so a finger sliding between buttons (or
@@ -367,19 +380,27 @@ function bindTouch() {
   hold('tc-left', 'left');
   hold('tc-right', 'right');
 
-  $('tc-restart').onclick = () => { if (app.mode === 'race') restartRace(); };
-  $('tc-respawn').onclick = () => {
+  // Small buttons are taps. Since touchstart's default is prevented (no click
+  // fires on iOS), trigger them on pointerup instead.
+  const tap = (id, fn) => {
+    const el = $(id);
+    noCallout(el);
+    el.addEventListener('pointerup', (e) => { e.preventDefault(); fn(); });
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+  };
+  tap('tc-restart', () => { if (app.mode === 'race') restartRace(); });
+  tap('tc-respawn', () => {
     if (app.mode !== 'race' || !app.race) return;
     respawn(app.race.rs);
     snapPrev();
     app.renderer.snapCamera(app.race.rs.car);
     app.renderer.clearSkids();
-  };
-  $('tc-menu').onclick = () => {
+  });
+  tap('tc-menu', () => {
     if (app.mode !== 'race') return;
     if (app.race?.test) backFromTest();
     else { toMenu(); renderCampaignList(); }
-  };
+  });
 }
 
 // ---------- main loop ----------

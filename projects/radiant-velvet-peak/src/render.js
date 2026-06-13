@@ -76,7 +76,7 @@ export class Renderer3D {
     // skid marks: a fixed pool of dark quads written as a ring buffer. Each
     // sliding wheel lays one quad per frame connecting its last ground spot to
     // the current one; the oldest marks are overwritten once the pool fills.
-    this.skidMax = 4000;                       // quads (≈ a long trail)
+    this.skidMax = 6000;                       // quads (≈ a long trail)
     const skidPos = new Float32Array(this.skidMax * 4 * 3);
     const skidIdx = new Uint16Array(this.skidMax * 6);
     for (let i = 0; i < this.skidMax; i++) {
@@ -94,9 +94,14 @@ export class Renderer3D {
       depthWrite: false, side: THREE.DoubleSide,
     }));
     this.skidMesh.renderOrder = 1;
+    // We rewrite vertices in place without recomputing the bounding volume, so
+    // disable culling — otherwise the whole mesh pops in/out depending on
+    // whether its stale (origin) bounding sphere is in the frustum.
+    this.skidMesh.frustumCulled = false;
     this.scene.add(this.skidMesh);
     this.skidWrite = 0;        // next quad slot
     this.skidCount = 0;        // quads written so far (caps at skidMax)
+    this.skidActive = false;   // hysteresis latch so the trail doesn't dash
     // local (x, z) wheel anchors mirroring makeCar(); +z is forward
     this.skidWheels = [[-0.95, 1.35], [0.95, 1.35], [-0.95, -1.35], [0.95, -1.35]];
     this.skidPrev = this.skidWheels.map(() => null); // last ground point / wheel
@@ -374,7 +379,12 @@ export class Renderer3D {
   updateSkids(x, z, h, car) {
     const SKID_SLIP = 1.0, HALF_W = 0.17, MIN_STEP = 0.04;
     const slip = car ? Math.abs(car.vL) : 0;
-    const skidding = !!car && car.speed > 2.5 && (slip > SKID_SLIP || car.sliding);
+    // Hysteresis: latch on past the threshold, latch off only well below it, so
+    // a tire hovering near the limit lays one continuous mark, not dashes.
+    if (!car || car.speed < 2.5) this.skidActive = false;
+    else if (this.skidActive) this.skidActive = slip > SKID_SLIP * 0.5 || car.sliding;
+    else this.skidActive = slip > SKID_SLIP || car.sliding;
+    const skidding = this.skidActive;
     const ch = Math.cos(h), sh = Math.sin(h);
     let dirty = false;
     for (let wi = 0; wi < this.skidWheels.length; wi++) {
@@ -411,6 +421,7 @@ export class Renderer3D {
   clearSkids() {
     this.skidWrite = 0;
     this.skidCount = 0;
+    this.skidActive = false;
     this.skidPrev = this.skidWheels.map(() => null);
     this.skidMesh.geometry.setDrawRange(0, 0);
   }
