@@ -1,4 +1,4 @@
-// WallRush — Three.js presentation layer (PRD §8). Low-poly, high readability.
+// Wall Hugger — Three.js presentation layer (PRD §8). Low-poly, high readability.
 
 import * as THREE from 'three';
 import { S, MARGIN, GRID, BLOCKS } from './blocks.js';
@@ -55,6 +55,7 @@ export class Renderer3D {
 
     this.trackGroup = null;
     this.zoneMats = [];
+    this.showGuides = false; // editor-only racing-line preview
     this.checker = checkerTexture();
 
     this.car = this.makeCar(COL.car, 1);
@@ -137,6 +138,16 @@ export class Renderer3D {
       const mat = new THREE.MeshBasicMaterial({ color: COL.zoneArmed, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
       this.zoneMats.push(mat);
       for (const off of [0.3, -0.3]) g.add(this.ribbon(z.pts, off, mat));
+    }
+
+    // ideal racing-line guides (shown in the editor so zone placement can be
+    // checked against the line they reward: outside -> apex -> outside)
+    if (track.guides?.length && this.showGuides) {
+      const guideMat = new THREE.LineBasicMaterial({ color: 0x45e07a, transparent: true, opacity: 0.85 });
+      for (const pts of track.guides) {
+        const geo = new THREE.BufferGeometry().setFromPoints(pts.map((p) => new THREE.Vector3(p.x, 0.18, p.z)));
+        g.add(new THREE.Line(geo, guideMat));
+      }
     }
 
     this.scene.add(g);

@@ -1,4 +1,4 @@
-// WallRush — bundled campaign maps (PRD §6.3): teach mechanics progressively.
+// Wall Hugger — bundled campaign maps (PRD §6.3): teach mechanics progressively.
 // Maps are authored with PathBuilder so block connectivity is guaranteed;
 // each build asserts the loop closes back onto the start cell.
 // authorTime values come from tools/measure.mjs (autopilot run × 0.92).
@@ -16,8 +16,8 @@ export const CAMPAIGN = [
   {
     id: 'c01',
     name: '01 — First Steps',
-    desc: 'A gentle lap. Learn the line, then learn the wall: every curve has glowing hug zones — the closer you skim them, the more ERS you bank. Touching voids the zone.',
-    authorTime: 11574,
+    desc: 'A gentle lap. Learn the racing line: enter corners wide along the outer wall, clip the glowing apex zone on the inside, exit wide again. The closer you skim, the more ERS you bank — touching voids the zone.',
+    authorTime: 11666,
     build() {
       const pb = new PathBuilder(10, 10, 0);
       pb.start().s(4).R().s(2).R().cp().s(2).cp().s(1).R().s(1).finish().R();
@@ -28,7 +28,7 @@ export const CAMPAIGN = [
     id: 'c02',
     name: '02 — Brake to Turn',
     desc: 'Chicanes and hairpins. Full throttle will not make these corners — brake while turning and the rear rotates you in. Catch it with counter-steer.',
-    authorTime: 19854,
+    authorTime: 19964,
     build() {
       const pb = new PathBuilder(8, 8, 0);
       pb.start().s(3).R().s(1).L().R().cp().s(2).R().s(1).R().s(1).L().s(1).L()
@@ -40,7 +40,7 @@ export const CAMPAIGN = [
     id: 'c03',
     name: '03 — Millimeters',
     desc: 'Hug roads and boosters. The straights are lined with charge walls: thread them at speed for PERFECT awards, then deploy everything you banked.',
-    authorTime: 14941,
+    authorTime: 15014,
     build() {
       const pb = new PathBuilder(6, 6, 0);
       pb.start().hug().hug().hug().s(1).R(2).boost().hug().hug().cp().s(1)
@@ -52,7 +52,7 @@ export const CAMPAIGN = [
     id: 'c04',
     name: '04 — Dust & Drift',
     desc: 'Dirt has less grip, less speed, and loves to rotate. Slide the dirt esses, then get back on clean asphalt for the run home.',
-    authorTime: 14554,
+    authorTime: 13938,
     build() {
       const pb = new PathBuilder(7, 7, 0);
       pb.start().s(2).R().dirt(2).dR().dirt(1).dL().dirt(1).cp().R().cp()
@@ -64,7 +64,7 @@ export const CAMPAIGN = [
     id: 'c05',
     name: '05 — Velvet Peak GP',
     desc: 'Everything at once: sweepers, hug straights, boosters, a dirt sector and a tight finale. The fastest line almost touches the wall.',
-    authorTime: 25282,
+    authorTime: 25254,
     build() {
       const pb = new PathBuilder(6, 4, 0);
       pb.start().s(3).hug().hug().R(2).boost().s(1).L().s(1).R().cp()

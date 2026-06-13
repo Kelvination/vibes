@@ -1,4 +1,4 @@
-// WallRush — app shell: menus, race loop, editor wiring, settings, records.
+// Wall Hugger — app shell: menus, race loop, editor wiring, settings, records.
 
 import { TUNING } from './tuning.js';
 import { compile } from './blocks.js';
@@ -18,6 +18,7 @@ const app = {
   settings: persist.loadSettings(),
   renderer: null, hud: null, audio: null, editor: null,
   keys: new Set(),
+  touch: { gas: false, brake: false, left: false, right: false, ers: false },
   ersToggleOn: false,
   race: null,            // { rs, map, track, prev, ghost, test, rec }
   acc: 0, lastT: 0,
@@ -115,6 +116,7 @@ function startRace(map, { test = false, draft = null } = {}) {
     ghost: app.settings.ghost && rec?.ghost ? rec.ghost : null,
   };
   app.ersToggleOn = false;
+  app.renderer.showGuides = false;
   app.renderer.buildTrack(track);
   app.renderer.car.visible = true;
   app.renderer.ghost.visible = false;
@@ -146,14 +148,15 @@ function snapPrev() {
 }
 
 function sampleInput() {
-  const k = app.keys;
+  const k = app.keys, tc = app.touch;
   const mode = app.settings.ersMode;
   const hold = k.has('shift');
-  const deploy = (mode !== 'toggle' && hold) || (mode !== 'hold' && app.ersToggleOn);
+  // the touch ERS button is always hold-to-deploy, regardless of ERS mode
+  const deploy = (mode !== 'toggle' && hold) || (mode !== 'hold' && app.ersToggleOn) || tc.ers;
   return {
-    throttle: k.has('w') || k.has('arrowup'),
-    brake: k.has('s') || k.has('arrowdown'),
-    steer: (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0),
+    throttle: k.has('w') || k.has('arrowup') || tc.gas,
+    brake: k.has('s') || k.has('arrowdown') || tc.brake,
+    steer: (k.has('d') || k.has('arrowright') || tc.right ? 1 : 0) - (k.has('a') || k.has('arrowleft') || tc.left ? 1 : 0),
     deploy,
   };
 }
@@ -323,6 +326,42 @@ function bindKeys() {
   addEventListener('blur', () => app.keys.clear());
 }
 
+// ---------- touch controls (mobile) ----------
+
+function bindTouch() {
+  const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  if (!isTouch) return;
+  document.body.classList.add('touch');
+
+  const hold = (id, key) => {
+    const el = $(id);
+    const set = (v) => (e) => { e.preventDefault(); app.touch[key] = v; if (v) app.audio.ensure(); };
+    el.addEventListener('pointerdown', set(true));
+    el.addEventListener('pointerup', set(false));
+    el.addEventListener('pointercancel', set(false));
+    el.addEventListener('lostpointercapture', set(false));
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+  };
+  hold('tc-gas', 'gas');
+  hold('tc-brake', 'brake');
+  hold('tc-left', 'left');
+  hold('tc-right', 'right');
+  hold('tc-ers', 'ers');
+
+  $('tc-restart').onclick = () => { if (app.mode === 'race') restartRace(); };
+  $('tc-respawn').onclick = () => {
+    if (app.mode !== 'race' || !app.race) return;
+    respawn(app.race.rs);
+    snapPrev();
+    app.renderer.snapCamera(app.race.rs.car);
+  };
+  $('tc-menu').onclick = () => {
+    if (app.mode !== 'race') return;
+    if (app.race?.test) backFromTest();
+    else { toMenu(); renderCampaignList(); }
+  };
+}
+
 // ---------- main loop ----------
 
 function frame(now) {
@@ -449,12 +488,13 @@ function boot() {
 
   bindSettings();
   bindKeys();
+  bindTouch();
   buildTuningPanel();
   addEventListener('resize', () => app.renderer.resize());
   addEventListener('pointerdown', () => app.audio.ensure(), { once: true });
 
   showScreen('screen-menu');
-  window.wallrush = { app, startRace, enterEditor }; // debug/testing hook
+  window.wallhugger = { app, startRace, enterEditor }; // debug/testing hook
   requestAnimationFrame(frame);
 }
 

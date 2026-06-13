@@ -1,4 +1,4 @@
-// WallRush — all handling/feel constants in one place (PRD §4.6).
+// Wall Hugger — all handling/feel constants in one place (PRD §4.6).
 // Everything numeric here is exposed in the F2 debug tuning panel.
 
 export const TUNING = {

@@ -1,4 +1,4 @@
-/* WallRush */
+/* Wall Hugger */
 :root {
   --cyan: #18e0ff;
   --bg: #0c1220;
@@ -205,3 +205,50 @@ input[type=text], input:not([type]) {
   padding: 10px 18px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60;
 }
 #toast.show { opacity: 1; }
+
+/* ===== touch controls (mobile) ===== */
+#touch-controls { display: none; }
+body.touch #touch-controls { display: block; }
+
+.tc-btn {
+  position: absolute; pointer-events: auto;
+  width: 84px; height: 84px; border-radius: 50%;
+  background: rgba(24, 224, 255, 0.10); border: 2px solid rgba(24, 224, 255, 0.4);
+  color: var(--text); font-size: 28px; font-weight: 800;
+  touch-action: none; -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.tc-btn:active { background: rgba(24, 224, 255, 0.32); }
+#tc-left  { left: max(16px, env(safe-area-inset-left)); bottom: 26px; }
+#tc-right { left: calc(max(16px, env(safe-area-inset-left)) + 96px); bottom: 26px; }
+#tc-gas   { right: max(16px, env(safe-area-inset-right)); bottom: 26px; width: 104px; height: 104px; }
+#tc-brake { right: calc(max(16px, env(safe-area-inset-right)) + 118px); bottom: 26px; }
+#tc-ers   {
+  right: max(16px, env(safe-area-inset-right)); bottom: 146px;
+  width: 68px; height: 68px; font-size: 15px; letter-spacing: 1px; color: var(--cyan);
+}
+
+.tc-top { position: absolute; top: 12px; left: max(12px, env(safe-area-inset-left)); display: flex; gap: 8px; }
+.tc-small {
+  pointer-events: auto; padding: 9px 13px; font-size: 15px;
+  background: rgba(12, 20, 36, 0.7); touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* keep the speed/ERS HUD clear of the thumb clusters */
+body.touch #hud-bottom { bottom: 146px; }
+body.touch #hud-ers { width: 230px; }
+
+@media (max-width: 600px) {
+  .menu-box { margin: 3vh 14px; padding: 22px 18px; }
+  .menu-box.wide { max-width: none; }
+  h1 { font-size: 36px; letter-spacing: 2px; }
+  #hud-time { font-size: 24px; top: 10px; }
+  #hud-split { top: 44px; font-size: 15px; }
+  #hud-topright { font-size: 11px; }
+  #hud-pb { font-size: 14px; }
+  #hud-speed-wrap { font-size: 30px; }
+  #hud-countdown { font-size: 80px; }
+  #finish-panel { padding: 20px 22px; width: min(92vw, 460px); }
+  #tuning-panel { width: min(92vw, 320px); }
+}

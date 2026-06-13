@@ -1,4 +1,4 @@
-// WallRush — block-based grid map editor (PRD §6).
+// Wall Hugger — block-based grid map editor (PRD §6).
 // Place / rotate / delete / undo / test / save — the v1 cut.
 
 import { S, GRID, BLOCKS, CATEGORIES, rotCell, placedDims, compile, validate } from './blocks.js';
@@ -57,6 +57,7 @@ export class Editor {
 
   enter(map) {
     this.active = true;
+    this.r.showGuides = true; // green ideal-line preview at every corner
     if (map) {
       this.placements = map.placements.map((p) => ({ ...p }));
       this.mapKey = map.key;
@@ -80,6 +81,7 @@ export class Editor {
 
   exit() {
     this.active = false;
+    this.r.showGuides = false;
     this.r.grid.visible = false;
     this.r.car.visible = true;
     if (this.preview) { this.r.scene.remove(this.preview); this.preview = null; }
@@ -140,6 +142,10 @@ export class Editor {
     const track = compile(this.placements);
     this.r.buildTrack(track);
     this.r.updateZones(null, 0);
+    if (track.corners.length) {
+      const full = track.corners.filter((c) => c.entry && c.apex && c.exit).length;
+      this.cb.setStatus(`Racing line: ${full}/${track.corners.length} corners have the full outside-in-outside zone set (green line shows the ideal line)`);
+    }
   }
 
   cellsOf(p) {
