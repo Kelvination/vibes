@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WallRush — the fastest line almost touches the wall</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Wall Hugger — the fastest line almost touches the wall</title>
   <link rel="stylesheet" href="style.css">
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.min.js" } }
@@ -15,14 +15,14 @@
   <!-- ===== Main menu ===== -->
   <div id="screen-menu" class="screen menu-screen active">
     <div class="menu-box">
-      <h1>WALL<span>RUSH</span></h1>
+      <h1>WALL<span>HUGGER</span></h1>
       <p class="tagline">The fastest line <em>almost</em> touches the wall.</p>
       <button id="btn-campaign" class="big">Campaign</button>
       <button id="btn-editor" class="big">Map Editor</button>
       <button id="btn-library" class="big">My Maps</button>
       <button id="btn-settings" class="big">Settings</button>
       <button id="btn-help" class="big">How to Play</button>
-      <p class="dim small">Desktop browser + keyboard required</p>
+      <p class="dim small">Keyboard on desktop · touch controls on mobile</p>
     </div>
   </div>
 
@@ -69,12 +69,15 @@
     <div class="menu-box wide help">
       <h2>How to Play</h2>
       <p><b>Drive:</b> W/↑ throttle · S/↓ brake (reverse at low speed) · A,D/←,→ steer ·
-        <b>Enter</b> respawn at checkpoint · <b>Backspace</b> instant restart · <b>C</b> camera · <b>G</b> ghost · <b>F2</b> tuning panel</p>
+        <b>Enter</b> respawn at checkpoint · <b>Backspace</b> instant restart · <b>C</b> camera · <b>G</b> ghost · <b>F2</b> tuning panel.
+        On mobile: on-screen steer, gas, brake and ERS buttons.</p>
       <p><b>Handling:</b> at speed the car understeers — brake while turning and the rear rotates you into the corner. Catch it with counter-steer; release the brake to recover.</p>
       <p><b>Wall energy (ERS):</b> glowing cyan strips on walls are hug zones. Each pays <em>once per run</em>, scored by your closest approach at speed — millimeters pay the most. <b>Touching the wall voids the zone.</b>
         Deploy stored energy with <b>Shift</b> (hold) or <b>E</b> (toggle) for sustained extra power.</p>
-      <p><b>Editor:</b> click to place · R rotate · right-click delete · 1/2/3 toggle hug zones on a hovered curve · Ctrl+Z/Y undo/redo ·
-        T test drive · finish a test run to set the author time (medals derive from it) · middle-drag/Shift-drag pan · wheel zoom · Q/E rotate camera.</p>
+      <p><b>The racing line:</b> corners reward outside–inside–outside. Enter wide hugging the outer wall (entry zone on the segment before the turn), clip the glowing <em>apex zone</em> on the inside wall — the main payout — then run wide again across the exit zone on the segment after the turn.</p>
+      <p><b>Editor:</b> click to place · R rotate · right-click delete · 1/2/3 toggle Entry/Apex/Exit zones on a hovered curve · Ctrl+Z/Y undo/redo ·
+        T test drive · finish a test run to set the author time (medals derive from it) · middle-drag/Shift-drag pan · wheel zoom · Q/E rotate camera.
+        The green guide line at each corner shows the ideal racing line the zones reward; entry/exit zones are placed automatically on the segments before and after each turn.</p>
       <button class="btn-back">Back</button>
     </div>
   </div>
@@ -94,6 +97,20 @@
       <div id="hud-speed-wrap"><span id="hud-speed">0</span><small>km/h</small></div>
       <div id="hud-ers"><div id="hud-ers-fill"></div><span class="ers-label">ERS</span></div>
       <div id="hud-zone"><span>IN ZONE</span><div class="zone-meter"><div id="hud-zone-fill"></div></div></div>
+    </div>
+
+    <!-- Touch controls — shown only on touch devices (body.touch) -->
+    <div id="touch-controls">
+      <button class="tc-btn" id="tc-left">◀</button>
+      <button class="tc-btn" id="tc-right">▶</button>
+      <button class="tc-btn tc-ers" id="tc-ers">ERS</button>
+      <button class="tc-btn tc-brake" id="tc-brake">⏷</button>
+      <button class="tc-btn tc-gas" id="tc-gas">⏶</button>
+      <div class="tc-top">
+        <button class="tc-small" id="tc-menu">✕</button>
+        <button class="tc-small" id="tc-restart">⟲ Restart</button>
+        <button class="tc-small" id="tc-respawn">↺ CP</button>
+      </div>
     </div>
 
     <div id="finish-panel">

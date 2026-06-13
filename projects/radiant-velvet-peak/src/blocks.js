@@ -1,4 +1,4 @@
-// WallRush — block catalog + track compiler (PRD §6).
+// Wall Hugger — block catalog + track compiler (PRD §6).
 // Pure JS, no DOM/THREE: also runs headless in Node for map validation.
 
 export const S = 16;        // cell size (m)
@@ -65,21 +65,36 @@ function polyToWalls(pts, zone) {
 
 // ---- block geometry builders ----
 
+// Racing-line zone weights: the apex is the main zone; entry/exit approach
+// zones (injected onto flanking blocks by the compiler) pay less each.
+const APEX_MULT = 1.5;
+const APPROACH_MULT = 0.7;
+const APPROACH_FRAC = 0.75; // fraction of a flanking block's wall covered
+
+// hints: [{ side: 'L'|'R', z0, z1, mult }] — zone intervals injected onto a
+// straight's side walls by planRacingLine() for corners it flanks.
 function straightGeo({ surface = 'asphalt', trigger = null, spawn = false, hug = false } = {}) {
-  return (p) => {
+  return (p, hints = []) => {
     const walls = [];
     const zones = [];
-    const L = { a: { x: MARGIN, z: 0 }, b: { x: MARGIN, z: S } };
-    const R = { a: { x: S - MARGIN, z: 0 }, b: { x: S - MARGIN, z: S } };
     const zn = p.zn || [1, 1, 1];
-    if (hug && zn[0]) {
-      zones.push({ slot: 0, pts: [L.a, L.b] });
-      walls.push({ ...L, zone: zones.length - 1 });
-    } else walls.push({ ...L, zone: -1 });
-    if (hug && zn[1]) {
-      zones.push({ slot: 1, pts: [R.a, R.b] });
-      walls.push({ ...R, zone: zones.length - 1 });
-    } else walls.push({ ...R, zone: -1 });
+    const sideX = { L: MARGIN, R: S - MARGIN };
+    ['L', 'R'].forEach((side, si) => {
+      const x = sideX[side];
+      const ivs = [];
+      if (hug && zn[si]) ivs.push({ z0: 0, z1: S, mult: 1 });
+      else for (const hg of hints) if (hg.side === side) ivs.push({ z0: hg.z0, z1: hg.z1, mult: hg.mult });
+      ivs.sort((a, b) => a.z0 - b.z0);
+      let z = 0;
+      for (const iv of ivs) {
+        if (iv.z0 > z) walls.push({ a: { x, z }, b: { x, z: iv.z0 }, zone: -1 });
+        const pts = [{ x, z: iv.z0 }, { x, z: iv.z1 }];
+        zones.push({ slot: si, pts, mult: iv.mult });
+        walls.push({ a: pts[0], b: pts[1], zone: zones.length - 1 });
+        z = iv.z1;
+      }
+      if (z < S) walls.push({ a: { x, z }, b: { x, z: S }, zone: -1 });
+    });
     return {
       walls, zones,
       trigger: trigger ? { kind: trigger, a: { x: MARGIN, z: S / 2 }, b: { x: S - MARGIN, z: S / 2 } } : null,
@@ -91,8 +106,10 @@ function straightGeo({ surface = 'asphalt', trigger = null, spawn = false, hug =
 
 // Quarter-turn curve, radius k cells. Local: enters at z=0 edge moving +Z,
 // exits at x=k*S edge moving +X. Arc center at (k*S, 0).
-// Built-in hug zones on the OUTER wall: entry / apex / exit (PRD §5.4).
-const ZONE_RANGES = [[0.05, 0.30], [0.37, 0.63], [0.70, 0.95]];
+// Hug zones follow the racing line (outside-inside-outside): the APEX zone —
+// the main one — sits mid-arc on the INNER wall; entry/exit zones live on the
+// outer walls of the flanking blocks (injected by planRacingLine in compile).
+const APEX_RANGE = [0.30, 0.70];
 
 function curveGeo(k) {
   return (p) => {
@@ -104,22 +121,22 @@ function curveGeo(k) {
     const nSeg = 7 * k;
     const walls = [];
     const zones = [];
-    if (rIn > 0.5) walls.push(...polyToWalls(arcPts(cx, cz, rIn, A0, A1, nSeg), -1));
     const zn = p.zn || [1, 1, 1];
-    let t = 0;
-    for (let s = 0; s < 3; s++) {
-      const [z0, z1] = ZONE_RANGES[s];
-      walls.push(...polyToWalls(arcPts(cx, cz, rOut, ang(t), ang(z0), 2), -1));
-      const zonePts = arcPts(cx, cz, rOut, ang(z0), ang(z1), 3 * k);
-      if (zn[s]) {
-        zones.push({ slot: s, pts: zonePts });
-        walls.push(...polyToWalls(zonePts, zones.length - 1));
+    // outer wall: plain — the racing line cuts away from it mid-corner
+    walls.push(...polyToWalls(arcPts(cx, cz, rOut, A0, A1, nSeg), -1));
+    // inner wall: the apex hug zone, centered on the corner
+    if (rIn > 0.5) {
+      if (zn[1]) {
+        const [t0, t1] = APEX_RANGE;
+        walls.push(...polyToWalls(arcPts(cx, cz, rIn, A0, ang(t0), 2 * k), -1));
+        const apexPts = arcPts(cx, cz, rIn, ang(t0), ang(t1), 3 * k);
+        zones.push({ slot: 1, pts: apexPts, mult: APEX_MULT });
+        walls.push(...polyToWalls(apexPts, zones.length - 1));
+        walls.push(...polyToWalls(arcPts(cx, cz, rIn, ang(t1), A1, 2 * k), -1));
       } else {
-        walls.push(...polyToWalls(zonePts, -1));
+        walls.push(...polyToWalls(arcPts(cx, cz, rIn, A0, A1, nSeg), -1));
       }
-      t = z1;
     }
-    walls.push(...polyToWalls(arcPts(cx, cz, rOut, ang(t), A1, 2), -1));
     return {
       walls, zones, trigger: null, spawn: null,
       line: arcPts(cx, cz, (rIn + rOut) / 2, A0, A1, 8 * k),
@@ -166,10 +183,10 @@ const connCurve = (k) => ({
 export const BLOCKS = {
   road:       { id: 'road',       name: 'Road',            cat: 'Road',    W: 1, H: 1, geo: straightGeo(), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
   road_hug:   { id: 'road_hug',   name: 'Hug Road',        cat: 'Road',    W: 1, H: 1, geo: straightGeo({ hug: true }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT, zoneSlots: ['Left', 'Right'] },
-  curve1:     { id: 'curve1',     name: 'Curve 1',         cat: 'Road',    W: 1, H: 1, geo: curveGeo(1), surf: curveSurf(1, 'asphalt'), conn: connCurve(1), zoneSlots: ['Entry', 'Apex', 'Exit'] },
-  curve2:     { id: 'curve2',     name: 'Curve 2',         cat: 'Road',    W: 2, H: 2, geo: curveGeo(2), surf: curveSurf(2, 'asphalt'), conn: connCurve(2), zoneSlots: ['Entry', 'Apex', 'Exit'] },
+  curve1:     { id: 'curve1',     name: 'Curve 1',         cat: 'Road',    W: 1, H: 1, geo: curveGeo(1), surf: curveSurf(1, 'asphalt'), conn: connCurve(1), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 1 },
+  curve2:     { id: 'curve2',     name: 'Curve 2',         cat: 'Road',    W: 2, H: 2, geo: curveGeo(2), surf: curveSurf(2, 'asphalt'), conn: connCurve(2), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 2 },
   dirt:       { id: 'dirt',       name: 'Dirt Road',       cat: 'Dirt',    W: 1, H: 1, geo: straightGeo({ surface: 'dirt' }), surf: roadSurf('dirt'), conn: CONN_STRAIGHT, dirt: true },
-  dirt_curve: { id: 'dirt_curve', name: 'Dirt Curve',      cat: 'Dirt',    W: 1, H: 1, geo: curveGeo(1), surf: curveSurf(1, 'dirt'), conn: connCurve(1), zoneSlots: ['Entry', 'Apex', 'Exit'], dirt: true },
+  dirt_curve: { id: 'dirt_curve', name: 'Dirt Curve',      cat: 'Dirt',    W: 1, H: 1, geo: curveGeo(1), surf: curveSurf(1, 'dirt'), conn: connCurve(1), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 1, dirt: true },
   start:      { id: 'start',      name: 'Start',           cat: 'Special', W: 1, H: 1, geo: straightGeo({ spawn: true }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
   checkpoint: { id: 'checkpoint', name: 'Checkpoint',      cat: 'Special', W: 1, H: 1, geo: straightGeo({ trigger: 'cp', spawn: true }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
   finish:     { id: 'finish',     name: 'Finish',          cat: 'Special', W: 1, H: 1, geo: straightGeo({ trigger: 'finish' }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
@@ -197,34 +214,126 @@ function insertSeg(map, idx, a, b) {
   }
 }
 
+// Blocks that may receive injected entry/exit approach zones when they flank
+// a corner. road_hug is excluded — it already carries its own full-wall zones.
+const APPROACH_BLOCKS = new Set(['road', 'start', 'checkpoint', 'finish', 'booster', 'dirt']);
+
+function quadBez(a, c, b, n) {
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, u = 1 - t;
+    pts.push({ x: u * u * a.x + 2 * u * t * c.x + t * t * b.x, z: u * u * a.z + 2 * u * t * c.z + t * t * b.z });
+  }
+  return pts;
+}
+
+// Racing-line planner: for every corner, place the entry/exit hug zones on the
+// OUTSIDE walls of the blocks before and after the turn, so the rewarded line
+// is outside -> inside (apex) -> outside. Fills track.corners (audit: does each
+// corner have its full zone set?) and track.guides (ideal-line preview for the
+// editor). Returns a Map of placement index -> wall-zone hints for straightGeo.
+function planRacingLine(placements, track) {
+  const hints = new Map();
+  for (let pi = 0; pi < placements.length; pi++) {
+    const p = placements[pi];
+    const def = BLOCKS[p.id];
+    if (!def?.curveK) continue;
+    const k = def.curveK;
+    const r = p.rot & 3, w = def.W * S, h = def.H * S;
+    const zn = p.zn || [1, 1, 1];
+    const tw = (pt) => { const q = rotPt(pt, r, w, h); return { x: p.x * S + q.x, z: p.z * S + q.z }; };
+
+    // outer-wall point on each connecting edge + the grid cell beyond it
+    const ends = [
+      { slot: 0, pt: { x: MARGIN, z: 0 }, cell: { x: 0, z: -1 } },              // entry edge
+      { slot: 2, pt: { x: k * S, z: k * S - MARGIN }, cell: { x: k, z: k - 1 } }, // exit edge
+    ];
+    const landed = [false, false];
+    ends.forEach((end, ei) => {
+      if (!zn[end.slot]) return;
+      const c = rotCell(end.cell, r, def.W, def.H);
+      const ni = track.cellMap.get(`${p.x + c.x},${p.z + c.z}`);
+      if (ni === undefined) return;
+      const np = placements[ni];
+      if (!APPROACH_BLOCKS.has(np.id)) return;
+      // locate the shared outer-wall point in the neighbor's local frame
+      const wpt = tw(end.pt);
+      const q = invRotPt({ x: wpt.x - np.x * S, z: wpt.z - np.z * S }, np.rot & 3, S, S);
+      const side = Math.abs(q.x - MARGIN) < 0.5 ? 'L' : Math.abs(q.x - (S - MARGIN)) < 0.5 ? 'R' : null;
+      const atFar = q.z > S - 0.5 ? 1 : q.z < 0.5 ? 0 : null;
+      if (side === null || atFar === null) return; // neighbor road not aligned with this corner
+      const len = S * APPROACH_FRAC;
+      let z0 = atFar ? S - len : 0, z1 = atFar ? S : len;
+      const list = hints.get(ni) || [];
+      // back-to-back corners share a straight: trim so zones never overlap
+      for (const o of list) {
+        if (o.side !== side) continue;
+        if (atFar) z0 = Math.max(z0, o.z1); else z1 = Math.min(z1, o.z0);
+      }
+      if (z1 - z0 < 2) return;
+      list.push({ side, z0, z1, mult: APPROACH_MULT });
+      hints.set(ni, list);
+      landed[ei] = true;
+    });
+
+    track.corners.push({ block: pi, entry: landed[0], apex: !!(zn[1] && (k - 1) * S + MARGIN > 0.5), exit: landed[1] });
+
+    // ideal-line guide (outside -> apex -> outside) for the editor preview
+    const off = 1.6; // car-center clearance from the wall face
+    const Aedge = { x: MARGIN + off, z: 0 };
+    const Bedge = { x: k * S, z: k * S - MARGIN - off };
+    const apexR = (k - 1) * S + MARGIN + off;
+    const P = { x: k * S - apexR * Math.SQRT1_2, z: apexR * Math.SQRT1_2 };
+    const C = { x: 2 * P.x - (Aedge.x + Bedge.x) / 2, z: 2 * P.z - (Aedge.z + Bedge.z) / 2 };
+    const lead = S * APPROACH_FRAC;
+    const pts = [];
+    if (landed[0]) pts.push({ x: Aedge.x, z: -lead });
+    pts.push(...quadBez(Aedge, C, Bedge, 14));
+    if (landed[1]) pts.push({ x: Bedge.x + lead, z: Bedge.z });
+    track.guides.push(pts.map(tw));
+  }
+  return hints;
+}
+
 export function compile(placements) {
   const track = {
     walls: [], zones: [], cps: [], finishes: [], start: null,
     wallHash: new Map(), zoneHash: new Map(),
     cellMap: new Map(), placements, line: [],
+    guides: [], corners: [],
     error: null,
   };
 
+  // pass 1: cell occupancy (needed for neighbor lookups in pass 2)
   for (let pi = 0; pi < placements.length; pi++) {
     const p = placements[pi];
     const def = BLOCKS[p.id];
     if (!def) { track.error = `Unknown block: ${p.id}`; continue; }
+    for (let cx = 0; cx < def.W; cx++) for (let cz = 0; cz < def.H; cz++) {
+      const c = rotCell({ x: cx, z: cz }, p.rot & 3, def.W, def.H);
+      const key = `${p.x + c.x},${p.z + c.z}`;
+      if (track.cellMap.has(key)) track.error = `Overlapping blocks at cell ${key}`;
+      track.cellMap.set(key, pi);
+    }
+  }
+
+  // pass 2: derive entry/exit approach zones + ideal-line guides from corners
+  const lineHints = planRacingLine(placements, track);
+
+  // pass 3: geometry
+  for (let pi = 0; pi < placements.length; pi++) {
+    const p = placements[pi];
+    const def = BLOCKS[p.id];
+    if (!def) continue;
     const r = p.rot & 3;
     const w = def.W * S, h = def.H * S;
     const ax = p.x * S, az = p.z * S;
     const tw = (pt) => { const q = rotPt(pt, r, w, h); return { x: ax + q.x, z: az + q.z }; };
 
-    for (let cx = 0; cx < def.W; cx++) for (let cz = 0; cz < def.H; cz++) {
-      const c = rotCell({ x: cx, z: cz }, r, def.W, def.H);
-      const key = `${p.x + c.x},${p.z + c.z}`;
-      if (track.cellMap.has(key)) track.error = `Overlapping blocks at cell ${key}`;
-      track.cellMap.set(key, pi);
-    }
-
-    const geo = def.geo(p);
+    const geo = def.geo(p, lineHints.get(pi) || []);
     const zoneBase = track.zones.length;
     for (const z of geo.zones) {
-      track.zones.push({ pts: z.pts.map(tw), slot: z.slot, block: pi });
+      track.zones.push({ pts: z.pts.map(tw), slot: z.slot, block: pi, mult: z.mult || 1 });
     }
     for (const wseg of geo.walls) {
       const seg = { a: tw(wseg.a), b: tw(wseg.b), zone: wseg.zone >= 0 ? zoneBase + wseg.zone : -1 };

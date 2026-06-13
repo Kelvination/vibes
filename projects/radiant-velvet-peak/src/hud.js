@@ -1,4 +1,4 @@
-// WallRush — driving HUD (PRD §8.3). Plain DOM, updated per frame.
+// Wall Hugger — driving HUD (PRD §8.3). Plain DOM, updated per frame.
 
 import { fmtTime, ticksToMs } from './sim.js';
 

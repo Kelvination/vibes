@@ -1,4 +1,4 @@
-# WallRush — Product Requirements Document
+# Wall Hugger (formerly WallRush) — Product Requirements Document
 
 **Status:** Draft v1.0
 **Date:** 2026-06-12

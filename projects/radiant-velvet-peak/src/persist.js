@@ -1,5 +1,6 @@
-// WallRush — localStorage persistence + map export/import codecs (PRD §6.3).
+// Wall Hugger — localStorage persistence + map export/import codecs (PRD §6.3).
 
+// keys keep the original "wallrush" prefix so existing saves survive the rename
 const SETTINGS_KEY = 'wallrush.settings';
 const MAPS_KEY = 'wallrush.maps';
 const REC_PREFIX = 'wallrush.rec.';
@@ -73,7 +74,7 @@ export async function importMapString(str) {
     json = str; // allow raw .wallrush.json contents
   }
   const data = JSON.parse(json);
-  if (!Array.isArray(data.placements)) throw new Error('Not a WallRush map');
+  if (!Array.isArray(data.placements)) throw new Error('Not a Wall Hugger map');
   return {
     key: 'custom:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     name: String(data.name || 'Imported map').slice(0, 40),

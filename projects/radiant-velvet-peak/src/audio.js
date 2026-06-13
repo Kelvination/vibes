@@ -1,4 +1,4 @@
-// WallRush — synthesized audio (PRD §8.2). No assets; everything is WebAudio.
+// Wall Hugger — synthesized audio (PRD §8.2). No assets; everything is WebAudio.
 
 export class GameAudio {
   constructor() {

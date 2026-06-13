@@ -1,4 +1,4 @@
-// WallRush — fixed-step deterministic simulation (PRD §4, §5, §7).
+// Wall Hugger — fixed-step deterministic simulation (PRD §4, §5, §7).
 // Pure JS, no DOM/THREE. 100 Hz; identical inputs -> identical runs.
 
 import { TUNING, ratingFor, zoneAward } from './tuning.js';
@@ -252,7 +252,8 @@ export function step(rs, input) {
       // weaving sideways doesn't end it; drifting far away eventually does.
       if (atEnd || dist > t.zoneBand * 3.5 || !isNear) {
         zs.state = Z_PAID;
-        const award = zoneAward(zs.minDist, zs.minSpeed);
+        // apex zones pay more than entry/exit approach zones (zone.mult)
+        const award = zoneAward(zs.minDist, zs.minSpeed) * (zone.mult || 1);
         rs.ers = Math.min(t.ersCap, rs.ers + award);
         rs.events.push({ type: 'zoneAward', zone: zi, award, rating: ratingFor(zs.minDist), minDist: zs.minDist });
       } else if (faceDist < t.zoneBand) {

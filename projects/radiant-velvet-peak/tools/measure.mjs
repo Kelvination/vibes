@@ -1,6 +1,7 @@
 // Headless validation + author-time measurement for campaign maps.
 // Run: node tools/measure.mjs
-// Compiles each map, checks closure/overlaps, then drives it with a simple
+// Compiles each map, checks closure/overlaps, audits each corner's
+// racing-line hug zones (entry/apex/exit), then drives it with a simple
 // centerline autopilot through the real sim. Author time = bot time * 0.92.
 
 import { compile, validate } from '../src/blocks.js';
@@ -47,6 +48,11 @@ for (const m of CAMPAIGN) {
   const res = runBot(track);
   if (!res.ok) { console.log(`${m.id} ${m.name}: BOT FAIL — ${res.why}`); fail++; continue; }
   const author = Math.round(res.ms * 0.92);
+  const full = track.corners.filter((c) => c.entry && c.apex && c.exit).length;
   console.log(`${m.id} ${m.name}: bot ${fmtTime(res.ms)}  -> authorTime: ${author} (gold ${fmtTime(author * 1.06)}, silver ${fmtTime(author * 1.2)}, bronze ${fmtTime(author * 1.5)})  blocks=${placements.length} zones=${track.zones.length} cps=${track.cps.length}`);
+  console.log(`   racing line: ${full}/${track.corners.length} corners with full entry+apex+exit zone set` +
+    track.corners.filter((c) => !(c.entry && c.apex && c.exit))
+      .map((c) => `\n   - block ${c.block} (${placements[c.block].id} @ ${placements[c.block].x},${placements[c.block].z}): ${['entry', 'apex', 'exit'].filter((k2) => !c[k2]).join('/')} missing`)
+      .join(''));
 }
 process.exit(fail ? 1 : 0);
