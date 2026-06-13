@@ -10,6 +10,7 @@ export class Hud {
     this.timeEl = $('hud-time');
     this.ersFill = $('hud-ers-fill');
     this.ersBar = $('hud-ers');
+    this.ersLabel = this.ersBar.querySelector('.ers-label');
     this.zoneEl = $('hud-zone');
     this.zoneFill = $('hud-zone-fill');
     this.pbEl = $('hud-pb');
@@ -43,6 +44,8 @@ export class Hud {
     this.ersFill.style.width = `${rs.ers}%`;
     this.ersBar.classList.toggle('deploying', !!rs.deploying);
     this.ersBar.classList.toggle('charging', rs.zoneLive.active);
+    // Show the live boost as the actual added power, not a screen-shake/glow.
+    this.ersLabel.textContent = rs.boostPct > 0 ? `ERS +${rs.boostPct}%` : 'ERS';
 
     this.zoneEl.classList.toggle('on', rs.zoneLive.active);
     if (rs.zoneLive.active) this.zoneFill.style.width = `${Math.round(rs.zoneLive.closeness * 100)}%`;

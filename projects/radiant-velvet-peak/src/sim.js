@@ -159,7 +159,8 @@ export function step(rs, input) {
   rs.ers = Math.max(0, rs.ers - t.ersDecay * dt);
   const powerMul = (1 + t.ersPassivePower * ersFrac) * surf.power;
   const topSpeed = t.topSpeed * (1 + t.ersPassiveTop * ersFrac) * surf.top;
-  rs.deploying = ersFrac > 0.04;              // drives the exhaust glow / audio
+  rs.boostPct = Math.round(t.ersPassivePower * ersFrac * 100); // current added power %
+  rs.deploying = ersFrac > 0.04;              // HUD readout + audio
 
   // --- suspension load (raycast-style): per-axle normal load from a
   //     spring-damper resting on flat ground + longitudinal weight transfer
@@ -255,7 +256,9 @@ export function step(rs, input) {
   // collides at its true extents — the nose stops at the wall instead of
   // visually clipping through it.
   c.contact = false;
-  const R = t.carColRadius, off = t.carColOffset;
+  const off = t.carColOffset;
+  // collide at the wall's visible inner face (centerline + render half-thickness)
+  const R = t.carColRadius + t.wallHalf;
   const cfX = Math.sin(c.h), cfZ = Math.cos(c.h);
   const near = rs.track.nearWalls(c.x, c.z);
   for (const wi of near) {

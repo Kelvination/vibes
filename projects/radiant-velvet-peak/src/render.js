@@ -345,7 +345,6 @@ export class Renderer3D {
   updateCar(group, x, z, h, deploying, lean) {
     group.position.set(x, 0, z);
     group.rotation.y = h;
-    if (group.userData.glow) group.userData.glow.visible = !!deploying;
     const ch = group.userData.chassis;
     if (ch) {
       ch.rotation.x = lean ? lean.pitch : 0;
@@ -373,9 +372,9 @@ export class Renderer3D {
   // speed, sliding flag, speed); pass null to pause + break the trail (e.g.
   // during the countdown or on respawn) so no quad bridges the gap.
   updateSkids(x, z, h, car) {
-    const SKID_SLIP = 3.0, HALF_W = 0.17, MIN_STEP = 0.04;
+    const SKID_SLIP = 1.0, HALF_W = 0.17, MIN_STEP = 0.04;
     const slip = car ? Math.abs(car.vL) : 0;
-    const skidding = !!car && car.speed > 4 && slip > SKID_SLIP;
+    const skidding = !!car && car.speed > 2.5 && (slip > SKID_SLIP || car.sliding);
     const ch = Math.cos(h), sh = Math.sin(h);
     let dirty = false;
     for (let wi = 0; wi < this.skidWheels.length; wi++) {
@@ -427,7 +426,7 @@ export class Renderer3D {
     if (this.camMode === 'hood') {
       this.camera.position.set(car.x + fx * 0.6, 1.25, car.z + fz * 0.6);
       this.camera.lookAt(car.x + fx * 30, 0.9, car.z + fz * 30);
-      this.camera.fov = 78 + Math.min(speed, 70) * 0.18 + (deploying ? 4 : 0);
+      this.camera.fov = 78 + Math.min(speed, 70) * 0.18;
     } else {
       const back = 10.5 + Math.min(speed, 70) * 0.05;
       const tx = car.x - fx * back, tz = car.z - fz * back;
@@ -437,7 +436,7 @@ export class Renderer3D {
       this.camPos.y += (5.2 - this.camPos.y) * k;
       this.camera.position.copy(this.camPos);
       this.camera.lookAt(car.x + fx * 7, 1.1, car.z + fz * 7);
-      this.camera.fov = 70 + Math.min(speed, 70) * 0.22 + (deploying ? 5 : 0);
+      this.camera.fov = 70 + Math.min(speed, 70) * 0.22;
     }
     this.camera.updateProjectionMatrix();
   }

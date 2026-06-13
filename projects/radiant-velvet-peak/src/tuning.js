@@ -70,6 +70,9 @@ export const TUNING = {
   boostAccel: 13,        // booster pad forced acceleration (m/s^2)
 
   // Walls
+  wallHalf: 0.25,        // wall render half-thickness — collide at the visible
+                         // inner face, not the centerline, so the car body
+                         // stops flush with the wall instead of sinking in
   wallRestitution: 0.08,
   wallFrictionK: 0.55,   // tangential scrub scaled by normal impact
   wallYawDamp: 0.85,     // yaw damping on contact
