@@ -263,7 +263,12 @@ function planRacingLine(placements, track) {
       const atFar = q.z > S - 0.5 ? 1 : q.z < 0.5 ? 0 : null;
       if (side === null || atFar === null) return; // neighbor road not aligned with this corner
       const len = S * APPROACH_FRAC;
-      let z0 = atFar ? S - len : 0, z1 = atFar ? S : len;
+      // Exit zones hug the corner-adjacent end of the flanking block. Entry
+      // zones (ei === 0) sit at the FAR end instead, so the rewarded "hug the
+      // outside" line begins well before the turn-in rather than right at it.
+      let z0, z1;
+      if (ei === 0) { z0 = atFar ? 0 : S - len; z1 = atFar ? len : S; }
+      else { z0 = atFar ? S - len : 0; z1 = atFar ? S : len; }
       const list = hints.get(ni) || [];
       // back-to-back corners share a straight: trim so zones never overlap
       for (const o of list) {
@@ -287,7 +292,8 @@ function planRacingLine(placements, track) {
     const C = { x: 2 * P.x - (Aedge.x + Bedge.x) / 2, z: 2 * P.z - (Aedge.z + Bedge.z) / 2 };
     const lead = S * APPROACH_FRAC;
     const pts = [];
-    if (landed[0]) pts.push({ x: Aedge.x, z: -lead });
+    // entry guide reaches further back (full cell) to match the relocated zone
+    if (landed[0]) pts.push({ x: Aedge.x, z: -S });
     pts.push(...quadBez(Aedge, C, Bedge, 14));
     if (landed[1]) pts.push({ x: Bedge.x + lead, z: Bedge.z });
     track.guides.push(pts.map(tw));

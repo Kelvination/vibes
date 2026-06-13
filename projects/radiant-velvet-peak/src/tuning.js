@@ -1,5 +1,12 @@
 // Wall Hugger — all handling/feel constants in one place (PRD §4.6).
 // Everything numeric here is exposed in the F2 debug tuning panel.
+//
+// The car is a planar rigid body driven by a raycast-suspension / bicycle
+// tire model: per-axle normal load comes from a spring-damper suspension with
+// longitudinal weight transfer, and lateral grip is generated from slip angles
+// and bounded by a per-axle friction circle. Understeer, brake-induced
+// rotation and power-on oversteer all emerge from the forces — they are not
+// scripted. See sim.js step().
 
 export const TUNING = {
   // Simulation
@@ -10,44 +17,54 @@ export const TUNING = {
   carRadius: 1.05,       // collision circle radius (m)
   carHalfWidth: 0.95,    // used for wall-face distance (zone scoring)
 
-  // Engine / longitudinal
-  enginePower: 24,       // accel at standstill (m/s^2)
-  topSpeed: 58,          // soft cap (m/s) before surface/ERS multipliers
-  brakeDecel: 30,        // braking deceleration (m/s^2)
+  // Chassis / mass properties. CG is biased rearward (lf > lr) so the car
+  // carries a touch of stabilising understeer; trail-braking still rotates it.
+  mass: 1100,            // kg
+  gravity: 9.81,         // m/s^2
+  Iz: 1700,              // yaw moment of inertia (kg m^2)
+  lf: 1.45,              // CG -> front axle (m)
+  lr: 1.15,              // CG -> rear axle (m)
+  hcg: 0.5,              // CG height — drives longitudinal weight transfer (m)
+
+  // Engine / longitudinal (forces in N; grip-limited by the tires). Top speed
+  // emerges from the drag balance; ERS/throttle add force, not a scripted cap.
+  engineForce: 9000,     // rear-axle drive force at full throttle (N)
+  topSpeed: 52,          // soft drag ceiling (m/s) before surface/ERS multipliers
+  brakeForce: 13000,     // total brake force (N), split by brakeBias
+  brakeBias: 0.62,       // fraction of brake force on the front axle
+  reverseForce: 4000,    // reverse drive force (N)
   reverseTop: 11,        // max reverse speed (m/s)
   reverseThresh: 1.6,    // below this fwd speed, brake becomes reverse (m/s)
-  rollK: 0.22,           // rolling resistance (1/s on vF)
-  dragK: 0.0009,         // quadratic drag
+  rollK: 0.014,          // rolling resistance (1/s on vF)
+  dragK: 0.0033,         // quadratic aero drag — sets the natural top speed
+
+  // Tires
+  baseMu: 1.5,           // asphalt friction coefficient (scaled by surface)
+  corneringStiff: 6.5,   // lateral stiffness per unit normal load (1/rad)
+  lowSpeedRef: 3.0,      // m/s — tire forces fade in below this (kills jitter)
+  yawDamp: 1700,         // yaw-rate damping torque coefficient (N m s/rad)
 
   // Steering (PRD §9: digital input smoothed to analog)
-  steerRate: 9.0,        // ramp 0 -> 1 in ~110 ms
-  recenterRate: 15.0,    // faster re-center on release
+  maxSteerAngle: 0.50,   // max front wheel angle at low speed (rad ~ 29 deg)
+  steerSpeedK: 0.08,     // steer lock shrinks with speed: angle /= 1 + k*speed
+  steerRate: 6.0,        // input ramp 0 -> 1 (1/s) — weightier than instant
+  recenterRate: 12.0,    // faster re-center on release
 
-  // Yaw / understeer (PRD §4.2)
-  baseYaw: 2.5,          // max yaw rate at standstill (rad/s)
-  yawSpeedK: 0.046,      // maxYaw = baseYaw / (1 + k * vF)
-  yawResp: 10.0,         // first-order response toward target yaw (1/s)
+  // Suspension visuals (spring-damper, render-only body lean/dive/squat)
+  susStiff: 230,         // spring constant toward the load-transfer target
+  susDamp: 17,           // damping (slightly underdamped -> a little bounce)
+  susPitchGain: 0.0065,  // rad of dive/squat per m/s^2 of longitudinal accel
+  susRollGain: 0.0072,   // rad of body roll per m/s^2 of lateral accel
+  susHeaveGain: 0.0035,  // m of heave per m/s^2 of combined accel
 
-  // Lateral grip (PRD §4.1) — bleed of lateral velocity per second
-  baseGrip: 9.0,
-  gripSpeedK: 0.016,     // grip fades with speed -> progressive washout
-
-  // Brake-induced rotation (PRD §4.3)
-  brakeRotMinYaw: 0.14,  // need existing rotation (rad/s)
-  brakeRotMinSpeed: 8,   // need speed (m/s)
-  brakeRotGain: 1.9,     // yaw amplification while braking (1/s, exponential)
-  brakeRotCap: 2.3,      // yaw rate never exceeds this while sliding (rad/s)
-  brakeRotGripMul: 0.30, // rear grip multiplier during brake-drift
-  brakeRotScrub: 0.55,   // extra fwd speed bleed scaled by |yawRate| (1/s)
-
-  // Surfaces (PRD §4.5)
+  // Surfaces (PRD §4.5) — grip scales tire mu, power scales drive, top scales cap
   surfaces: {
     asphalt: { grip: 1.0,  power: 1.0,  top: 1.0 },
     dirt:    { grip: 0.42, power: 0.85, top: 0.80 },
     grass:   { grip: 0.55, power: 0.40, top: 0.42 },
     boost:   { grip: 1.0,  power: 1.0,  top: 1.0 },
   },
-  boostAccel: 40,        // booster pad forced acceleration (m/s^2)
+  boostAccel: 26,        // booster pad forced acceleration (m/s^2)
 
   // Walls
   wallRestitution: 0.08,

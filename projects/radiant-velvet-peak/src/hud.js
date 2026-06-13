@@ -47,7 +47,8 @@ export class Hud {
     this.zoneEl.classList.toggle('on', rs.zoneLive.active);
     if (rs.zoneLive.active) this.zoneFill.style.width = `${Math.round(rs.zoneLive.closeness * 100)}%`;
 
-    this.cpEl.textContent = `CP ${rs.cpCount}/${rs.track.cps.length}`;
+    this.cpEl.textContent = (rs.totalLaps > 1 ? `LAP ${rs.lap}/${rs.totalLaps} · ` : '')
+      + `CP ${rs.cpCount}/${rs.track.cps.length}`;
 
     if (rs.phase === 'countdown') {
       const n = Math.ceil(rs.countdown / (rs.t.countdownTicks / 3));
@@ -70,11 +71,13 @@ export class Hud {
     setTimeout(() => el.remove(), 1400);
   }
 
-  split(index, total, ticks, pbSplits) {
-    let txt = `CP ${index}/${total} — ${fmtTime(ticksToMs(ticks))}`;
+  // splitIndex is a global 1-based counter across all laps, so PB deltas line
+  // up even on multi-lap races; label is the human-readable lap/checkpoint tag.
+  split(splitIndex, ticks, pbSplits, label) {
+    let txt = `${label} — ${fmtTime(ticksToMs(ticks))}`;
     let cls = '';
-    if (pbSplits && pbSplits[index - 1] != null) {
-      const d = ticksToMs(ticks - pbSplits[index - 1]);
+    if (pbSplits && pbSplits[splitIndex - 1] != null) {
+      const d = ticksToMs(ticks - pbSplits[splitIndex - 1]);
       txt += `  ${d >= 0 ? '+' : '−'}${fmtTime(Math.abs(d)).replace(/^00:/, '')}`;
       cls = d <= 0 ? 'ahead' : 'behind';
     }

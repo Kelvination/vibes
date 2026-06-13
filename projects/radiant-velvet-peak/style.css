@@ -77,27 +77,29 @@ input[type=text], input:not([type]) {
 }
 
 /* ===== HUD ===== */
+/* Kept deliberately quiet so it never competes with the track for attention. */
 #hud-time {
-  position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
-  font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums;
-  text-shadow: 0 2px 8px #000;
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+  font-size: 25px; font-weight: 600; font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 5px #000; opacity: 0.82;
 }
 #hud-split {
-  position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
-  font-size: 19px; font-variant-numeric: tabular-nums; opacity: 0; transition: opacity .25s;
-  text-shadow: 0 2px 6px #000;
+  position: absolute; top: 50px; left: 50%; transform: translateX(-50%);
+  font-size: 16px; font-variant-numeric: tabular-nums; opacity: 0; transition: opacity .25s;
+  text-shadow: 0 1px 5px #000;
 }
-#hud-split.show { opacity: 1; }
+#hud-split.show { opacity: 0.9; }
 #hud-split.ahead { color: #4ae07a; }
 #hud-split.behind { color: #ff5a4a; }
 
 #hud-topright {
-  position: absolute; top: 16px; right: 18px; text-align: right;
-  font-size: 14px; text-shadow: 0 1px 4px #000;
+  position: absolute; top: 14px; right: 16px; text-align: right;
+  font-size: 12px; text-shadow: 0 1px 4px #000; opacity: 0.7;
 }
-#hud-pb { font-size: 17px; font-weight: 600; }
-#hud-medals span { margin-left: 10px; font-variant-numeric: tabular-nums; }
-#hud-cp { margin-top: 4px; color: var(--dim); font-size: 16px; }
+#hud-pb { font-size: 14px; font-weight: 600; }
+#hud-medals { font-size: 11px; color: var(--dim); }
+#hud-medals span { margin-left: 8px; font-variant-numeric: tabular-nums; }
+#hud-cp { margin-top: 3px; color: var(--dim); font-size: 13px; }
 
 #hud-countdown {
   position: absolute; top: 32%; left: 50%; transform: translate(-50%, -50%);
@@ -109,8 +111,8 @@ input[type=text], input:not([type]) {
   position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
-#hud-speed-wrap { font-size: 44px; font-weight: 800; text-shadow: 0 2px 8px #000; }
-#hud-speed-wrap small { font-size: 16px; font-weight: 400; color: var(--dim); margin-left: 6px; }
+#hud-speed-wrap { font-size: 34px; font-weight: 700; text-shadow: 0 1px 6px #000; opacity: 0.9; }
+#hud-speed-wrap small { font-size: 14px; font-weight: 400; color: var(--dim); margin-left: 6px; }
 
 #hud-ers {
   position: relative; width: 340px; height: 22px;
@@ -141,13 +143,14 @@ input[type=text], input:not([type]) {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
 }
 .popup {
-  font-size: 30px; font-weight: 800; text-shadow: 0 2px 10px #000;
+  font-size: 23px; font-weight: 700; text-shadow: 0 1px 8px #000;
   animation: pop 1.4s ease-out forwards;
 }
 .popup.perfect { color: var(--cyan); }
 .popup.close { color: #7de8ff; }
 .popup.safe { color: #9fb6c9; }
 .popup.void { color: #ff4030; }
+.popup.lap { color: var(--gold); letter-spacing: 2px; }
 @keyframes pop {
   0% { transform: scale(.6); opacity: 0; }
   12% { transform: scale(1.15); opacity: 1; }
@@ -210,34 +213,45 @@ input[type=text], input:not([type]) {
 #touch-controls { display: none; }
 body.touch #touch-controls { display: block; }
 
+/* Two thumb clusters pinned to the bottom corners with a clear gap between
+   them; the speed/ERS HUD lives in the centre channel above the wheels. */
 .tc-btn {
   position: absolute; pointer-events: auto;
-  width: 84px; height: 84px; border-radius: 50%;
+  width: 76px; height: 76px; border-radius: 50%;
   background: rgba(24, 224, 255, 0.10); border: 2px solid rgba(24, 224, 255, 0.4);
-  color: var(--text); font-size: 28px; font-weight: 800;
+  color: var(--text); font-size: 26px; font-weight: 800;
+  display: grid; place-items: center;
   touch-action: none; -webkit-user-select: none; user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
 .tc-btn:active { background: rgba(24, 224, 255, 0.32); }
-#tc-left  { left: max(16px, env(safe-area-inset-left)); bottom: 26px; }
-#tc-right { left: calc(max(16px, env(safe-area-inset-left)) + 96px); bottom: 26px; }
-#tc-gas   { right: max(16px, env(safe-area-inset-right)); bottom: 26px; width: 104px; height: 104px; }
-#tc-brake { right: calc(max(16px, env(safe-area-inset-right)) + 118px); bottom: 26px; }
+/* steering — bottom-left */
+#tc-left  { left: max(18px, env(safe-area-inset-left)); bottom: 28px; }
+#tc-right { left: calc(max(18px, env(safe-area-inset-left)) + 88px); bottom: 28px; }
+/* pedals — bottom-right */
+#tc-gas   { right: max(18px, env(safe-area-inset-right)); bottom: 28px; width: 92px; height: 92px; }
+#tc-brake { right: calc(max(18px, env(safe-area-inset-right)) + 104px); bottom: 28px; }
+/* ERS deploy — stacked above the pedals, well clear of them */
 #tc-ers   {
-  right: max(16px, env(safe-area-inset-right)); bottom: 146px;
-  width: 68px; height: 68px; font-size: 15px; letter-spacing: 1px; color: var(--cyan);
+  right: max(18px, env(safe-area-inset-right)); bottom: 134px;
+  width: 62px; height: 62px; font-size: 14px; letter-spacing: 1px; color: var(--cyan);
 }
 
-.tc-top { position: absolute; top: 12px; left: max(12px, env(safe-area-inset-left)); display: flex; gap: 8px; }
+.tc-top {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 8px;
+}
 .tc-small {
-  pointer-events: auto; padding: 9px 13px; font-size: 15px;
+  pointer-events: auto; padding: 8px 12px; font-size: 14px; border-radius: 8px;
   background: rgba(12, 20, 36, 0.7); touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* keep the speed/ERS HUD clear of the thumb clusters */
-body.touch #hud-bottom { bottom: 146px; }
-body.touch #hud-ers { width: 230px; }
+/* keep the speed/ERS HUD in the central channel above the thumb clusters */
+body.touch #hud-bottom { bottom: 120px; }
+body.touch #hud-ers { width: min(200px, 42vw); }
+body.touch #hud-time { top: 52px; }
+body.touch #hud-split { top: 84px; }
 
 @media (max-width: 600px) {
   .menu-box { margin: 3vh 14px; padding: 22px 18px; }

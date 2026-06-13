@@ -111,7 +111,7 @@ function startRace(map, { test = false, draft = null } = {}) {
   app.mode = 'race';
   const rec = map.key ? persist.getRecord(map.key) : null;
   app.race = {
-    rs: createRace(track), map, track, test, draft, rec,
+    rs: createRace(track, { laps: map.laps || 1 }), map, track, test, draft, rec,
     prev: null,
     ghost: app.settings.ghost && rec?.ghost ? rec.ghost : null,
   };
@@ -133,7 +133,7 @@ function startRace(map, { test = false, draft = null } = {}) {
 function restartRace() {
   const r = app.race;
   if (!r) return;
-  r.rs = createRace(r.track); // instant: track/scene untouched (PRD §3, < 100 ms)
+  r.rs = createRace(r.track, { laps: r.map.laps || 1 }); // instant: track/scene untouched (PRD §3, < 100 ms)
   r.ghost = app.settings.ghost && r.rec?.ghost ? r.rec.ghost : null;
   app.ersToggleOn = false;
   snapPrev();
@@ -153,10 +153,15 @@ function sampleInput() {
   const hold = k.has('shift');
   // the touch ERS button is always hold-to-deploy, regardless of ERS mode
   const deploy = (mode !== 'toggle' && hold) || (mode !== 'hold' && app.ersToggleOn) || tc.ers;
+  // Steer sign: the chase camera looks down +z, which mirrors world X on
+  // screen, so the sim's internal +steer (turns toward +x) reads as a LEFT
+  // turn to the player. Map the controls accordingly: left key -> +1.
+  const left = k.has('a') || k.has('arrowleft') || tc.left;
+  const right = k.has('d') || k.has('arrowright') || tc.right;
   return {
     throttle: k.has('w') || k.has('arrowup') || tc.gas,
     brake: k.has('s') || k.has('arrowdown') || tc.brake,
-    steer: (k.has('d') || k.has('arrowright') || tc.right ? 1 : 0) - (k.has('a') || k.has('arrowleft') || tc.left ? 1 : 0),
+    steer: (left ? 1 : 0) - (right ? 1 : 0),
     deploy,
   };
 }
@@ -166,9 +171,15 @@ function processEvents(rs) {
     switch (e.type) {
       case 'beep': app.audio.beep(e.n); break;
       case 'go': app.audio.go(); break;
-      case 'checkpoint':
+      case 'checkpoint': {
         app.audio.checkpoint();
-        app.hud.split(e.index, e.total, e.ticks, app.race.rec?.splits);
+        const label = (e.laps > 1 ? `L${e.lap} · ` : '') + `CP ${e.index}/${e.total}`;
+        app.hud.split(e.split, e.ticks, app.race.rec?.splits, label);
+        break;
+      }
+      case 'lap':
+        app.audio.checkpoint();
+        app.hud.popup(`LAP ${e.lap}/${e.total}`, 'lap');
         break;
       case 'zoneAward':
         app.hud.popup(`+${Math.max(1, Math.round(e.award))} ${e.rating}`, e.rating.toLowerCase());
@@ -387,7 +398,9 @@ function frame(now) {
     if (dh > Math.PI) dh -= 2 * Math.PI; else if (dh < -Math.PI) dh += 2 * Math.PI;
     const ix = p.x + (c.x - p.x) * a, iz = p.z + (c.z - p.z) * a, ih = p.h + dh * a;
 
-    app.renderer.updateCar(app.renderer.car, ix, iz, ih, rs.deploying);
+    app.renderer.updateCar(app.renderer.car, ix, iz, ih, rs.deploying, {
+      pitch: c.susPitch, roll: c.susRoll, heave: c.susHeave, steer: c.steerAngle,
+    });
     app.renderer.updateZones(rs.zones);
     app.renderer.updateSparks(c, rs.zoneLive);
     app.renderer.updateChase({ x: ix, z: iz, h: ih }, c.speed, rs.deploying, dtReal);

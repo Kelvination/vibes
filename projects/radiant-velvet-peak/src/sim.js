@@ -45,10 +45,18 @@ export function createRace(track, opts = {}) {
     tick: 0,                 // race ticks since GO
     phase: 'countdown',
     countdown: opts.skipCountdown ? 0 : TUNING.countdownTicks,
+    lap: 1,                  // current lap (1-based)
+    totalLaps: Math.max(1, opts.laps || 1),
+    finishCooldown: 0,       // ticks after a lap rollover before finish re-arms
     car: {
       x: start.x, z: start.z, h,
       vx: 0, vz: 0, yaw: 0, steer: 0,
       speed: 0, vF: 0, vL: 0,
+      aF: 0, aL: 0,            // body-frame accelerations (for weight transfer)
+      steerAngle: 0,           // current front wheel angle (rad, render)
+      susPitch: 0, susPitchV: 0, // suspension visual state (dive/squat)
+      susRoll: 0, susRollV: 0,   // body roll
+      susHeave: 0, susHeaveV: 0, // ride height bob
       surface: 'asphalt', sliding: false, contact: false,
     },
     ers: 0,
@@ -95,6 +103,8 @@ export function respawn(rs) {
   }
   c.x = spawn.x; c.z = spawn.z; c.h = spawn.dir * Math.PI / 2;
   c.vx = 0; c.vz = 0; c.yaw = 0; c.steer = 0;
+  c.aF = 0; c.aL = 0; c.steerAngle = 0;
+  c.susPitch = c.susPitchV = c.susRoll = c.susRollV = c.susHeave = c.susHeaveV = 0;
   rs.ersToggle = false;
   rs.events.push({ type: 'respawn' });
 }
@@ -117,20 +127,25 @@ export function step(rs, input) {
   if (rs.phase !== 'racing') return;
 
   rs.tick++;
+  const m = t.mass, L = t.lf + t.lr;
 
-  // --- steering smoothing (PRD §9) ---
+  // --- steering: smooth digital input to analog, shrink lock with speed ---
+  // Sign convention (internal): steer > 0 -> nose rotates toward +x / +h. The
+  // human-facing left/right mapping is set in main.js sampleInput().
   const target = Math.max(-1, Math.min(1, input.steer));
   const rate = (target === 0 || target * c.steer < 0) ? t.recenterRate : t.steerRate;
-  const dS = target - c.steer;
   const maxD = rate * dt;
-  c.steer += Math.max(-maxD, Math.min(maxD, dS));
+  c.steer += Math.max(-maxD, Math.min(maxD, target - c.steer));
 
-  // --- frame vectors / decomposition ---
+  // --- frame vectors / velocity decomposition ---
   const fwdX = Math.sin(c.h), fwdZ = Math.cos(c.h);
   const rgtX = Math.cos(c.h), rgtZ = -Math.sin(c.h);
-  let vF = c.vx * fwdX + c.vz * fwdZ;
-  let vL = c.vx * rgtX + c.vz * rgtZ;
+  let vF = c.vx * fwdX + c.vz * fwdZ;   // longitudinal (forward), m/s
+  let vL = c.vx * rgtX + c.vz * rgtZ;   // lateral (right), m/s
+  let r = c.yaw;                        // yaw rate, rad/s
   const speed = Math.hypot(c.vx, c.vz);
+
+  const steerAngle = c.steer * t.maxSteerAngle / (1 + t.steerSpeedK * speed);
 
   // --- surface ---
   const surfName = rs.track.surfaceAt(c.x, c.z);
@@ -144,44 +159,88 @@ export function step(rs, input) {
   const topSpeed = t.topSpeed * (deploying ? t.ersTopMul : 1) * surf.top;
   rs.deploying = deploying;
 
-  // --- longitudinal forces ---
-  if (input.throttle) {
-    const head = Math.max(0, 1 - Math.max(0, vF) / topSpeed);
-    vF += t.enginePower * head * powerMul * dt;
+  // --- suspension load (raycast-style): per-axle normal load from a
+  //     spring-damper resting on flat ground + longitudinal weight transfer
+  //     driven by the previous tick's accel (avoids an algebraic loop). ---
+  const W = m * t.gravity;
+  const dFzLong = m * c.aF * t.hcg / L;             // +accel shifts load rearward
+  const FzF = Math.max(0, W * t.lr / L - dFzLong);
+  const FzR = Math.max(0, W * t.lf / L + dFzLong);
+  const mu = t.baseMu * surf.grip;
+
+  // --- longitudinal forces (N) ---
+  let driveF = 0;            // drive applied at the rear axle (RWD feel)
+  let brakeF = 0, brakeR = 0;
+  let extraAccel = 0;        // boost pad: ungoverned, bypasses tire grip
+  if (input.throttle) driveF = t.engineForce * powerMul;
+  if (input.brake) {
+    if (vF > t.reverseThresh) {
+      const s = Math.sign(vF) || 1;
+      brakeF = -s * t.brakeForce * t.brakeBias;
+      brakeR = -s * t.brakeForce * (1 - t.brakeBias);
+    } else {
+      driveF = -t.reverseForce * surf.power * Math.max(0, 1 + Math.min(vF, 0) / t.reverseTop);
+    }
   }
-  const braking = input.brake;
-  if (braking) {
-    if (vF > t.reverseThresh) vF -= t.brakeDecel * dt;
-    else vF = Math.max(vF - t.enginePower * 0.45 * dt, -t.reverseTop * surf.top);
-  }
-  vF -= (t.rollK * vF + t.dragK * vF * Math.abs(vF) * (vF > topSpeed ? 4 : 1)) * dt;
+  // boost pads shove you forward — but only while actually rolling forward, so
+  // a car stopped against a wall on a pad isn't pinned there and can back off
+  if (surfName === 'boost' && vF > 2) extraAccel += t.boostAccel;
+  // rolling + aero drag; drag escalates past the soft top-speed ceiling
+  const resist = -(t.rollK * vF + t.dragK * vF * Math.abs(vF) * (vF > topSpeed ? 4 : 1)) * m;
 
-  if (surfName === 'boost') vF += t.boostAccel * dt;
+  // --- tire lateral forces from slip angles (bicycle model) ---
+  const vFs = Math.max(Math.abs(vF), t.lowSpeedRef);
+  const slipF = Math.atan2(vL + r * t.lf, vFs) - steerAngle * (vF < 0 ? -1 : 1);
+  const slipR = Math.atan2(vL - r * t.lr, vFs);
+  let FyF = -t.corneringStiff * FzF * slipF;
+  let FyR = -t.corneringStiff * FzR * slipR;
 
-  // --- yaw: speed-sensitive understeer (PRD §4.2) ---
-  const maxYaw = t.baseYaw / (1 + t.yawSpeedK * Math.max(0, vF));
-  const targetYaw = c.steer * maxYaw * (vF < 0 ? -1 : 1);
-  c.yaw += (targetYaw - c.yaw) * Math.min(1, t.yawResp * dt);
-
-  // --- brake-induced rotation (PRD §4.3) ---
-  let gripMul = 1;
+  // friction circle per axle: longitudinal use eats into lateral capacity
+  const capF = mu * FzF, capR = mu * FzR;
+  const fxF = Math.max(-capF, Math.min(capF, brakeF));
+  const fxR = Math.max(-capR, Math.min(capR, driveF + brakeR));
+  const latF = Math.sqrt(Math.max(0, capF * capF - fxF * fxF));
+  const latR = Math.sqrt(Math.max(0, capR * capR - fxR * fxR));
   let sliding = false;
-  if (braking && Math.abs(c.yaw) > t.brakeRotMinYaw && vF > t.brakeRotMinSpeed) {
-    sliding = true;
-    const sgn = c.yaw > 0 ? 1 : -1;
-    c.yaw += sgn * Math.abs(c.yaw) * t.brakeRotGain * dt;        // amplify existing rotation
-    if (Math.abs(c.yaw) > t.brakeRotCap) c.yaw = sgn * t.brakeRotCap; // always catchable
-    gripMul = t.brakeRotGripMul;                                  // rear steps out
-    vF -= vF * t.brakeRotScrub * Math.abs(c.yaw) * dt;            // scrubbing: line tool, not speed exploit
-  }
-  c.sliding = sliding;
+  if (Math.abs(FyF) > latF) { FyF = Math.sign(FyF) * latF; sliding = true; }
+  if (Math.abs(FyR) > latR) { FyR = Math.sign(FyR) * latR; sliding = true; }
 
-  // --- lateral grip bleed (planted at moderate speed, washes out at high speed) ---
-  const grip = (t.baseGrip / (1 + t.gripSpeedK * speed)) * surf.grip * gripMul;
-  vL -= vL * Math.min(1, grip * dt);
+  // fade lateral forces to zero approaching a standstill (kills slip jitter)
+  const fade = Math.min(1, speed / t.lowSpeedRef);
+  FyF *= fade; FyR *= fade;
 
-  // --- integrate heading & recompose velocity in new frame ---
-  c.h = wrapAngle(c.h + c.yaw * dt);
+  // --- resolve into body frame (front forces rotate with the steer angle) ---
+  const cs = Math.cos(steerAngle), sn = Math.sin(steerAngle);
+  const Ffx = fxF * cs - FyF * sn;     // forward
+  const Ffy = fxF * sn + FyF * cs;     // right
+  const sumFx = Ffx + fxR + resist;
+  const sumFy = Ffy + FyR;
+  const Mz = t.lf * Ffy - t.lr * FyR - t.yawDamp * r;
+
+  // --- integrate rigid-body motion (semi-implicit, body frame) ---
+  const aF = sumFx / m + extraAccel;   // longitudinal specific force
+  const aL = sumFy / m;                // lateral specific force
+  vF += (aF + vL * r) * dt;
+  vL += (aL - vF * r) * dt;
+  r  += (Mz / t.Iz) * dt;
+  c.aF = aF; c.aL = aL;
+  c.sliding = sliding && speed > t.lowSpeedRef;
+
+  // --- suspension visuals: spring-damper toward weight-transfer targets ---
+  const pitchTarget = -aF * t.susPitchGain;   // braking dives, accel squats
+  const rollTarget = aL * t.susRollGain;       // body leans out of the corner
+  const heaveTarget = -t.susHeaveGain * (Math.abs(aF) + Math.abs(aL));
+  c.susPitchV += (t.susStiff * (pitchTarget - c.susPitch) - t.susDamp * c.susPitchV) * dt;
+  c.susPitch += c.susPitchV * dt;
+  c.susRollV += (t.susStiff * (rollTarget - c.susRoll) - t.susDamp * c.susRollV) * dt;
+  c.susRoll += c.susRollV * dt;
+  c.susHeaveV += (t.susStiff * (heaveTarget - c.susHeave) - t.susDamp * c.susHeaveV) * dt;
+  c.susHeave += c.susHeaveV * dt;
+  c.steerAngle = steerAngle;
+
+  // --- integrate heading & recompose world velocity in the new frame ---
+  c.yaw = r;
+  c.h = wrapAngle(c.h + r * dt);
   const nfX = Math.sin(c.h), nfZ = Math.cos(c.h);
   const nrX = Math.cos(c.h), nrZ = -Math.sin(c.h);
   c.vx = nfX * vF + nrX * vL;
@@ -265,7 +324,7 @@ export function step(rs, input) {
   rs.zoneLive.active = liveActive;
   rs.zoneLive.closeness = liveClose;
 
-  // --- checkpoints (set semantics: each counted once, finish needs all — PRD §7) ---
+  // --- checkpoints (set semantics: each counted once per lap — PRD §7) ---
   for (let ci = 0; ci < rs.track.cps.length; ci++) {
     if (rs.cpHit[ci]) continue;
     const trig = rs.track.cps[ci];
@@ -275,19 +334,34 @@ export function step(rs, input) {
       rs.cpCount++;
       rs.splits.push(rs.tick);
       if (trig.spawn) takeSnapshot(rs, trig.spawn);
-      rs.events.push({ type: 'checkpoint', index: rs.cpCount, total: rs.track.cps.length, ticks: rs.tick });
+      rs.events.push({
+        type: 'checkpoint', index: rs.cpCount, total: rs.track.cps.length,
+        split: rs.splits.length, lap: rs.lap, laps: rs.totalLaps, ticks: rs.tick,
+      });
     }
   }
 
-  // --- finish ---
-  if (rs.cpCount === rs.track.cps.length) {
+  // --- lap / finish (all checkpoints needed before the finish line counts) ---
+  if (rs.finishCooldown > 0) rs.finishCooldown--;
+  if (rs.cpCount === rs.track.cps.length && rs.finishCooldown <= 0) {
     for (const fin of rs.track.finishes) {
       const cp = closestOnSeg(c.x, c.z, fin.a, fin.b);
       if (Math.hypot(c.x - cp.x, c.z - cp.z) < 1.8) {
-        rs.phase = 'finished';
-        rs.finished = true;
-        rs.finalTicks = rs.tick;
-        rs.events.push({ type: 'finish', ticks: rs.tick });
+        if (rs.lap < rs.totalLaps) {
+          // start a fresh lap: re-arm checkpoints and hug zones (ERS carries over)
+          rs.lap++;
+          rs.cpHit = rs.track.cps.map(() => false);
+          rs.cpCount = 0;
+          for (const z of rs.zones) { z.state = Z_ARMED; z.minDist = Infinity; z.minSpeed = 0; }
+          takeSnapshot(rs, { x: c.x, z: c.z, dir: Math.round(c.h / (Math.PI / 2)) & 3 });
+          rs.finishCooldown = 150;  // ~1.5 s so we clear the line before re-checking
+          rs.events.push({ type: 'lap', lap: rs.lap, total: rs.totalLaps, ticks: rs.tick });
+        } else {
+          rs.phase = 'finished';
+          rs.finished = true;
+          rs.finalTicks = rs.tick;
+          rs.events.push({ type: 'finish', ticks: rs.tick });
+        }
         break;
       }
     }
