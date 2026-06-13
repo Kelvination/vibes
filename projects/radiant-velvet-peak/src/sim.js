@@ -145,7 +145,16 @@ export function step(rs, input) {
   let r = c.yaw;                        // yaw rate, rad/s
   const speed = Math.hypot(c.vx, c.vz);
 
-  const steerAngle = c.steer * t.maxSteerAngle / (1 + t.steerSpeedK * speed);
+  // Sideslip angle (heading vs. travel). Drives the slide-recovery assists
+  // below; near zero in normal driving, large (→ ±90°) in a big slide.
+  const beta = Math.atan2(vL, Math.max(Math.abs(vF), t.lowSpeedRef));
+  const slideRamp = Math.min(1, Math.max(0, Math.abs(beta) - t.assistMinSlip) /
+                                  (t.assistFullSlip - t.assistMinSlip));
+
+  // Steering lock shrinks with speed for stability, but is restored as the car
+  // slides so the player actually has the counter-steer range to catch it.
+  const lockBoost = 1 + t.counterSteerBoost * Math.min(1, Math.abs(beta) / t.assistFullSlip);
+  const steerAngle = c.steer * t.maxSteerAngle * lockBoost / (1 + t.steerSpeedK * speed);
 
   // --- surface ---
   const surfName = rs.track.surfaceAt(c.x, c.z);
@@ -218,7 +227,16 @@ export function step(rs, input) {
   const Ffy = fxF * sn + FyF * cs;     // right
   const sumFx = Ffx + fxR + resist;
   const sumFy = Ffy + FyR;
-  const Mz = t.lf * Ffy - t.lr * FyR - t.yawDamp * r;
+  let Mz = t.lf * Ffy - t.lr * FyR - t.yawDamp * r;
+
+  // Slide-recovery assist: past a big sideslip the saturated tires can't
+  // straighten the car, so add a restoring yaw moment that rotates the nose
+  // back toward the velocity vector (sign of beta), scaled by speed and how
+  // sideways we are. Zero below assistMinSlip, so normal cornering and small
+  // drifts stay fully in the player's hands.
+  if (slideRamp > 0) {
+    Mz += Math.sign(beta) * slideRamp * t.assistYaw * Math.min(speed, t.assistVRef);
+  }
 
   // --- integrate rigid-body motion (semi-implicit, body frame) ---
   const aF = sumFx / m + extraAccel;   // longitudinal specific force
