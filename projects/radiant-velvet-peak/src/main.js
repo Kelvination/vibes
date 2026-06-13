@@ -18,8 +18,7 @@ const app = {
   settings: persist.loadSettings(),
   renderer: null, hud: null, audio: null, editor: null,
   keys: new Set(),
-  touch: { gas: false, brake: false, left: false, right: false, ers: false },
-  ersToggleOn: false,
+  touch: { gas: false, brake: false, left: false, right: false },
   race: null,            // { rs, map, track, prev, ghost, test, rec }
   acc: 0, lastT: 0,
 };
@@ -115,9 +114,9 @@ function startRace(map, { test = false, draft = null } = {}) {
     prev: null,
     ghost: app.settings.ghost && rec?.ghost ? rec.ghost : null,
   };
-  app.ersToggleOn = false;
   app.renderer.showGuides = false;
   app.renderer.buildTrack(track);
+  app.renderer.clearSkids();
   app.renderer.car.visible = true;
   app.renderer.ghost.visible = false;
   app.renderer.camMode = 'chase';
@@ -135,7 +134,7 @@ function restartRace() {
   if (!r) return;
   r.rs = createRace(r.track, { laps: r.map.laps || 1 }); // instant: track/scene untouched (PRD §3, < 100 ms)
   r.ghost = app.settings.ghost && r.rec?.ghost ? r.rec.ghost : null;
-  app.ersToggleOn = false;
+  app.renderer.clearSkids();
   snapPrev();
   app.renderer.snapCamera(r.rs.car);
   app.hud.reset();
@@ -149,10 +148,7 @@ function snapPrev() {
 
 function sampleInput() {
   const k = app.keys, tc = app.touch;
-  const mode = app.settings.ersMode;
-  const hold = k.has('shift');
-  // the touch ERS button is always hold-to-deploy, regardless of ERS mode
-  const deploy = (mode !== 'toggle' && hold) || (mode !== 'hold' && app.ersToggleOn) || tc.ers;
+  // ERS is a passive boost now (no deploy input — see sim.js step()).
   // Steer sign: the chase camera looks down +z, which mirrors world X on
   // screen, so the sim's internal +steer (turns toward +x) reads as a LEFT
   // turn to the player. Map the controls accordingly: left key -> +1.
@@ -162,7 +158,6 @@ function sampleInput() {
     throttle: k.has('w') || k.has('arrowup') || tc.gas,
     brake: k.has('s') || k.has('arrowdown') || tc.brake,
     steer: (left ? 1 : 0) - (right ? 1 : 0),
-    deploy,
   };
 }
 
@@ -259,15 +254,11 @@ function backFromTest() {
 // ---------- settings ----------
 
 function applySettingsUI() {
-  document.querySelectorAll('input[name=ersmode]').forEach((r) => { r.checked = r.value === app.settings.ersMode; });
   $('set-audio').checked = app.settings.audio;
   $('set-ghost').checked = app.settings.ghost;
 }
 
 function bindSettings() {
-  document.querySelectorAll('input[name=ersmode]').forEach((r) => {
-    r.onchange = () => { app.settings.ersMode = r.value; persist.saveSettings(app.settings); };
-  });
   $('set-audio').onchange = (e) => {
     app.settings.audio = e.target.checked;
     persist.saveSettings(app.settings);
@@ -323,8 +314,7 @@ function bindKeys() {
       app.audio.ensure();
       const rs = app.race.rs;
       if (k === 'backspace' || k === 'delete') restartRace();
-      else if (k === 'enter') { respawn(rs); snapPrev(); app.renderer.snapCamera(rs.car); }
-      else if (k === 'e') { if (app.settings.ersMode !== 'hold') app.ersToggleOn = !app.ersToggleOn; }
+      else if (k === 'enter') { respawn(rs); snapPrev(); app.renderer.snapCamera(rs.car); app.renderer.clearSkids(); }
       else if (k === 'g') { app.settings.ghost = !app.settings.ghost; persist.saveSettings(app.settings); app.race.ghost = app.settings.ghost ? app.race.rec?.ghost : null; flashStatus(`Ghost ${app.settings.ghost ? 'on' : 'off'}`); }
       else if (k === 'c') { app.renderer.camMode = app.renderer.camMode === 'chase' ? 'hood' : 'chase'; }
       else if (k === 'escape') {
@@ -357,7 +347,6 @@ function bindTouch() {
   hold('tc-brake', 'brake');
   hold('tc-left', 'left');
   hold('tc-right', 'right');
-  hold('tc-ers', 'ers');
 
   $('tc-restart').onclick = () => { if (app.mode === 'race') restartRace(); };
   $('tc-respawn').onclick = () => {
@@ -365,6 +354,7 @@ function bindTouch() {
     respawn(app.race.rs);
     snapPrev();
     app.renderer.snapCamera(app.race.rs.car);
+    app.renderer.clearSkids();
   };
   $('tc-menu').onclick = () => {
     if (app.mode !== 'race') return;
@@ -401,6 +391,9 @@ function frame(now) {
     app.renderer.updateCar(app.renderer.car, ix, iz, ih, rs.deploying, {
       pitch: c.susPitch, roll: c.susRoll, heave: c.susHeave, steer: c.steerAngle,
     });
+    // skid marks: lay rubber when the tires are sliding sideways past a
+    // threshold (render-only; paused during countdown so the line starts clean)
+    app.renderer.updateSkids(ix, iz, ih, rs.phase === 'racing' ? c : null);
     app.renderer.updateZones(rs.zones);
     app.renderer.updateSparks(c, rs.zoneLive);
     app.renderer.updateChase({ x: ix, z: iz, h: ih }, c.speed, rs.deploying, dtReal);

@@ -7,8 +7,8 @@ const REC_PREFIX = 'wallrush.rec.';
 
 export function loadSettings() {
   try {
-    return { ersMode: 'both', audio: true, ghost: true, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') };
-  } catch { return { ersMode: 'both', audio: true, ghost: true }; }
+    return { audio: true, ghost: true, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') };
+  } catch { return { audio: true, ghost: true }; }
 }
 export function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
 

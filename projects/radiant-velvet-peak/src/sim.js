@@ -152,12 +152,14 @@ export function step(rs, input) {
   const surf = t.surfaces[surfName] || t.surfaces.asphalt;
   c.surface = surfName;
 
-  // --- ERS deploy (PRD §5.2): sustained power increase ---
-  const deploying = input.deploy && rs.ers > 0;
-  if (deploying) rs.ers = Math.max(0, rs.ers - t.ersDrain * dt);
-  const powerMul = (deploying ? t.ersPowerMul : 1) * surf.power;
-  const topSpeed = t.topSpeed * (deploying ? t.ersTopMul : 1) * surf.top;
-  rs.deploying = deploying;
+  // --- ERS (PRD §5.2): passive always-on boost scaled by the stored bar ---
+  // The bar bleeds off over time; whatever is banked continuously raises power
+  // and top speed. No deploy button — hug walls to keep the boost alive.
+  const ersFrac = rs.ers / t.ersCap;          // 0..1 charge level
+  rs.ers = Math.max(0, rs.ers - t.ersDecay * dt);
+  const powerMul = (1 + t.ersPassivePower * ersFrac) * surf.power;
+  const topSpeed = t.topSpeed * (1 + t.ersPassiveTop * ersFrac) * surf.top;
+  rs.deploying = ersFrac > 0.04;              // drives the exhaust glow / audio
 
   // --- suspension load (raycast-style): per-axle normal load from a
   //     spring-damper resting on flat ground + longitudinal weight transfer
@@ -248,18 +250,29 @@ export function step(rs, input) {
   c.x += c.vx * dt;
   c.z += c.vz * dt;
 
-  // --- wall collision (circle vs segments via spatial hash) ---
+  // --- wall collision (capsule vs segments via spatial hash) ---
+  // The car is two collision circles (front + rear) so the elongated body
+  // collides at its true extents — the nose stops at the wall instead of
+  // visually clipping through it.
   c.contact = false;
+  const R = t.carColRadius, off = t.carColOffset;
+  const cfX = Math.sin(c.h), cfZ = Math.cos(c.h);
   const near = rs.track.nearWalls(c.x, c.z);
   for (const wi of near) {
     const seg = rs.track.walls[wi];
-    const cp = closestOnSeg(c.x, c.z, seg.a, seg.b);
-    const dx = c.x - cp.x, dz = c.z - cp.z;
-    const d = Math.hypot(dx, dz);
-    if (d >= t.carRadius || d < 1e-6) continue;
-    const nx = dx / d, nz = dz / d;
-    c.x += nx * (t.carRadius - d);
-    c.z += nz * (t.carRadius - d);
+    // Pick the deeper of the two capsule ends against this wall segment.
+    let pen = 0, nx = 0, nz = 0;
+    for (let pi = -1; pi <= 1; pi += 2) {
+      const px = c.x + cfX * off * pi, pz = c.z + cfZ * off * pi;
+      const cp = closestOnSeg(px, pz, seg.a, seg.b);
+      const dx = px - cp.x, dz = pz - cp.z;
+      const d = Math.hypot(dx, dz);
+      if (d >= R || d < 1e-6) continue;
+      if (R - d > pen) { pen = R - d; nx = dx / d; nz = dz / d; }
+    }
+    if (pen <= 0) continue;
+    c.x += nx * pen;
+    c.z += nz * pen;
     const vn = c.vx * nx + c.vz * nz;
     if (vn < 0) {
       c.vx -= nx * vn * (1 + t.wallRestitution);

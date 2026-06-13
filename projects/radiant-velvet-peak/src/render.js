@@ -73,6 +73,34 @@ export class Renderer3D {
     }));
     this.scene.add(this.sparks);
 
+    // skid marks: a fixed pool of dark quads written as a ring buffer. Each
+    // sliding wheel lays one quad per frame connecting its last ground spot to
+    // the current one; the oldest marks are overwritten once the pool fills.
+    this.skidMax = 4000;                       // quads (≈ a long trail)
+    const skidPos = new Float32Array(this.skidMax * 4 * 3);
+    const skidIdx = new Uint16Array(this.skidMax * 6);
+    for (let i = 0; i < this.skidMax; i++) {
+      const b = i * 4, o = i * 6;
+      skidIdx[o] = b; skidIdx[o + 1] = b + 1; skidIdx[o + 2] = b + 2;
+      skidIdx[o + 3] = b; skidIdx[o + 4] = b + 2; skidIdx[o + 5] = b + 3;
+    }
+    const skidGeo = new THREE.BufferGeometry();
+    skidGeo.setAttribute('position', new THREE.BufferAttribute(skidPos, 3));
+    skidGeo.setIndex(new THREE.BufferAttribute(skidIdx, 1));
+    skidGeo.setDrawRange(0, 0);
+    this.skidPos = skidPos;
+    this.skidMesh = new THREE.Mesh(skidGeo, new THREE.MeshBasicMaterial({
+      color: 0x0a0c10, transparent: true, opacity: 0.4,
+      depthWrite: false, side: THREE.DoubleSide,
+    }));
+    this.skidMesh.renderOrder = 1;
+    this.scene.add(this.skidMesh);
+    this.skidWrite = 0;        // next quad slot
+    this.skidCount = 0;        // quads written so far (caps at skidMax)
+    // local (x, z) wheel anchors mirroring makeCar(); +z is forward
+    this.skidWheels = [[-0.95, 1.35], [0.95, 1.35], [-0.95, -1.35], [0.95, -1.35]];
+    this.skidPrev = this.skidWheels.map(() => null); // last ground point / wheel
+
     this.camMode = 'chase';
     this.camPos = new THREE.Vector3();
     this.camLook = new THREE.Vector3();
@@ -339,6 +367,53 @@ export class Renderer3D {
       this.sparkPos[i * 3 + 2] = car.z + (Math.random() - 0.5) * 3.4;
     }
     this.sparks.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // Lay rubber under sliding wheels. `car` carries the sim state (vL lateral
+  // speed, sliding flag, speed); pass null to pause + break the trail (e.g.
+  // during the countdown or on respawn) so no quad bridges the gap.
+  updateSkids(x, z, h, car) {
+    const SKID_SLIP = 3.0, HALF_W = 0.17, MIN_STEP = 0.04;
+    const slip = car ? Math.abs(car.vL) : 0;
+    const skidding = !!car && car.speed > 4 && slip > SKID_SLIP;
+    const ch = Math.cos(h), sh = Math.sin(h);
+    let dirty = false;
+    for (let wi = 0; wi < this.skidWheels.length; wi++) {
+      if (!skidding) { this.skidPrev[wi] = null; continue; }
+      const [lx, lz] = this.skidWheels[wi];
+      const wx = x + lx * ch + lz * sh;
+      const wz = z - lx * sh + lz * ch;
+      const prev = this.skidPrev[wi];
+      if (prev) {
+        const dx = wx - prev.x, dz = wz - prev.z;
+        const len = Math.hypot(dx, dz);
+        if (len >= MIN_STEP) {
+          const px = (-dz / len) * HALF_W, pz = (dx / len) * HALF_W;
+          const b = this.skidWrite * 12, p = this.skidPos;
+          p[b]      = prev.x + px; p[b + 1]  = 0.07; p[b + 2]  = prev.z + pz;
+          p[b + 3]  = prev.x - px; p[b + 4]  = 0.07; p[b + 5]  = prev.z - pz;
+          p[b + 6]  = wx - px;     p[b + 7]  = 0.07; p[b + 8]  = wz - pz;
+          p[b + 9]  = wx + px;     p[b + 10] = 0.07; p[b + 11] = wz + pz;
+          this.skidWrite = (this.skidWrite + 1) % this.skidMax;
+          this.skidCount = Math.min(this.skidCount + 1, this.skidMax);
+          dirty = true;
+          this.skidPrev[wi] = { x: wx, z: wz };
+        }
+      } else {
+        this.skidPrev[wi] = { x: wx, z: wz };
+      }
+    }
+    if (dirty) {
+      this.skidMesh.geometry.attributes.position.needsUpdate = true;
+      this.skidMesh.geometry.setDrawRange(0, this.skidCount * 6);
+    }
+  }
+
+  clearSkids() {
+    this.skidWrite = 0;
+    this.skidCount = 0;
+    this.skidPrev = this.skidWheels.map(() => null);
+    this.skidMesh.geometry.setDrawRange(0, 0);
   }
 
   snapCamera(car) {
