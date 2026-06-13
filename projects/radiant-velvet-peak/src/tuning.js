@@ -13,8 +13,11 @@ export const TUNING = {
   dt: 0.01,              // fixed 100 Hz timestep (s)
   countdownTicks: 180,   // 3 beeps * 0.6 s
 
-  // Car body
-  carRadius: 1.05,       // collision circle radius (m)
+  // Car body — collision is a capsule (two circles along the length) so the
+  // hitbox matches the visible chassis (1.9 wide × 4.2 long): the nose/tail no
+  // longer poke through walls, and the sides touch exactly at the body edge.
+  carColRadius: 0.95,    // capsule radius = body half-width (m)
+  carColOffset: 1.15,    // capsule end offset fwd/back from CG (reach = 2.1 m)
   carHalfWidth: 0.95,    // used for wall-face distance (zone scoring)
 
   // Chassis / mass properties. CG is biased rearward (lf > lr) so the car
@@ -64,18 +67,20 @@ export const TUNING = {
     grass:   { grip: 0.55, power: 0.40, top: 0.42 },
     boost:   { grip: 1.0,  power: 1.0,  top: 1.0 },
   },
-  boostAccel: 26,        // booster pad forced acceleration (m/s^2)
+  boostAccel: 13,        // booster pad forced acceleration (m/s^2)
 
   // Walls
   wallRestitution: 0.08,
   wallFrictionK: 0.55,   // tangential scrub scaled by normal impact
   wallYawDamp: 0.85,     // yaw damping on contact
 
-  // ERS (PRD §5)
+  // ERS (PRD §5) — passive "always-on" boost. Wall hugging charges the bar;
+  // the bar then continuously scales engine power and top speed (no deploy
+  // button) and bleeds off over time, so you stay fast by keeping it topped up.
   ersCap: 100,
-  ersDrain: 19,          // per second -> full bar ~5.3 s
-  ersPowerMul: 1.27,     // sustained shove, not a turbo spike
-  ersTopMul: 1.11,
+  ersPassivePower: 0.24, // +24% engine force at a full bar (scales with charge)
+  ersPassiveTop: 0.13,   // +13% top speed at a full bar
+  ersDecay: 5.5,         // bar bleeds per second -> full bar fades in ~18 s
 
   // Hug zones (PRD §5.1)
   zoneBand: 3.2,         // charge band from wall face (~1.5 car widths)
