@@ -269,27 +269,118 @@ function bindSettings() {
 }
 
 // ---------- debug tuning panel (PRD M1) ----------
+// Dev-only: grouped, collapsible sections covering every TUNING value (incl.
+// the nested per-surface grip/power/top), each with a slider + exact number
+// box, plus a "Copy JSON" export. Changes apply live to the running sim.
+
+const TUNE_SECTIONS = [
+  ['Simulation', ['dt', 'countdownTicks']],
+  ['Car body', ['carColRadius', 'carColOffset', 'carHalfWidth']],
+  ['Chassis & mass', ['mass', 'gravity', 'Iz', 'lf', 'lr', 'hcg']],
+  ['Engine & longitudinal', ['engineForce', 'topSpeed', 'brakeForce', 'brakeBias',
+    'reverseForce', 'reverseTop', 'reverseThresh', 'rollK', 'dragK']],
+  ['Tires', ['baseMu', 'corneringStiff', 'lowSpeedRef', 'yawDamp']],
+  ['Steering', ['maxSteerAngle', 'steerSpeedK', 'steerRate', 'recenterRate']],
+  ['Slide recovery', ['counterSteerBoost', 'assistMinSlip', 'assistFullSlip', 'assistYaw', 'assistVRef']],
+  ['Suspension (visual)', ['susStiff', 'susDamp', 'susPitchGain', 'susRollGain', 'susHeaveGain']],
+  ['Boosters', ['boostAccel']],
+  ['Walls', ['wallHalf', 'wallRestitution', 'wallFrictionK', 'wallYawDamp']],
+  ['ERS', ['ersCap', 'ersPassivePower', 'ersPassiveTop', 'ersDecay']],
+  ['Hug zones', ['zoneBand', 'zoneMax', 'zoneCurveExp', 'zoneSpeedRef', 'zonePerfect', 'zoneClose']],
+];
+const TUNE_SURFACES = ['asphalt', 'dirt', 'grass', 'boost'];
+
+function tuneRow(label, get, set) {
+  const def = get();
+  const row = document.createElement('label');
+  row.className = 'tune-row';
+  const span = document.createElement('span');
+  span.textContent = label;
+  const range = document.createElement('input');
+  range.type = 'range';
+  const span3 = (Math.abs(def) || 1) * 3;
+  range.min = def < 0 ? -span3 : 0;
+  range.max = span3;
+  range.step = span3 / 300;
+  range.value = def;
+  const num = document.createElement('input');
+  num.type = 'number';
+  num.step = 'any';
+  num.value = def;
+  const apply = (v, fromRange) => {
+    v = +v;
+    if (!isFinite(v)) return;
+    set(v);
+    if (fromRange) num.value = +v.toFixed(5);
+    else range.value = v;
+  };
+  range.oninput = () => apply(range.value, true);
+  num.oninput = () => apply(num.value, false);
+  row.append(span, range, num);
+  return row;
+}
 
 function buildTuningPanel() {
   const body = $('tuning-body');
   body.innerHTML = '';
-  for (const key of Object.keys(TUNING)) {
-    const v = TUNING[key];
-    if (typeof v !== 'number') continue;
-    const row = document.createElement('label');
-    row.className = 'tune-row';
-    const dv = DEFAULT_TUNING[key];
-    row.innerHTML = `<span>${key}</span><input type="range" min="0" max="${dv * 3}" step="${dv / 200 || 0.01}" value="${v}"><b>${v}</b>`;
-    const input = row.querySelector('input');
-    const out = row.querySelector('b');
-    input.oninput = () => { TUNING[key] = +input.value; out.textContent = (+input.value).toFixed(3).replace(/\.?0+$/, ''); };
-    body.appendChild(row);
+  for (const [name, keys] of TUNE_SECTIONS) {
+    const det = document.createElement('details');
+    const sum = document.createElement('summary');
+    sum.textContent = name;
+    det.appendChild(sum);
+    for (const k of keys) {
+      if (typeof TUNING[k] !== 'number') continue;
+      det.appendChild(tuneRow(k, () => TUNING[k], (v) => { TUNING[k] = v; }));
+    }
+    body.appendChild(det);
   }
-  $('tuning-reset').onclick = () => {
-    for (const k of Object.keys(DEFAULT_TUNING)) if (typeof DEFAULT_TUNING[k] === 'number') TUNING[k] = DEFAULT_TUNING[k];
-    buildTuningPanel();
-  };
+  // surfaces (nested object) — grip / power / top per surface
+  const det = document.createElement('details');
+  const sum = document.createElement('summary');
+  sum.textContent = 'Surfaces (grip / power / top)';
+  det.appendChild(sum);
+  for (const s of TUNE_SURFACES) {
+    const sub = document.createElement('div');
+    sub.className = 'tune-sub';
+    sub.textContent = s;
+    det.appendChild(sub);
+    for (const prop of ['grip', 'power', 'top']) {
+      det.appendChild(tuneRow(prop,
+        () => TUNING.surfaces[s][prop],
+        (v) => { TUNING.surfaces[s][prop] = v; }));
+    }
+  }
+  body.appendChild(det);
 }
+
+function resetTuning() {
+  for (const k of Object.keys(DEFAULT_TUNING)) {
+    const dv = DEFAULT_TUNING[k];
+    if (typeof dv === 'number') TUNING[k] = dv;
+    else if (k === 'surfaces') for (const s of Object.keys(dv)) Object.assign(TUNING.surfaces[s], dv[s]);
+  }
+  buildTuningPanel();
+}
+
+async function exportTuning() {
+  const str = JSON.stringify(TUNING, null, 2);
+  try {
+    await navigator.clipboard.writeText(str);
+    flashStatus('Tuning JSON copied to clipboard');
+    return;
+  } catch { /* clipboard API blocked — fall back */ }
+  const ta = document.createElement('textarea');
+  ta.value = str;
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { /* ignore */ }
+  ta.remove();
+  flashStatus(ok ? 'Tuning JSON copied to clipboard' : 'Copy failed — see console');
+  if (!ok) console.log(str);
+}
+
 
 // ---------- input ----------
 
@@ -401,6 +492,7 @@ function bindTouch() {
     if (app.race?.test) backFromTest();
     else { toMenu(); renderCampaignList(); }
   });
+  tap('tc-tune', () => $('tuning-panel').classList.toggle('show'));
 }
 
 // ---------- main loop ----------
@@ -531,6 +623,12 @@ function boot() {
   $('btn-retry').onclick = () => restartRace();
   $('btn-finish-menu').onclick = () => { toMenu(); };
   $('btn-back-editor').onclick = () => backFromTest();
+
+  // dev tuning panel (F2 on desktop; button on Settings + touch HUD elsewhere)
+  $('btn-tuning').onclick = () => $('tuning-panel').classList.add('show');
+  $('tuning-export').onclick = exportTuning;
+  $('tuning-reset').onclick = resetTuning;
+  $('tuning-close').onclick = () => $('tuning-panel').classList.remove('show');
 
   bindSettings();
   bindKeys();
