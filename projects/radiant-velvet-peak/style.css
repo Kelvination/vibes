@@ -97,8 +97,8 @@ input[type=text], input:not([type]) {
 /* Kept deliberately quiet so it never competes with the track for attention. */
 #hud-time {
   position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
-  font-size: 25px; font-weight: 600; font-variant-numeric: tabular-nums;
-  text-shadow: 0 1px 5px #000; opacity: 0.82;
+  font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 6px #000, 0 0 2px #000; opacity: 0.95;
 }
 #hud-split {
   position: absolute; top: 50px; left: 50%; transform: translateX(-50%);
@@ -111,12 +111,12 @@ input[type=text], input:not([type]) {
 
 #hud-topright {
   position: absolute; top: 14px; right: 16px; text-align: right;
-  font-size: 12px; text-shadow: 0 1px 4px #000; opacity: 0.7;
+  font-size: 13px; text-shadow: 0 1px 5px #000, 0 0 2px #000; opacity: 0.95;
 }
-#hud-pb { font-size: 14px; font-weight: 600; }
-#hud-medals { font-size: 11px; color: var(--dim); }
-#hud-medals span { margin-left: 8px; font-variant-numeric: tabular-nums; }
-#hud-cp { margin-top: 3px; color: var(--dim); font-size: 13px; }
+#hud-pb { font-size: 15px; font-weight: 700; }
+#hud-medals { font-size: 13px; color: #b9c6d8; margin-top: 2px; }
+#hud-medals span { margin-left: 10px; font-variant-numeric: tabular-nums; }
+#hud-cp { margin-top: 4px; color: #b9c6d8; font-size: 14px; font-weight: 600; }
 
 #hud-countdown {
   position: absolute; top: 32%; left: 50%; transform: translate(-50%, -50%);
@@ -291,6 +291,73 @@ body.touch #hud-bottom { bottom: 120px; }
 body.touch #hud-ers { width: min(200px, 42vw); }
 body.touch #hud-time { top: 52px; }
 body.touch #hud-split { top: 84px; }
+
+/* sense of speed: a vignette driven by speed from hud.update() */
+#speed-vignette {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  transition: opacity .15s linear;
+  background: radial-gradient(ellipse 75% 65% at 50% 50%, transparent 40%, rgba(4,8,16,0.9) 100%);
+}
+
+/* pre-race coaching banner (per-map tutorial line) */
+#hud-coach {
+  position: absolute; top: 64px; left: 50%; transform: translate(-50%, -8px);
+  max-width: min(640px, 86vw); text-align: center;
+  font-size: 15px; line-height: 1.5; color: var(--text);
+  background: rgba(8, 14, 26, 0.82); border: 1px solid #2e4263; border-left: 3px solid var(--cyan);
+  border-radius: 10px; padding: 10px 16px;
+  opacity: 0; transition: opacity .3s, transform .3s; pointer-events: none;
+}
+#hud-coach.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ERS bar: a clear "ready to deploy" state vs. the orange deploying state */
+#hud-ers.ready { border-color: #2f6f86; box-shadow: 0 0 10px rgba(24,224,255,.25); }
+#hud-ers.ready .ers-label { color: var(--cyan); }
+
+/* live closeness tier colours */
+#hud-zone[data-tier="perfect"] { color: var(--cyan); }
+#hud-zone[data-tier="perfect"] #hud-zone-fill { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+#hud-zone[data-tier="close"] { color: #7de8ff; }
+#hud-zone[data-tier="close"] #hud-zone-fill { background: #7de8ff; }
+#hud-zone[data-tier="safe"] { color: #9fb6c9; }
+#hud-zone[data-tier="safe"] #hud-zone-fill { background: #9fb6c9; }
+.zone-label { min-width: 56px; font-weight: 700; }
+
+/* campaign rows now carry the tutorial description */
+.campaign-row { align-items: flex-start; }
+.row-main { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.row-desc { font-size: 12px; line-height: 1.4; color: var(--dim); white-space: normal; }
+.campaign-row .medal { font-size: 18px; margin-top: 1px; }
+.campaign-row .row-pb { align-self: center; }
+
+/* countdown pulse + GO punch */
+#hud-countdown { animation: cd-pulse .55s ease-out; }
+@keyframes cd-pulse {
+  0% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; }
+  35% { opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0.95; }
+}
+
+/* finish panel: scale-in, and a gold flash on a new PB */
+#finish-panel.show { animation: finish-in .35s cubic-bezier(.2,1.2,.4,1); }
+@keyframes finish-in {
+  0% { transform: translate(-50%, -50%) scale(.85); opacity: 0; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+#finish-time.pb { color: var(--gold); animation: pb-flash 1.1s ease-out; }
+@keyframes pb-flash {
+  0%, 100% { text-shadow: none; }
+  40% { text-shadow: 0 0 26px var(--gold); }
+}
+
+/* touch ERS deploy button — above the gas pedal, amber to read as "boost" */
+.tc-ers {
+  right: max(18px, env(safe-area-inset-right)); bottom: 132px;
+  width: 64px; height: 64px; font-size: 26px;
+  background: rgba(255, 180, 40, 0.14); border-color: rgba(255, 180, 40, 0.55);
+}
+.tc-ers:active { background: rgba(255, 180, 40, 0.4); }
+body:not(.touch) .tc-ers { display: none; }
 
 @media (max-width: 600px) {
   .menu-box { margin: 3vh 14px; padding: 22px 18px; }

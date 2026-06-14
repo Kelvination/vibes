@@ -63,6 +63,20 @@ export class GameAudio {
     this.skidGain.gain.value = 0;
     this.skidSrc.connect(this.skidFilter).connect(this.skidGain).connect(this.master);
     this.skidSrc.start();
+
+    // wall scrape: the same noise through a higher, harsher bandpass
+    this.scrapeSrc = c.createBufferSource();
+    this.scrapeSrc.buffer = buf;
+    this.scrapeSrc.loop = true;
+    this.scrapeFilter = c.createBiquadFilter();
+    this.scrapeFilter.type = 'bandpass';
+    this.scrapeFilter.frequency.value = 2600;
+    this.scrapeFilter.Q.value = 0.8;
+    this.scrapeGain = c.createGain();
+    this.scrapeGain.gain.value = 0;
+    this.scrapeSrc.connect(this.scrapeFilter).connect(this.scrapeGain).connect(this.master);
+    this.scrapeSrc.start();
+    this._wasDeploying = false;
   }
 
   setEnabled(on) {
@@ -71,24 +85,33 @@ export class GameAudio {
   }
 
   // called every frame with live state
-  update({ speed = 0, racing = false, deploying = false, closeness = 0, inZone = false, slip = 0 }) {
+  update({ speed = 0, racing = false, deploying = false, closeness = 0, inZone = false, slip = 0, contact = false, impact = 0, surface = 'asphalt' }) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     const sp01 = Math.min(speed / 60, 1.2);
+    const dirt = surface === 'dirt';
     this.engGain.gain.setTargetAtTime(racing ? 0.10 : 0, t, 0.08);
     this.engOsc.frequency.setTargetAtTime(55 + sp01 * 230 + (deploying ? 30 : 0), t, 0.05);
-    this.engFilter.frequency.setTargetAtTime(450 + sp01 * 1500, t, 0.08);
+    // dirt drops the filter for a grittier, throatier note
+    this.engFilter.frequency.setTargetAtTime((dirt ? 300 : 450) + sp01 * (dirt ? 900 : 1500), t, 0.08);
 
-    this.ersGain.gain.setTargetAtTime(deploying ? 0.06 : 0, t, 0.05);
+    // deploy whoosh on the rising edge so spending ERS has an onset, not a hum
+    if (deploying && !this._wasDeploying) this.blip(520, 0.22, 'sawtooth', 0.12);
+    this._wasDeploying = deploying;
+    this.ersGain.gain.setTargetAtTime(deploying ? 0.08 : 0, t, 0.05);
     this.ersOsc.frequency.setTargetAtTime(640 + sp01 * 900, t, 0.05);
 
-    const px = inZone ? 0.05 + closeness * 0.07 : 0;
-    this.proxGain.gain.setTargetAtTime(px * 0.4, t, 0.04);
+    // proximity hum: more present as you near the wall, so closeness is audible
+    const px = inZone ? 0.07 + closeness * 0.14 : 0;
+    this.proxGain.gain.setTargetAtTime(px * 0.5, t, 0.04);
     this.proxLfoGain.gain.setTargetAtTime(px, t, 0.04);
-    this.proxLfo.frequency.setTargetAtTime(4 + closeness * 26, t, 0.05);
+    this.proxLfo.frequency.setTargetAtTime(4 + closeness * 30, t, 0.05);
     this.proxOsc.frequency.setTargetAtTime(1100 + closeness * 900, t, 0.05);
 
     this.skidGain.gain.setTargetAtTime(Math.min(slip / 14, 1) * 0.12, t, 0.06);
+    // scrape rides on wall contact, louder with impact speed
+    this.scrapeGain.gain.setTargetAtTime(contact ? Math.min(0.04 + impact * 0.02, 0.22) : 0, t, 0.02);
+    this.scrapeFilter.frequency.setTargetAtTime(2200 + Math.min(speed, 40) * 30, t, 0.05);
   }
 
   blip(freq, dur = 0.1, type = 'square', gain = 0.18, when = 0) {
@@ -108,7 +131,22 @@ export class GameAudio {
   beep(n) { this.blip(n === 1 ? 540 : 440, 0.12); }
   go() { this.blip(880, 0.3); }
   checkpoint() { this.blip(660, 0.08, 'sine', 0.2); this.blip(990, 0.12, 'sine', 0.2, 0.07); }
-  finishChime() { [660, 880, 1100, 1320].forEach((f, i) => this.blip(f, 0.18, 'sine', 0.18, i * 0.09)); }
+  // a rising two-note "lock-on" the instant the car enters a hug zone
+  zoneEnter() { this.blip(700, 0.06, 'sine', 0.12); this.blip(1050, 0.08, 'sine', 0.12, 0.05); }
+  // longer, richer fanfare the better the medal; bronze is a plain chime
+  finishChime(medal) {
+    const sets = {
+      author: [523, 659, 784, 1047, 1319],
+      gold: [523, 659, 784, 1047],
+      silver: [523, 659, 784],
+      bronze: [523, 659],
+    };
+    const notes = sets[medal] || [660, 880, 1100, 1320];
+    notes.forEach((f, i) => this.blip(f, 0.22, 'sine', 0.18, i * 0.1));
+    if (medal === 'author' || medal === 'gold') { // add a shimmer layer
+      notes.forEach((f, i) => this.blip(f * 2, 0.18, 'triangle', 0.06, i * 0.1 + 0.02));
+    }
+  }
   award(rating) {
     const f = rating === 'PERFECT' ? 1400 : rating === 'CLOSE' ? 1100 : 850;
     this.blip(f, 0.1, 'sine', 0.22);
