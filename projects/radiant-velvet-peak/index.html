@@ -63,12 +63,13 @@
   <div id="screen-help" class="screen menu-screen">
     <div class="menu-box wide help">
       <h2>How to Play</h2>
-      <p><b>Drive:</b> W/↑ throttle · S/↓ brake (reverse at low speed) · A,D/←,→ steer ·
-        <b>Enter</b> respawn at checkpoint · <b>Backspace</b> instant restart · <b>C</b> camera · <b>G</b> ghost · <b>F2</b> tuning panel.
-        On mobile: on-screen steer, gas and brake buttons.</p>
-      <p><b>Handling:</b> at speed the car understeers — brake while turning and the rear rotates you into the corner. Catch it with counter-steer; release the brake to recover.</p>
-      <p><b>Wall energy (ERS):</b> glowing cyan strips on walls are hug zones. Each pays <em>once per run</em>, scored by your closest approach at speed — millimeters pay the most. <b>Touching the wall voids the zone.</b>
-        The ERS bar is a <b>passive boost</b>: whatever you've banked continuously raises your power and top speed, and slowly bleeds away — so keep hugging walls to stay fast. No button to press.</p>
+      <p><b>Drive:</b> W/↑ throttle · S/↓ brake (reverse at low speed) · A,D/←,→ steer · <b>Space</b> handbrake ·
+        <b>Shift</b> deploy ERS (hold) · <b>E</b> deploy ERS (toggle) ·
+        <b>Enter</b> respawn at checkpoint · <b>Backspace</b> instant restart · <b>C</b> camera · <b>G</b> ghost.
+        On mobile: on-screen steer, gas, brake and ⚡ deploy buttons.</p>
+      <p><b>Handling:</b> at speed the car understeers — brake while turning and the rear rotates you into the corner. Catch it with counter-steer; release the brake to recover. Tap <b>Space</b> (handbrake) to snap the rear out and clip a tight apex.</p>
+      <p><b>Wall energy (ERS):</b> glowing strips on walls are hug zones (the hotter green ones are higher-paying apex zones). Each pays <em>once per run</em>, scored by your closest approach at speed — millimeters pay the most. <b>Touching the wall voids the zone.</b>
+        Hugging banks energy in the ERS bar; <b>deploy it</b> with Shift (hold) or E (toggle) for a sustained engine boost — spend it on a straight to bank a faster lap.</p>
       <p><b>The racing line:</b> corners reward outside–inside–outside. Enter wide hugging the outer wall (entry zone on the segment before the turn), clip the glowing <em>apex zone</em> on the inside wall — the main payout — then run wide again across the exit zone on the segment after the turn.</p>
       <p><b>Editor:</b> click to place · R rotate · right-click delete · 1/2/3 toggle Entry/Apex/Exit zones on a hovered curve · Ctrl+Z/Y undo/redo ·
         T test drive · finish a test run to set the author time (medals derive from it) · middle-drag/Shift-drag pan · wheel zoom · Q/E rotate camera.
@@ -79,7 +80,9 @@
 
   <!-- ===== Driving HUD ===== -->
   <div id="screen-game" class="screen hud-screen">
+    <div id="speed-vignette"></div>
     <div id="hud-time">00:00.000</div>
+    <div id="hud-coach"></div>
     <div id="hud-split"></div>
     <div id="hud-topright">
       <div id="hud-pb">PB --:--.---</div>
@@ -91,7 +94,7 @@
     <div id="hud-bottom">
       <div id="hud-speed-wrap"><span id="hud-speed">0</span><small>km/h</small></div>
       <div id="hud-ers"><div id="hud-ers-fill"></div><span class="ers-label">ERS</span></div>
-      <div id="hud-zone"><span>IN ZONE</span><div class="zone-meter"><div id="hud-zone-fill"></div></div></div>
+      <div id="hud-zone"><span class="zone-label">IN ZONE</span><div class="zone-meter"><div id="hud-zone-fill"></div></div></div>
     </div>
 
     <!-- Touch controls — shown only on touch devices (body.touch) -->
@@ -100,11 +103,12 @@
       <button class="tc-btn tc-arrow" id="tc-right" aria-label="Steer right"></button>
       <button class="tc-btn tc-arrow tc-brake" id="tc-brake" aria-label="Brake"></button>
       <button class="tc-btn tc-arrow tc-gas" id="tc-gas" aria-label="Accelerate"></button>
+      <button class="tc-btn tc-ers" id="tc-ers" aria-label="Deploy ERS">⚡</button>
       <div class="tc-top">
         <button class="tc-small" id="tc-menu">Menu</button>
         <button class="tc-small" id="tc-restart">Restart</button>
         <button class="tc-small" id="tc-respawn">Checkpoint</button>
-        <button class="tc-small" id="tc-tune">Tune</button>
+        <button class="tc-small" id="tc-cam">Cam</button>
       </div>
     </div>
 

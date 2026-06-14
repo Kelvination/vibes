@@ -94,10 +94,22 @@ for (const m of CAMPAIGN) {
   if (!res.ok) { console.log(`${m.id} ${m.name}: BOT FAIL — ${res.why}`); fail++; continue; }
   const author = Math.round(res.ms * 0.92);
   const full = track.corners.filter((c) => c.entry && c.apex && c.exit).length;
+  // 'misaligned' is a real geometry BUG (a straight that should align doesn't);
+  // 'trimmed' is a soft WARNING (two corners genuinely too close to fit both
+  // zones — unavoidable in tight chicanes). 'corner'/'hug'/'no_neighbor'/'off'
+  // are by design and not reported.
+  const flags = (set) => track.corners
+    .filter((c) => set.has(c.entryReason) || set.has(c.exitReason))
+    .map((c) => `block ${c.block} (${placements[c.block].id} @ ${placements[c.block].x},${placements[c.block].z}): ` +
+      [['entry', c.entryReason], ['exit', c.exitReason]]
+        .filter(([, why]) => set.has(why)).map(([k2, why]) => `${k2} ${why}`).join(', '));
+  const bugs = flags(new Set(['misaligned']));
+  const warns = flags(new Set(['trimmed']));
   console.log(`${m.id} ${m.name}: bot ${fmtTime(res.ms)}  -> authorTime: ${author} (gold ${fmtTime(author * 1.06)}, silver ${fmtTime(author * 1.2)}, bronze ${fmtTime(author * 1.5)})  blocks=${placements.length} zones=${track.zones.length} cps=${track.cps.length}`);
-  console.log(`   racing line: ${full}/${track.corners.length} corners with full entry+apex+exit zone set` +
-    track.corners.filter((c) => !(c.entry && c.apex && c.exit))
-      .map((c) => `\n   - block ${c.block} (${placements[c.block].id} @ ${placements[c.block].x},${placements[c.block].z}): ${['entry', 'apex', 'exit'].filter((k2) => !c[k2]).join('/')} missing`)
-      .join(''));
+  console.log(`   racing line: ${full}/${track.corners.length} corners fully zoned` +
+    (bugs.length ? bugs.map((s) => `\n   ✗ BUG ${s}`).join('') : '') +
+    (warns.length ? warns.map((s) => `\n   · tight ${s}`).join('') : '') +
+    (!bugs.length && !warns.length ? ' (remaining gaps are chicanes/hug-roads by design)' : ''));
+  if (bugs.length) fail++;
 }
 process.exit(fail ? 1 : 0);

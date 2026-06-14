@@ -18,7 +18,8 @@ const app = {
   settings: persist.loadSettings(),
   renderer: null, hud: null, audio: null, editor: null,
   keys: new Set(),
-  touch: { gas: false, brake: false, left: false, right: false },
+  touch: { gas: false, brake: false, left: false, right: false, deploy: false, handbrake: false },
+  ersToggle: false,      // E toggles sustained ERS deploy (Shift = hold)
   race: null,            // { rs, map, track, prev, ghost, test, rec }
   acc: 0, lastT: 0,
 };
@@ -40,7 +41,9 @@ function toMenu() {
 
 // ---------- campaign / library lists ----------
 
-const MEDAL_ICON = { author: '◆', gold: '●', silver: '●', bronze: '●' };
+// distinct glyphs so medals don't rely on colour alone (accessibility)
+const MEDAL_GLYPH = { author: '◆', gold: '★', silver: '✦', bronze: '✸' };
+const MEDAL_LABEL = { author: 'AUTHOR', gold: 'GOLD', silver: 'SILVER', bronze: 'BRONZE' };
 
 function renderCampaignList() {
   const el = $('campaign-list');
@@ -49,10 +52,13 @@ function renderCampaignList() {
     const rec = persist.getRecord(`campaign:${m.id}`);
     const medal = rec?.pb != null ? medalFor(rec.pb, m) : null;
     const row = document.createElement('button');
-    row.className = 'list-row';
+    row.className = 'list-row campaign-row';
     row.innerHTML = `
-      <span class="medal ${medal ? 'm-' + medal : 'm-none'}">${medal ? MEDAL_ICON[medal] : '○'}</span>
-      <span class="row-name">${m.name}</span>
+      <span class="medal ${medal ? 'm-' + medal : 'm-none'}" title="${medal ? MEDAL_LABEL[medal] : 'not yet medalled'}">${medal ? MEDAL_GLYPH[medal] : '○'}</span>
+      <span class="row-main">
+        <span class="row-name">${m.name}</span>
+        <span class="row-desc">${escapeHtml(m.desc || '')}</span>
+      </span>
       <span class="row-pb">${rec?.pb != null ? fmtTime(rec.pb) : '—'}</span>`;
     row.onclick = () => startRace(campaignMap(m.id));
     el.appendChild(row);
@@ -114,6 +120,7 @@ function startRace(map, { test = false, draft = null } = {}) {
     prev: null,
     ghost: app.settings.ghost && rec?.ghost ? rec.ghost : null,
   };
+  app.ersToggle = false;
   app.renderer.showGuides = false;
   app.renderer.buildTrack(track);
   app.renderer.clearSkids();
@@ -124,6 +131,7 @@ function startRace(map, { test = false, draft = null } = {}) {
   app.renderer.snapCamera(app.race.rs.car);
   app.hud.reset();
   app.hud.setMapInfo(map, rec);
+  if (map.desc && !test) app.hud.coach(map.desc);
   $('finish-panel').classList.remove('show');
   showScreen('screen-game');
   app.audio.ensure();
@@ -134,6 +142,7 @@ function restartRace() {
   if (!r) return;
   r.rs = createRace(r.track, { laps: r.map.laps || 1 }); // instant: track/scene untouched (PRD §3, < 100 ms)
   r.ghost = app.settings.ghost && r.rec?.ghost ? r.rec.ghost : null;
+  app.ersToggle = false;
   app.renderer.clearSkids();
   snapPrev();
   app.renderer.snapCamera(r.rs.car);
@@ -148,7 +157,6 @@ function snapPrev() {
 
 function sampleInput() {
   const k = app.keys, tc = app.touch;
-  // ERS is a passive boost now (no deploy input — see sim.js step()).
   // Steer sign: the chase camera looks down +z, which mirrors world X on
   // screen, so the sim's internal +steer (turns toward +x) reads as a LEFT
   // turn to the player. Map the controls accordingly: left key -> +1.
@@ -158,6 +166,9 @@ function sampleInput() {
     throttle: k.has('w') || k.has('arrowup') || tc.gas,
     brake: k.has('s') || k.has('arrowdown') || tc.brake,
     steer: (left ? 1 : 0) - (right ? 1 : 0),
+    // ERS deploy: hold Shift, or toggle with E (mobile: hold the ⚡ button)
+    deploy: k.has('shift') || app.ersToggle || tc.deploy,
+    handbrake: k.has(' ') || tc.handbrake,
   };
 }
 
@@ -176,6 +187,10 @@ function processEvents(rs) {
         app.audio.checkpoint();
         app.hud.popup(`LAP ${e.lap}/${e.total}`, 'lap');
         break;
+      case 'zoneEnter':
+        app.audio.zoneEnter();
+        app.renderer.sparkBurst();
+        break;
       case 'zoneAward':
         app.hud.popup(`+${Math.max(1, Math.round(e.award))} ${e.rating}`, e.rating.toLowerCase());
         app.audio.award(e.rating);
@@ -183,6 +198,11 @@ function processEvents(rs) {
       case 'zoneVoid':
         app.hud.popup('VOID', 'void');
         app.audio.voidBuzz();
+        // Teach the void rule the first time it ever happens.
+        if (!persist.getFlag('sawVoid')) {
+          persist.setFlag('sawVoid');
+          flashStatus('VOID — you touched the wall. Zones only pay if you skim close without contact.');
+        }
         break;
       case 'finish': onFinish(e.ticks); break;
     }
@@ -218,18 +238,19 @@ function onFinish(ticks) {
   const medal = medalFor(ms, r.map);
   $('finish-title').textContent = improved ? 'New personal best!' : 'Finished';
   $('finish-time').textContent = fmtTime(ms);
-  $('finish-medal').textContent = medal ? `${MEDAL_ICON[medal]} ${medal.toUpperCase()} medal` : '';
+  $('finish-medal').textContent = medal ? `${MEDAL_GLYPH[medal]} ${medal.toUpperCase()} medal` : '';
   $('finish-medal').className = medal ? `m-${medal}` : '';
   $('finish-delta').textContent = prevPb != null
     ? (improved ? `−${fmtTime(prevPb - ms)} vs old PB` : `+${fmtTime(ms - prevPb)} vs PB ${fmtTime(prevPb)}`)
     : '';
+  $('finish-time').classList.toggle('pb', improved);
   const isCampaign = !!r.map.campaign;
   const next = isCampaign ? CAMPAIGN[CAMPAIGN.findIndex((c) => `campaign:${c.id}` === r.map.key) + 1] : null;
   $('btn-next').style.display = next ? '' : 'none';
   $('btn-next').onclick = () => startRace(campaignMap(next.id));
   $('btn-back-editor').style.display = 'none';
   $('finish-panel').classList.add('show');
-  app.audio.finishChime();
+  app.audio.finishChime(medal);
 }
 
 // ---------- editor ----------
@@ -280,13 +301,14 @@ const TUNE_SECTIONS = [
   ['Engine & longitudinal', ['engineForce', 'topSpeed', 'brakeForce', 'brakeBias',
     'reverseForce', 'reverseTop', 'reverseThresh', 'rollK', 'dragK']],
   ['Tires', ['baseMu', 'corneringStiff', 'lowSpeedRef', 'yawDamp']],
+  ['Handbrake', ['handbrakeGrip', 'handbrakeBrake']],
   ['Steering', ['maxSteerAngle', 'steerSpeedK', 'steerRate', 'recenterRate']],
   ['Slide recovery', ['counterSteerBoost', 'assistMinSlip', 'assistFullSlip', 'assistYaw', 'assistVRef']],
   ['Suspension (visual)', ['susStiff', 'susDamp', 'susPitchGain', 'susRollGain', 'susHeaveGain']],
   ['Boosters', ['boostAccel']],
-  ['Walls', ['wallHalf', 'wallRestitution', 'wallFrictionK', 'wallYawDamp']],
-  ['ERS', ['ersCap', 'ersPassivePower', 'ersPassiveTop', 'ersDecay']],
-  ['Hug zones', ['zoneBand', 'zoneMax', 'zoneCurveExp', 'zoneSpeedRef', 'zonePerfect', 'zoneClose']],
+  ['Walls', ['wallHalf', 'wallRestitution', 'wallFrictionK', 'wallScrubMax', 'wallYawDamp']],
+  ['ERS', ['ersCap', 'ersPassivePower', 'ersPassiveTop', 'ersDeployDrain', 'ersDecay']],
+  ['Hug zones', ['zoneBand', 'zoneMax', 'zoneCurveExp', 'zoneSpeedRef', 'zoneSpeedExp', 'zonePerfect', 'zoneClose']],
 ];
 const TUNE_SURFACES = ['asphalt', 'dirt', 'grass', 'boost'];
 
@@ -405,7 +427,8 @@ function bindKeys() {
       app.audio.ensure();
       const rs = app.race.rs;
       if (k === 'backspace' || k === 'delete') restartRace();
-      else if (k === 'enter') { respawn(rs); snapPrev(); app.renderer.snapCamera(rs.car); app.renderer.clearSkids(); }
+      else if (k === 'enter') { respawn(rs); app.ersToggle = false; snapPrev(); app.renderer.snapCamera(rs.car); app.renderer.clearSkids(); }
+      else if (k === 'e' && !e.repeat) { app.ersToggle = !app.ersToggle; flashStatus(`ERS deploy ${app.ersToggle ? 'ON (toggle)' : 'off'}`); }
       else if (k === 'g') { app.settings.ghost = !app.settings.ghost; persist.saveSettings(app.settings); app.race.ghost = app.settings.ghost ? app.race.rec?.ghost : null; flashStatus(`Ghost ${app.settings.ghost ? 'on' : 'off'}`); }
       else if (k === 'c') { app.renderer.camMode = app.renderer.camMode === 'chase' ? 'hood' : 'chase'; }
       else if (k === 'escape') {
@@ -470,6 +493,7 @@ function bindTouch() {
   hold('tc-brake', 'brake');
   hold('tc-left', 'left');
   hold('tc-right', 'right');
+  hold('tc-ers', 'deploy');
 
   // Small buttons are taps. Since touchstart's default is prevented (no click
   // fires on iOS), trigger them on pointerup instead.
@@ -492,7 +516,9 @@ function bindTouch() {
     if (app.race?.test) backFromTest();
     else { toMenu(); renderCampaignList(); }
   });
-  tap('tc-tune', () => $('tuning-panel').classList.toggle('show'));
+  tap('tc-cam', () => {
+    if (app.mode === 'race') app.renderer.camMode = app.renderer.camMode === 'chase' ? 'hood' : 'chase';
+  });
 }
 
 // ---------- main loop ----------
@@ -528,7 +554,8 @@ function frame(now) {
     app.renderer.updateSkids(ix, iz, ih, rs.phase === 'racing' ? c : null);
     app.renderer.updateZones(rs.zones);
     app.renderer.updateSparks(c, rs.zoneLive);
-    app.renderer.updateChase({ x: ix, z: iz, h: ih }, c.speed, rs.deploying, dtReal);
+    if (c.contact && c.impact > 0.6) app.renderer.addShake(c.impact);
+    app.renderer.updateChase({ x: ix, z: iz, h: ih, yaw: c.yaw }, c.speed, rs.deploying, dtReal);
 
     // PB ghost playback (every-2-ticks samples)
     if (r.ghost && rs.phase !== 'countdown') {
@@ -549,6 +576,8 @@ function frame(now) {
       closeness: rs.zoneLive.closeness,
       inZone: rs.zoneLive.active,
       slip: Math.abs(c.vL) + (c.sliding ? 6 : 0),
+      contact: c.contact, impact: c.impact,
+      surface: c.surface,
     });
   } else if (app.mode === 'editor') {
     app.editor.frame();
@@ -624,7 +653,10 @@ function boot() {
   $('btn-finish-menu').onclick = () => { toMenu(); };
   $('btn-back-editor').onclick = () => backFromTest();
 
-  // dev tuning panel (F2 on desktop; button on Settings + touch HUD elsewhere)
+  // dev tuning panel — hidden from normal players (F2 always works as a power-
+  // user shortcut; the visible Settings entry only appears with ?dev in the URL)
+  const DEV = /[?&]dev\b/.test(location.search);
+  $('btn-tuning').style.display = DEV ? '' : 'none';
   $('btn-tuning').onclick = () => $('tuning-panel').classList.add('show');
   $('tuning-export').onclick = exportTuning;
   $('tuning-reset').onclick = resetTuning;
