@@ -53,6 +53,18 @@ export const TUNING = {
   steerRate: 6.0,        // input ramp 0 -> 1 (1/s) — weightier than instant
   recenterRate: 12.0,    // faster re-center on release
 
+  // Slide recovery (arcade catch assist). A raycast/bicycle car saturates at
+  // high slip and won't self-straighten from a big slide, so two assists ramp
+  // in with sideslip — both ~0 in normal driving and small drifts, so it stays
+  // skill-expressive, but a 45–90° slide becomes catchable instead of a spin:
+  //   1) steering lock is restored so you have the counter-steer range, and
+  //   2) a restoring yaw moment nudges the nose back toward the travel vector.
+  counterSteerBoost: 1.2,  // extra steer lock (×) ramped in by full sideslip
+  assistMinSlip: 0.45,     // rad (~26°): yaw assist starts above this slip
+  assistFullSlip: 1.05,    // rad (~60°): assists fully ramped in here
+  assistYaw: 100,          // restoring yaw moment per m/s of speed (N·m·s/m)
+  assistVRef: 32,          // speed (m/s) at which the yaw assist saturates
+
   // Suspension visuals (spring-damper, render-only body lean/dive/squat)
   susStiff: 230,         // spring constant toward the load-transfer target
   susDamp: 17,           // damping (slightly underdamped -> a little bounce)

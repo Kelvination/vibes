@@ -54,6 +54,7 @@
       <h2>Settings</h2>
       <label class="check"><input type="checkbox" id="set-audio"> Audio</label>
       <label class="check"><input type="checkbox" id="set-ghost"> PB ghost (G during race)</label>
+      <button id="btn-tuning">Dev Tuning Panel</button>
       <button class="btn-back">Back</button>
     </div>
   </div>
@@ -103,6 +104,7 @@
         <button class="tc-small" id="tc-menu">Menu</button>
         <button class="tc-small" id="tc-restart">Restart</button>
         <button class="tc-small" id="tc-respawn">Checkpoint</button>
+        <button class="tc-small" id="tc-tune">Tune</button>
       </div>
     </div>
 
@@ -136,7 +138,14 @@
 
   <!-- ===== Debug tuning panel (PRD M1) ===== -->
   <div id="tuning-panel">
-    <div class="tune-head"><b>Tuning (F2)</b><button id="tuning-reset">Reset</button></div>
+    <div class="tune-head">
+      <b>Tuning</b>
+      <div class="tune-head-btns">
+        <button id="tuning-export">Copy JSON</button>
+        <button id="tuning-reset">Reset</button>
+        <button id="tuning-close" aria-label="Close">✕</button>
+      </div>
+    </div>
     <div id="tuning-body"></div>
   </div>
 
