@@ -195,7 +195,11 @@ export function step(rs, input) {
   const dFzLong = m * c.aF * t.hcg / L;             // +accel shifts load rearward
   const FzF = Math.max(0, W * t.lr / L - dFzLong);
   const FzR = Math.max(0, W * t.lf / L + dFzLong);
-  const mu = t.baseMu * surf.grip;
+  // Tire grip: base × surface, plus a small ERS grip bonus, then split per axle
+  // (gripFront/gripRear let you dial understeer/oversteer balance independently).
+  const muBase = t.baseMu * surf.grip * (1 + t.ersPassiveGrip * ersFrac);
+  const muF = muBase * t.gripFront;
+  const muR = muBase * t.gripRear;
 
   // --- longitudinal forces (N) ---
   let driveF = 0;            // drive applied at the rear axle (RWD feel)
@@ -225,7 +229,7 @@ export function step(rs, input) {
   let FyR = -t.corneringStiff * FzR * slipR;
 
   // friction circle per axle: longitudinal use eats into lateral capacity
-  const capF = mu * FzF, capR = mu * FzR;
+  const capF = muF * FzF, capR = muR * FzR;
   const fxF = Math.max(-capF, Math.min(capF, brakeF));
   const fxR = Math.max(-capR, Math.min(capR, driveF + brakeR));
   const latF = Math.sqrt(Math.max(0, capF * capF - fxF * fxF));
@@ -253,6 +257,15 @@ export function step(rs, input) {
   // drifts stay fully in the player's hands.
   if (slideRamp > 0) {
     Mz += Math.sign(beta) * slideRamp * t.assistYaw * Math.min(speed, t.assistVRef);
+  }
+
+  // Brake-lock rotation: when the rear axle's brake force saturates its grip the
+  // locked rear steps out. Add a yaw moment in the steered direction, scaled by
+  // how locked the rear is, so trail-braking rotates the car into the corner.
+  // Only acts while braking + steering; brakeRotation = 0 disables it.
+  if (t.brakeRotation && brakeR !== 0 && capR > 1) {
+    const rearLock = Math.min(1, Math.abs(brakeR) / capR);
+    Mz += t.brakeRotation * rearLock * steerAngle * Math.min(speed, t.assistVRef);
   }
 
   // --- integrate rigid-body motion (semi-implicit, body frame) ---

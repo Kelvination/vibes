@@ -310,7 +310,10 @@ body.touch #editor-block-btn {
 #tuning-body details[open] summary { border-bottom: 1px dashed #243450; margin-bottom: 6px; }
 .tune-sub { color: var(--dim); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; margin: 8px 0 3px; }
 
-.tune-row { display: grid; grid-template-columns: 96px 1fr 58px; gap: 8px; align-items: center; font-size: 12px; margin-bottom: 5px; }
+.tune-rowwrap { margin-bottom: 9px; }
+.tune-rowwrap .tune-row { margin-bottom: 2px; }
+.tune-help { font-size: 10.5px; line-height: 1.35; color: var(--dim); padding-left: 1px; }
+.tune-row { display: grid; grid-template-columns: 104px 1fr 58px; gap: 8px; align-items: center; font-size: 12px; margin-bottom: 5px; }
 .tune-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tune-row input[type=range] { width: 100%; min-width: 0; }
 .tune-row input[type=number] {

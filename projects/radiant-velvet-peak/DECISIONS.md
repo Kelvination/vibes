@@ -18,7 +18,9 @@ entry here (and add new ones).** Newest first.
   power + top speed and bleeds off over time; there is NO hold/toggle deploy and
   NO on-screen ERS button. Wall-hugging banks the bar; it auto-applies. Do not
   reintroduce active/deploy ERS. (`sim.js` step(): `ersPassivePower`,
-  `ersPassiveTop`, `ersDecay`; HUD shows live `+X%`.)
+  `ersPassiveTop`, `ersPassiveGrip`, `ersDecay`; HUD shows live `+X%`.)
+- **ERS also raises grip** (`ersPassiveGrip`, default +10% at a full bar) on top
+  of power + top speed, so a banked bar makes the car corner a little better too.
 
 ## Handling
 - **Slide-recovery assist** ramps in only at large sideslip (>~26°): restores
@@ -30,6 +32,13 @@ entry here (and add new ones).** Newest first.
   (`+wallHalf`). Hug-zone distance is measured from the closest point on the car
   body (capsule), not its center.
 - **Boosters are intentionally mild** (`boostAccel` ~13). Don't crank them back up.
+- **Grip is split per axle**: `gripFront` / `gripRear` multiply the per-axle
+  friction circle (`muF` / `muR` in `sim.js`), so understeer/oversteer balance is
+  tunable. Both default 1.0 (neutral). Don't collapse them back into one `mu`.
+- **Brake-lock rotation is a tunable assist**: `brakeRotation` (default 45) adds a
+  yaw moment in the steered direction proportional to how saturated the rear
+  brake is, so trail-braking rotates the car into the corner. 0 = pure emergent
+  behaviour. It only acts while braking AND steering. Keep it exposed/tunable.
 
 ## Visuals
 - **Skid marks**: lay rubber past a low lateral-slip threshold with hysteresis
@@ -81,5 +90,7 @@ entry here (and add new ones).** Newest first.
 
 ## Dev tools
 - F2 / Settings "Dev Tuning Panel": sectioned sliders + number boxes for every
-  TUNING value (incl. per-surface), with "Copy JSON" export. Dev-only.
+  TUNING value (incl. per-surface), with "Copy JSON" export. Dev-only. Each row
+  has a friendly label + a plain-language description (`TUNE_META` / `SURF_META`
+  in `main.js`) — keep these in sync when adding/renaming a TUNING value.
 </content>

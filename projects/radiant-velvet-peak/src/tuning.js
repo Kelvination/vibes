@@ -35,6 +35,9 @@ export const TUNING = {
   topSpeed: 52,          // soft drag ceiling (m/s) before surface/ERS multipliers
   brakeForce: 13000,     // total brake force (N), split by brakeBias
   brakeBias: 0.62,       // fraction of brake force on the front axle
+  brakeRotation: 45,     // trail-brake rotation: a rear locked under braking adds
+                         // yaw in the steered direction (spins the car into the
+                         // corner). 0 = off; higher = the rear steps out sooner.
   reverseForce: 4000,    // reverse drive force (N)
   reverseTop: 11,        // max reverse speed (m/s)
   reverseThresh: 1.6,    // below this fwd speed, brake becomes reverse (m/s)
@@ -43,6 +46,8 @@ export const TUNING = {
 
   // Tires
   baseMu: 1.5,           // asphalt friction coefficient (scaled by surface)
+  gripFront: 1.0,        // front-axle grip multiplier (×μ): <1 = more understeer
+  gripRear: 1.0,         // rear-axle grip multiplier (×μ): <1 = looser rear/oversteer
   corneringStiff: 6.5,   // lateral stiffness per unit normal load (1/rad)
   lowSpeedRef: 3.0,      // m/s — tire forces fade in below this (kills jitter)
   yawDamp: 1700,         // yaw-rate damping torque coefficient (N m s/rad)
@@ -95,6 +100,7 @@ export const TUNING = {
   ersCap: 100,
   ersPassivePower: 0.24, // +24% engine force at a full bar (scales with charge)
   ersPassiveTop: 0.13,   // +13% top speed at a full bar
+  ersPassiveGrip: 0.10,  // +10% tire grip at a full bar (front + rear)
   ersDecay: 5.5,         // bar bleeds per second -> full bar fades in ~18 s
 
   // Hug zones (PRD §5.1)
