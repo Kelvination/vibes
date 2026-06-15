@@ -305,8 +305,8 @@ export class Renderer3D {
         flat(roadW * 0.7, S * 0.6, COL.boost, S / 2, S / 2, 0.08);
         break;
       }
-      case 'curve1': case 'curve2': case 'dirt_curve': {
-        const k = p.id === 'curve2' ? 2 : 1;
+      case 'curve1': case 'curve2': case 'curve3': case 'dirt_curve': {
+        const k = def.curveK || 1;
         const rIn = (k - 1) * S + MARGIN, rOut = k * S - MARGIN;
         const ring = new THREE.Mesh(
           new THREE.RingGeometry(rIn, rOut, 14 * k, 1, -Math.PI, Math.PI / 2),
