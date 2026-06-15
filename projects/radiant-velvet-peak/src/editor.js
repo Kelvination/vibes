@@ -46,12 +46,57 @@ export class Editor {
         pal.appendChild(b);
       }
     }
+    this.buildBlockModal();
     this.select('road');
   }
+
+  // Mobile/touch block picker: collapsible category "folders" in a modal.
+  buildBlockModal() {
+    const wrap = $('blockmodal-list');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    this.bmSections = {};
+    for (const cat of CATEGORIES) {
+      const sec = document.createElement('div');
+      sec.className = 'bm-cat';
+      const head = document.createElement('button');
+      head.className = 'bm-cathead';
+      head.innerHTML = `<span>${cat}</span><span class="bm-chev">▸</span>`;
+      head.onclick = () => sec.classList.toggle('open');
+      const group = document.createElement('div');
+      group.className = 'bm-group';
+      for (const id in BLOCKS) {
+        if (BLOCKS[id].cat !== cat) continue;
+        const b = document.createElement('button');
+        b.className = 'bm-block';
+        b.dataset.block = id;
+        b.textContent = BLOCKS[id].name;
+        b.onclick = () => { this.select(id); this.closeBlockModal(); };
+        group.appendChild(b);
+      }
+      sec.append(head, group);
+      wrap.appendChild(sec);
+      this.bmSections[cat] = sec;
+    }
+  }
+
+  openBlockModal() {
+    const m = $('editor-blockmodal');
+    if (!m) return;
+    // open the folder holding the current selection so it's visible
+    const cat = BLOCKS[this.sel]?.cat;
+    for (const c in this.bmSections) this.bmSections[c].classList.toggle('open', c === cat);
+    m.classList.add('show');
+  }
+
+  closeBlockModal() { $('editor-blockmodal')?.classList.remove('show'); }
 
   select(id) {
     this.sel = id;
     document.querySelectorAll('.pal-block').forEach((b) => b.classList.toggle('sel', b.dataset.block === id));
+    document.querySelectorAll('.bm-block').forEach((b) => b.classList.toggle('sel', b.dataset.block === id));
+    const nameEl = $('editor-block-name');
+    if (nameEl) nameEl.textContent = BLOCKS[id].name;
     this.rebuildPreview();
     const def = BLOCKS[id];
     this.cb.setStatus(this.isTouch
@@ -95,6 +140,8 @@ export class Editor {
     this.r.grid.visible = false;
     this.r.car.visible = true;
     if (this.preview) { this.r.scene.remove(this.preview); this.preview = null; }
+    $('editor-settings')?.classList.remove('show');
+    this.closeBlockModal();
   }
 
   currentMap() {
@@ -329,6 +376,21 @@ export class Editor {
     btn('ed-z1', () => this.toggleZone(0));
     btn('ed-z2', () => this.toggleZone(1));
     btn('ed-z3', () => this.toggleZone(2));
+
+    // map settings modal (holds Laps)
+    const settings = $('editor-settings');
+    const sBtn = $('editor-settings-btn');
+    if (sBtn && settings) {
+      sBtn.addEventListener('click', () => settings.classList.add('show'));
+      $('editor-settings-done')?.addEventListener('click', () => settings.classList.remove('show'));
+      settings.addEventListener('click', (e) => { if (e.target === settings) settings.classList.remove('show'); });
+    }
+
+    // block picker modal (folders)
+    $('editor-block-btn')?.addEventListener('click', () => this.openBlockModal());
+    $('editor-blockmodal-close')?.addEventListener('click', () => this.closeBlockModal());
+    const bm = $('editor-blockmodal');
+    if (bm) bm.addEventListener('click', (e) => { if (e.target === bm) this.closeBlockModal(); });
 
     const lapsEl = $('editor-laps');
     if (lapsEl) {

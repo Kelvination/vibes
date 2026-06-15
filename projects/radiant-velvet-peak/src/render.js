@@ -1,7 +1,7 @@
 // Wall Hugger — Three.js presentation layer (PRD §8). Low-poly, high readability.
 
 import * as THREE from 'three';
-import { S, MARGIN, GRID, BLOCKS } from './blocks.js';
+import { S, MARGIN, GRID, BLOCKS, roadEdges } from './blocks.js';
 import { Z_ARMED, Z_TRACKING, Z_PAID, Z_VOID } from './sim.js';
 
 const COL = {
@@ -283,6 +283,11 @@ export class Renderer3D {
     };
 
     const roadW = S - 2 * MARGIN;
+    // centerline roads (diagonals etc.) — a filled strip between the offset walls
+    if (def.center) {
+      I.add(this.roadStrip(def.center, def.dirt ? COL.dirt : COL.asphalt));
+      return G;
+    }
     switch (p.id) {
       case 'road': case 'road_hug':
         flat(roadW, S, COL.asphalt, S / 2, S / 2); break;
@@ -326,6 +331,28 @@ export class Renderer3D {
       // wall / hugwall: no surface; wall boxes come from compiled track
     }
     return G;
+  }
+
+  // Filled road surface for a centerline block (e.g. diagonals): a triangle
+  // strip between the left/right offset edges, laid flat at road height.
+  roadStrip(center, color) {
+    const { left, right } = roadEdges(center);
+    const n = center.length;
+    const pos = new Float32Array(n * 2 * 3);
+    for (let i = 0; i < n; i++) {
+      pos[i * 6]     = left[i].x;  pos[i * 6 + 1] = 0.06; pos[i * 6 + 2] = left[i].z;
+      pos[i * 6 + 3] = right[i].x; pos[i * 6 + 4] = 0.06; pos[i * 6 + 5] = right[i].z;
+    }
+    const idx = [];
+    for (let i = 0; i < n - 1; i++) {
+      const a = i * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide }));
   }
 
   // A flat ground arrow pointing along local +Z — the spawn/forward direction.

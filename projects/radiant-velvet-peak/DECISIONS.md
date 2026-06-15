@@ -40,12 +40,26 @@ entry here (and add new ones).** Newest first.
   stripe, rear wing, twin exhausts, wider rear wheels). No ERS exhaust glow.
 
 ## Tracks / editor
-- **Curves come in 3 radii** (curve1/2/3). The grid is 90°-based; corner variety
-  + chicanes/hairpins/esses provide flow. Campaign maps must close (asserted in
-  `campaign.js`); author times come from `tools/measure.mjs`.
+- **Curves come in 3 radii** (curve1/2/3). The grid is primarily 90°-based;
+  corner variety + chicanes/hairpins/esses provide flow. Campaign maps must close
+  (asserted in `campaign.js`); author times come from `tools/measure.mjs`.
+- **Diagonal / 45° pieces** (`Diagonal` category: `diag`, `diag_l`, `diag_r`,
+  `dirt_diag`) are built from a *centerline polyline* via `centerlineGeo` /
+  `centerlineSurf` / `roadEdges` (offset walls + distance-based surface). They run
+  corner-to-corner so adjacent diagonals' offset walls meet exactly at the shared
+  cell corner. Add new straight-ish roads this way rather than hand-rolling walls.
+  Diagonals carry no auto racing-line zones (no `curveK`).
 - **Editor works on touch**: one-finger pan, pinch zoom, centre crosshair +
   on-screen tools (Place/Erase/Rot/Z1-3/undo-redo). A stray tap must never
   place/delete. Desktop mouse/keyboard editing unchanged.
+- **Block selection on touch is a folder modal**, not a bottom strip: the
+  `▦` button (bottom-left) opens `#editor-blockmodal`, a per-category accordion
+  (`buildBlockModal`). Desktop keeps the left sidebar palette. Both are kept in
+  sync by `select()`.
+- **Map settings (Laps) live in a modal** (`#editor-settings`, ⚙ button), not
+  inline in the toolbar — the inline number box looked wrong on mobile. Laps is
+  stored on `map.laps`, carried through export/import; changing it clears the
+  author time.
 - **Start direction is shown in the editor** as a green ground arrow on the Start
   / Start-Finish blocks, drawn in the block's local +Z frame so it rotates with
   the block (`render.js` `startArrow()`, gated by `showGuides` so it's editor-only

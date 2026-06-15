@@ -63,6 +63,79 @@ function polyToWalls(pts, zone) {
   return walls;
 }
 
+// ---- centerline roads (straights at any angle, incl. 45° diagonals) ----
+// A road is authored as a centerline polyline in local cell coords; the walls
+// are the centerline offset perpendicular by ±ROAD_HALF (mitred at bends) and
+// the surface is "within ROAD_HALF of the centerline". Because diagonal pieces
+// run corner-to-corner, their offset walls extend to the cell corners and meet
+// the next diagonal piece's walls exactly at the shared corner.
+
+function offsetPolyline(pts, d) {
+  const n = pts.length;
+  const seg = [];
+  for (let i = 0; i < n - 1; i++) {
+    const dx = pts[i + 1].x - pts[i].x, dz = pts[i + 1].z - pts[i].z;
+    const l = Math.hypot(dx, dz) || 1;
+    seg.push({ x: dz / l, z: -dx / l }); // right-hand normal
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    let nx, nz, scale = 1;
+    if (i === 0) { nx = seg[0].x; nz = seg[0].z; }
+    else if (i === n - 1) { nx = seg[n - 2].x; nz = seg[n - 2].z; }
+    else {
+      let mx = seg[i - 1].x + seg[i].x, mz = seg[i - 1].z + seg[i].z;
+      const ml = Math.hypot(mx, mz) || 1;
+      mx /= ml; mz /= ml;
+      const cos = mx * seg[i].x + mz * seg[i].z; // cos(half exterior angle)
+      scale = cos > 0.25 ? 1 / cos : 1;          // miter length (clamped)
+      nx = mx; nz = mz;
+    }
+    out.push({ x: pts[i].x + nx * d * scale, z: pts[i].z + nz * d * scale });
+  }
+  return out;
+}
+
+function distToPolyline(x, z, pts) {
+  let best = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const len2 = dx * dx + dz * dz || 1;
+    let t = ((x - a.x) * dx + (z - a.z) * dz) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const px = a.x + dx * t, pz = a.z + dz * t;
+    best = Math.min(best, Math.hypot(x - px, z - pz));
+  }
+  return best;
+}
+
+// left/right wall polylines for a centerline — shared by the compiler (walls)
+// and the renderer (filled road strip) so they always agree.
+export function roadEdges(center) {
+  return { left: offsetPolyline(center, ROAD_HALF), right: offsetPolyline(center, -ROAD_HALF) };
+}
+
+function centerlineGeo(center) {
+  return () => {
+    const { left, right } = roadEdges(center);
+    return {
+      walls: [...polyToWalls(left, -1), ...polyToWalls(right, -1)],
+      zones: [], trigger: null, spawn: null,
+      line: center.map((p) => ({ ...p })),
+    };
+  };
+}
+
+function centerlineSurf(center, surface) {
+  return (x, z) => (distToPolyline(x, z, center) <= ROAD_HALF ? surface : 'grass');
+}
+
+// diagonal centerlines (local cell coords)
+const DIAG_C   = [{ x: 0, z: 0 }, { x: S, z: S }];                          // corner-to-corner
+const DIAG_L_C = [{ x: S / 2, z: 0 }, { x: S / 2, z: S / 2 }, { x: 0, z: S }]; // cardinal in, 45° left out
+const DIAG_R_C = [{ x: S / 2, z: 0 }, { x: S / 2, z: S / 2 }, { x: S, z: S }]; // cardinal in, 45° right out
+
 // ---- block geometry builders ----
 
 // Racing-line zone weights: the apex is the main zone; entry/exit approach
@@ -186,8 +259,12 @@ export const BLOCKS = {
   curve1:     { id: 'curve1',     name: 'Curve 1',         cat: 'Road',    W: 1, H: 1, geo: curveGeo(1), surf: curveSurf(1, 'asphalt'), conn: connCurve(1), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 1 },
   curve2:     { id: 'curve2',     name: 'Curve 2',         cat: 'Road',    W: 2, H: 2, geo: curveGeo(2), surf: curveSurf(2, 'asphalt'), conn: connCurve(2), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 2 },
   curve3:     { id: 'curve3',     name: 'Curve 3 (sweep)', cat: 'Road',    W: 3, H: 3, geo: curveGeo(3), surf: curveSurf(3, 'asphalt'), conn: connCurve(3), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 3 },
+  diag:       { id: 'diag',       name: 'Diagonal',        cat: 'Diagonal', W: 1, H: 1, geo: centerlineGeo(DIAG_C),   surf: centerlineSurf(DIAG_C, 'asphalt'),   center: DIAG_C },
+  diag_l:     { id: 'diag_l',     name: '45° Bend Left',   cat: 'Diagonal', W: 1, H: 1, geo: centerlineGeo(DIAG_L_C), surf: centerlineSurf(DIAG_L_C, 'asphalt'), center: DIAG_L_C },
+  diag_r:     { id: 'diag_r',     name: '45° Bend Right',  cat: 'Diagonal', W: 1, H: 1, geo: centerlineGeo(DIAG_R_C), surf: centerlineSurf(DIAG_R_C, 'asphalt'), center: DIAG_R_C },
   dirt:       { id: 'dirt',       name: 'Dirt Road',       cat: 'Dirt',    W: 1, H: 1, geo: straightGeo({ surface: 'dirt' }), surf: roadSurf('dirt'), conn: CONN_STRAIGHT, dirt: true },
   dirt_curve: { id: 'dirt_curve', name: 'Dirt Curve',      cat: 'Dirt',    W: 1, H: 1, geo: curveGeo(1), surf: curveSurf(1, 'dirt'), conn: connCurve(1), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 1, dirt: true },
+  dirt_diag:  { id: 'dirt_diag',  name: 'Dirt Diagonal',   cat: 'Dirt',    W: 1, H: 1, geo: centerlineGeo(DIAG_C),   surf: centerlineSurf(DIAG_C, 'dirt'),      center: DIAG_C, dirt: true },
   start:      { id: 'start',      name: 'Start',           cat: 'Special', W: 1, H: 1, geo: straightGeo({ spawn: true }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
   startfinish:{ id: 'startfinish',name: 'Start / Finish',   cat: 'Special', W: 1, H: 1, geo: straightGeo({ trigger: 'finish', spawn: true }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
   checkpoint: { id: 'checkpoint', name: 'Checkpoint',      cat: 'Special', W: 1, H: 1, geo: straightGeo({ trigger: 'cp', spawn: true }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
@@ -197,7 +274,7 @@ export const BLOCKS = {
   hugwall:    { id: 'hugwall',    name: 'Hug-Zone Wall',   cat: 'Walls',   W: 1, H: 1, geo: wallGeo(true), surf: () => 'grass', zoneSlots: ['Face'] },
 };
 
-export const CATEGORIES = ['Road', 'Dirt', 'Special', 'Walls'];
+export const CATEGORIES = ['Road', 'Diagonal', 'Dirt', 'Special', 'Walls'];
 
 // ---- track compiler ----
 
