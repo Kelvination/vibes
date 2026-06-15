@@ -250,55 +250,39 @@ function planRacingLine(placements, track) {
       { slot: 2, pt: { x: k * S, z: k * S - MARGIN }, cell: { x: k, z: k - 1 } }, // exit edge
     ];
     const landed = [false, false];
-    // why a side didn't land — lets the audit tell real defects ('trimmed') from
-    // intentional layouts ('corner'/'hug': nowhere for an approach zone to go).
-    const reason = [null, null];
     ends.forEach((end, ei) => {
-      if (!zn[end.slot]) { reason[ei] = 'off'; return; }
+      if (!zn[end.slot]) return;
       const c = rotCell(end.cell, r, def.W, def.H);
       const ni = track.cellMap.get(`${p.x + c.x},${p.z + c.z}`);
-      if (ni === undefined) { reason[ei] = 'no_neighbor'; return; }
+      if (ni === undefined) return;
       const np = placements[ni];
-      if (BLOCKS[np.id]?.curveK) { reason[ei] = 'corner'; return; } // chicane: no straight
-      if (np.id === 'road_hug') { reason[ei] = 'hug'; return; }     // already fully zoned
-      if (!APPROACH_BLOCKS.has(np.id)) { reason[ei] = 'other'; return; }
+      if (!APPROACH_BLOCKS.has(np.id)) return;
       // locate the shared outer-wall point in the neighbor's local frame
       const wpt = tw(end.pt);
       const q = invRotPt({ x: wpt.x - np.x * S, z: wpt.z - np.z * S }, np.rot & 3, S, S);
       const side = Math.abs(q.x - MARGIN) < 0.5 ? 'L' : Math.abs(q.x - (S - MARGIN)) < 0.5 ? 'R' : null;
       const atFar = q.z > S - 0.5 ? 1 : q.z < 0.5 ? 0 : null;
-      if (side === null || atFar === null) { reason[ei] = 'misaligned'; return; }
+      if (side === null || atFar === null) return; // neighbor road not aligned with this corner
       const len = S * APPROACH_FRAC;
-      // Candidate intervals on the neighbor (local z 0..S). Exit zones hug the
-      // corner-adjacent end. Entry zones prefer the FAR end (so the "hug the
-      // outside" line begins before turn-in), but fall back to the corner-
-      // adjacent end when a linked corner's exit already claimed the far end —
-      // otherwise the two would collide and the entry zone would vanish.
-      const near = atFar ? [S - len, S] : [0, len];      // corner-adjacent
-      const far = atFar ? [0, len] : [S - len, S];        // away from the turn
-      const cands = ei === 0 ? [far, near] : [near];
+      // Exit zones hug the corner-adjacent end of the flanking block. Entry
+      // zones (ei === 0) sit at the FAR end instead, so the rewarded "hug the
+      // outside" line begins well before the turn-in rather than right at it.
+      let z0, z1;
+      if (ei === 0) { z0 = atFar ? 0 : S - len; z1 = atFar ? len : S; }
+      else { z0 = atFar ? S - len : 0; z1 = atFar ? S : len; }
       const list = hints.get(ni) || [];
-      let placed = null;
-      for (const cand of cands) {
-        let [z0, z1] = cand;
-        const mid = (z0 + z1) / 2;
-        for (const o of list) {
-          if (o.side !== side) continue;
-          if (mid >= (o.z0 + o.z1) / 2) z0 = Math.max(z0, o.z1);
-          else z1 = Math.min(z1, o.z0);
-        }
-        if (z1 - z0 >= 2) { placed = { z0, z1 }; break; }
+      // back-to-back corners share a straight: trim so zones never overlap
+      for (const o of list) {
+        if (o.side !== side) continue;
+        if (atFar) z0 = Math.max(z0, o.z1); else z1 = Math.min(z1, o.z0);
       }
-      if (!placed) { reason[ei] = 'trimmed'; return; } // corners too close together
-      list.push({ side, z0: placed.z0, z1: placed.z1, mult: APPROACH_MULT });
+      if (z1 - z0 < 2) return;
+      list.push({ side, z0, z1, mult: APPROACH_MULT });
       hints.set(ni, list);
       landed[ei] = true;
     });
 
-    track.corners.push({
-      block: pi, entry: landed[0], apex: !!(zn[1] && (k - 1) * S + MARGIN > 0.5), exit: landed[1],
-      entryReason: reason[0], exitReason: reason[1],
-    });
+    track.corners.push({ block: pi, entry: landed[0], apex: !!(zn[1] && (k - 1) * S + MARGIN > 0.5), exit: landed[1] });
 
     // ideal-line guide (outside -> apex -> outside) for the editor preview
     const off = 1.6; // car-center clearance from the wall face

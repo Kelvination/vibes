@@ -8,8 +8,8 @@ See [PRD.md](./PRD.md) for the full product requirements document.
 
 ## What's implemented (v1)
 
-- **Handling model (PRD §4):** fixed 100 Hz deterministic sim, speed-sensitive understeer, controllable brake-induced rotation with counter-steer recovery, a **handbrake** (Space) that breaks the rear loose to clip a tight apex, steering smoothing, lateral grip bleed, asphalt/dirt/grass/booster surfaces. All constants hot-tunable in the F2 debug panel.
-- **Wall Energy System (PRD §5):** one-shot hug zones with closest-approach scoring, speed scaling, contact-void, per-pass ratings (PERFECT/CLOSE/SAFE/VOID), zone state visuals (armed pulse → paid dim → voided red, apex zones glow a hotter green), a live non-linear in-zone closeness meter with a PERFECT/CLOSE/SAFE readout + charge sparks + proximity hum, and **player-deployed ERS** (Shift hold / E toggle / ⚡ on mobile): hugging banks energy, you spend it for a sustained boost.
+- **Handling model (PRD §4):** fixed 100 Hz deterministic sim, speed-sensitive understeer, controllable brake-induced rotation with counter-steer recovery, steering smoothing, lateral grip bleed, asphalt/dirt/grass/booster surfaces. All constants hot-tunable in the F2 debug panel.
+- **Wall Energy System (PRD §5):** one-shot hug zones with closest-approach scoring, speed scaling, contact-void, per-pass ratings (PERFECT/CLOSE/SAFE/VOID), zone state visuals (armed pulse → paid dim → voided red), in-zone HUD meter + charge sparks + proximity hum, sustained ERS deploy (hold/toggle/both, selectable in settings).
 - **Racing-line zones:** the compiler's `planRacingLine` pass places each corner's entry/exit zones on the outside walls of the flanking blocks and the apex zone (1.5× payout) on the inside wall; approach zones pay 0.7×. `tools/measure.mjs` audits every corner, and the editor previews the ideal line in green.
 - **Mobile touch controls:** on-screen steer/brake/gas/ERS buttons plus restart, checkpoint-respawn and exit, shown automatically on touch devices.
 - **Race loop (PRD §3, §7):** countdown, ms-precision timer, set-semantics checkpoints with split deltas, checkpoint respawn that restores ERS + zone states from the crossing snapshot, instant restart, Author/Gold/Silver/Bronze medals, local PBs, PB ghost replay.
@@ -29,4 +29,4 @@ Elevation blocks (ramps, loops, wallrides, slopes), gamepad, multilap, online le
 
 ## Controls
 
-W/↑ throttle · S/↓ brake/reverse · A,D/←,→ steer · **Space handbrake** · Shift hold-deploy ERS · E toggle-deploy ERS · Enter respawn · Backspace restart · G ghost · C camera · F2 tuning panel (dev; or add `?dev` to the URL for the Settings entry). Mobile: on-screen ◀ ▶ steer, gas/brake, ⚡ deploy, plus Menu / Restart / Checkpoint / Cam buttons. Editor: click place, R rotate, right-click delete, 1/2/3 Entry/Apex/Exit zone toggles, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z, T test, wheel zoom, middle/Shift-drag pan, Q/E rotate.
+W/↑ throttle · S/↓ brake/reverse · A,D/←,→ steer · Shift hold-deploy · E toggle-deploy · Enter respawn · Backspace restart · G ghost · C camera · F2 tuning panel. Mobile: on-screen ◀ ▶ steer, gas/brake, hold-ERS, plus ✕ menu / ⟲ restart / ↺ CP buttons. Editor: click place, R rotate, right-click delete, 1/2/3 Entry/Apex/Exit zone toggles, Ctrl+Z/Y, T test, wheel zoom, middle/Shift-drag pan, Q/E rotate.

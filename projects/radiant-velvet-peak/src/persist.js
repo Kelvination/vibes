@@ -12,11 +12,6 @@ export function loadSettings() {
 }
 export function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
 
-// one-shot UI flags (e.g. "has the player seen the void tip / coach card yet")
-const FLAG_PREFIX = 'wallrush.flag.';
-export function getFlag(name) { try { return localStorage.getItem(FLAG_PREFIX + name) === '1'; } catch { return false; } }
-export function setFlag(name) { try { localStorage.setItem(FLAG_PREFIX + name, '1'); } catch { /* ignore */ } }
-
 export function listCustomMaps() {
   try { return JSON.parse(localStorage.getItem(MAPS_KEY) || '[]'); } catch { return []; }
 }

@@ -9,7 +9,7 @@ const COL = {
   asphalt: 0x3c4250, dirt: 0x8a5a2b, boost: 0xe8c020,
   wall: 0x9aa3b2, wallTop: 0xb8c0cc,
   cp: 0x2e7fff, finishA: 0xffffff, finishB: 0x111111, startStrip: 0x40d080,
-  zoneArmed: 0x18e0ff, zoneApex: 0x7cff4a, zonePaid: 0x2a6a78, zoneVoid: 0x7a1c1c,
+  zoneArmed: 0x18e0ff, zonePaid: 0x2a6a78, zoneVoid: 0x7a1c1c,
   car: 0xff4633, ghost: 0x18e0ff,
 };
 
@@ -203,14 +203,10 @@ export class Renderer3D {
       g.add(this.wallBox(w.a, w.b, wallMat));
     }
 
-    // hug-zone emissive ribbons (PRD §5.4 visual language). Apex zones (the
-    // high-payout 1.5× ones) glow a hotter colour so the best target reads at
-    // a glance vs. the cooler entry/exit approach zones.
-    this.zoneMults = [];
+    // hug-zone emissive ribbons (PRD §5.4 visual language)
     for (const z of track.zones) {
       const mat = new THREE.MeshBasicMaterial({ color: COL.zoneArmed, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
       this.zoneMats.push(mat);
-      this.zoneMults.push(z.mult || 1);
       for (const off of [0.3, -0.3]) g.add(this.ribbon(z.pts, off, mat));
     }
 
@@ -359,10 +355,9 @@ export class Renderer3D {
     for (let i = 0; i < this.zoneMats.length; i++) {
       const mat = this.zoneMats[i];
       const st = zoneStates ? zoneStates[i].state : Z_ARMED;
-      const apex = (this.zoneMults?.[i] || 1) > 1.2;
       if (st === Z_ARMED) {
-        mat.color.setHex(apex ? COL.zoneApex : COL.zoneArmed);
-        mat.opacity = (apex ? 0.62 : 0.5) + 0.35 * Math.sin(t * 4 + i);
+        mat.color.setHex(COL.zoneArmed);
+        mat.opacity = 0.55 + 0.35 * Math.sin(t * 4 + i);
       } else if (st === Z_TRACKING) {
         mat.color.setHex(0x9ff8ff);
         mat.opacity = 0.85 + 0.15 * Math.sin(t * 18);
@@ -387,30 +382,13 @@ export class Renderer3D {
     }
     const fw = group.userData.frontWheels;
     if (fw) { const s = lean ? lean.steer : 0; fw[0].rotation.y = s; fw[1].rotation.y = s; }
-    // ERS exhaust glow: visible only while deploying, pulsing for life
-    const glow = group.userData.glow;
-    if (glow) {
-      glow.visible = !!deploying;
-      if (deploying) {
-        const pulse = 0.85 + 0.15 * Math.sin(this.time * 28);
-        glow.scale.set(pulse, pulse, 1 + 0.25 * Math.sin(this.time * 22));
-        glow.material.opacity = 0.6 + 0.25 * Math.sin(this.time * 24);
-      }
-    }
   }
-
-  // one-shot extra spark pop when the car first enters a hug zone
-  sparkBurst() { this._burst = 1; }
-
-  // accumulate camera trauma from a wall impact (decays in updateChase)
-  addShake(impact) { this.shake = Math.min(1, (this.shake || 0) + 0.18 + impact * 0.045); }
 
   updateSparks(car, live) {
     const mat = this.sparks.material;
-    this._burst = (this._burst || 0) * 0.85;
-    if (!live.active && this._burst < 0.02) { mat.opacity = Math.max(0, mat.opacity - 0.1); return; }
-    mat.opacity = Math.min(1, 0.5 + 0.5 * live.closeness + this._burst);
-    mat.size = 0.3 + live.closeness * 0.5 + this._burst * 0.6;
+    if (!live.active) { mat.opacity = Math.max(0, mat.opacity - 0.1); return; }
+    mat.opacity = 0.5 + 0.5 * live.closeness;
+    mat.size = 0.3 + live.closeness * 0.5;
     for (let i = 0; i < 36; i++) {
       this.sparkPos[i * 3] = car.x + (Math.random() - 0.5) * 3.4;
       this.sparkPos[i * 3 + 1] = Math.random() * 1.3;
@@ -473,38 +451,38 @@ export class Renderer3D {
   }
 
   snapCamera(car) {
-    const fx = Math.sin(car.h), fz = Math.cos(car.h);
-    this.camPos.set(car.x - fx * 11, 5.2, car.z - fz * 11);
-    this.camLook.set(car.x + fx * 6, 1.2, car.z + fz * 6);
+    // Chase cam keeps a constant world heading (+Z), so it never rotates with
+    // the car. Just sit behind the car in -Z; hood cam still uses heading.
+    if (this.camMode === 'hood') {
+      const fx = Math.sin(car.h), fz = Math.cos(car.h);
+      this.camPos.set(car.x - fx * 11, 5.2, car.z - fz * 11);
+      this.camLook.set(car.x + fx * 6, 1.2, car.z + fz * 6);
+    } else {
+      this.camPos.set(car.x, 6.6, car.z - 12);
+      this.camLook.set(car.x, 1.2, car.z + 6);
+    }
   }
 
   updateChase(car, speed, deploying, dt) {
     const fx = Math.sin(car.h), fz = Math.cos(car.h);
-    const rx = Math.cos(car.h), rz = -Math.sin(car.h);   // car's right vector
-    const yaw = car.yaw || 0;
-    const kick = deploying ? 5 : 0;                       // ERS FOV punch
-    // decaying impact shake -> small random camera jitter
-    this.shake = (this.shake || 0) * Math.exp(-dt * 6);
-    const sh = this.shake;
-    const jx = (Math.random() - 0.5) * sh * 1.4;
-    const jy = (Math.random() - 0.5) * sh * 1.0;
     if (this.camMode === 'hood') {
-      this.camera.position.set(car.x + fx * 0.6 + jx, 1.25 + jy, car.z + fz * 0.6);
+      this.camera.position.set(car.x + fx * 0.6, 1.25, car.z + fz * 0.6);
       this.camera.lookAt(car.x + fx * 30, 0.9, car.z + fz * 30);
-      this.camera.fov = 78 + Math.min(speed, 70) * 0.18 + kick;
+      this.camera.fov = 78 + Math.min(speed, 70) * 0.18;
     } else {
-      const back = 10.5 + Math.min(speed, 70) * 0.05;
-      const tx = car.x - fx * back, tz = car.z - fz * back;
+      // Fixed-orientation chase: follow the car's POSITION but hold a constant
+      // world heading (+Z into the screen). The view never spins when the car
+      // turns — the car rotates within frame instead — which kills the
+      // motion-sickness from the old heading-locked orbit camera.
+      const back = 12 + Math.min(speed, 70) * 0.06;
+      const tx = car.x, tz = car.z - back;
       const k = 1 - Math.exp(-dt * 7);
       this.camPos.x += (tx - this.camPos.x) * k;
       this.camPos.z += (tz - this.camPos.z) * k;
-      this.camPos.y += (5.2 - this.camPos.y) * k;
-      this.camera.position.set(this.camPos.x + jx, this.camPos.y + jy, this.camPos.z);
-      // look ahead AND lead into the corner by yaw rate, so the apex you're
-      // aiming for stays in frame instead of the outside wall
-      const lead = Math.max(-6, Math.min(6, yaw * 9));
-      this.camera.lookAt(car.x + fx * 7 + rx * lead, 1.1, car.z + fz * 7 + rz * lead);
-      this.camera.fov = 70 + Math.min(speed, 70) * 0.22 + kick;
+      this.camPos.y += (6.6 - this.camPos.y) * k;
+      this.camera.position.copy(this.camPos);
+      this.camera.lookAt(car.x, 1.1, car.z + 7);
+      this.camera.fov = 70 + Math.min(speed, 70) * 0.22;
     }
     this.camera.updateProjectionMatrix();
   }

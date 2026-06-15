@@ -37,8 +37,7 @@ export const TUNING = {
   brakeBias: 0.62,       // fraction of brake force on the front axle
   reverseForce: 4000,    // reverse drive force (N)
   reverseTop: 11,        // max reverse speed (m/s)
-  reverseThresh: 0.9,    // below this fwd speed, brake becomes reverse (m/s) —
-                         // low so braking-to-settle against a wall won't reverse
+  reverseThresh: 1.6,    // below this fwd speed, brake becomes reverse (m/s)
   rollK: 0.014,          // rolling resistance (1/s on vF)
   dragK: 0.0033,         // quadratic aero drag — sets the natural top speed
 
@@ -48,16 +47,11 @@ export const TUNING = {
   lowSpeedRef: 3.0,      // m/s — tire forces fade in below this (kills jitter)
   yawDamp: 1700,         // yaw-rate damping torque coefficient (N m s/rad)
 
-  // Handbrake (Space): locks the rear, cutting its lateral grip so the back
-  // steps out for a tight apex clip — the rotation tool that pairs with hugging.
-  handbrakeGrip: 0.38,   // rear lateral grip multiplier while held
-  handbrakeBrake: 0.5,   // rear brake force as a fraction of brakeForce
-
   // Steering (PRD §9: digital input smoothed to analog)
   maxSteerAngle: 0.50,   // max front wheel angle at low speed (rad ~ 29 deg)
-  steerSpeedK: 0.055,    // steer lock shrinks with speed: angle /= 1 + k*speed
-  steerRate: 8.5,        // input ramp 0 -> 1 (1/s) — crisp but not instant
-  recenterRate: 14.0,    // faster re-center on release
+  steerSpeedK: 0.08,     // steer lock shrinks with speed: angle /= 1 + k*speed
+  steerRate: 6.0,        // input ramp 0 -> 1 (1/s) — weightier than instant
+  recenterRate: 12.0,    // faster re-center on release
 
   // Slide recovery (arcade catch assist). A raycast/bicycle car saturates at
   // high slip and won't self-straighten from a big slide, so two assists ramp
@@ -82,7 +76,7 @@ export const TUNING = {
   surfaces: {
     asphalt: { grip: 1.0,  power: 1.0,  top: 1.0 },
     dirt:    { grip: 0.42, power: 0.85, top: 0.80 },
-    grass:   { grip: 0.72, power: 0.62, top: 0.60 }, // a deterrent, not a trap
+    grass:   { grip: 0.55, power: 0.40, top: 0.42 },
     boost:   { grip: 1.0,  power: 1.0,  top: 1.0 },
   },
   boostAccel: 13,        // booster pad forced acceleration (m/s^2)
@@ -92,28 +86,24 @@ export const TUNING = {
                          // inner face, not the centerline, so the car body
                          // stops flush with the wall instead of sinking in
   wallRestitution: 0.08,
-  wallFrictionK: 0.95,   // tangential scrub scaled by normal impact — a real
-                         // hit bites, so a clean hug and a crash feel different
-  wallScrubMax: 0.5,     // cap on per-contact tangential speed scrub
+  wallFrictionK: 0.55,   // tangential scrub scaled by normal impact
   wallYawDamp: 0.85,     // yaw damping on contact
 
-  // ERS (PRD §5) — player-deployed boost. Wall hugging charges the bar; the
-  // player spends it with Shift (hold) or E (toggle) for a sustained engine
-  // shove that drains the bar. A slow idle bleed keeps it from being hoarded.
+  // ERS (PRD §5) — passive "always-on" boost. Wall hugging charges the bar;
+  // the bar then continuously scales engine power and top speed (no deploy
+  // button) and bleeds off over time, so you stay fast by keeping it topped up.
   ersCap: 100,
-  ersPassivePower: 0.35, // +35% engine force while deploying a full bar
-  ersPassiveTop: 0.18,   // +18% top speed while deploying
-  ersDeployDrain: 20,    // bar spent per second of deploy -> full bar in ~5 s
-  ersDecay: 1.2,         // slow idle bleed when not deploying
+  ersPassivePower: 0.24, // +24% engine force at a full bar (scales with charge)
+  ersPassiveTop: 0.13,   // +13% top speed at a full bar
+  ersDecay: 5.5,         // bar bleeds per second -> full bar fades in ~18 s
 
   // Hug zones (PRD §5.1)
   zoneBand: 3.2,         // charge band from wall face (~1.5 car widths)
-  zoneMax: 26,           // perfect pass award (% of bar)
+  zoneMax: 23,           // perfect pass award (% of bar)
   zoneCurveExp: 2.6,     // steep near the wall
-  zoneSpeedRef: 25,      // full speed credit at/above this (m/s)
-  zoneSpeedExp: 1.4,     // steep so slow, timid hugging pays much less
+  zoneSpeedRef: 21,      // full speed credit at/above this (m/s)
   zonePerfect: 0.30,     // minDist thresholds for ratings (m)
-  zoneClose: 0.9,
+  zoneClose: 1.15,
 };
 
 export function ratingFor(minDist) {
@@ -126,6 +116,6 @@ export function zoneAward(minDist, speedAtMin) {
   const t = TUNING;
   const d = Math.min(Math.max(minDist, 0), t.zoneBand);
   const closeness = 1 - d / t.zoneBand;
-  const speedF = Math.pow(Math.min(speedAtMin / t.zoneSpeedRef, 1), t.zoneSpeedExp);
+  const speedF = Math.pow(Math.min(speedAtMin / t.zoneSpeedRef, 1), 0.7);
   return t.zoneMax * Math.pow(closeness, t.zoneCurveExp) * speedF;
 }

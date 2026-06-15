@@ -149,11 +149,7 @@ export class Editor {
     this.r.updateZones(null, 0);
     if (track.corners.length) {
       const full = track.corners.filter((c) => c.entry && c.apex && c.exit).length;
-      const DEFECT = new Set(['trimmed', 'misaligned']);
-      const bad = track.corners.filter((c) => DEFECT.has(c.entryReason) || DEFECT.has(c.exitReason)).length;
-      let msg = `Racing line: ${full}/${track.corners.length} corners fully zoned (green line = ideal line)`;
-      if (bad) msg += ` — ${bad} corner(s) too tight to fit an approach zone: add a straight before/after the turn`;
-      this.cb.setStatus(msg);
+      this.cb.setStatus(`Racing line: ${full}/${track.corners.length} corners have the full outside-in-outside zone set (green line shows the ideal line)`);
     }
   }
 
@@ -370,7 +366,6 @@ export class Editor {
     if (!this.active) return false;
     const k = e.key.toLowerCase();
     if (k === 'r') { this.rotate(); return true; }
-    if (k === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey) { this.redo(); return true; } // mac redo
     if (k === 'z' && (e.ctrlKey || e.metaKey)) { this.undo(); return true; }
     if (k === 'y' && (e.ctrlKey || e.metaKey)) { this.redo(); return true; }
     if (k === '1' || k === '2' || k === '3') { this.toggleZone(+k - 1); return true; }

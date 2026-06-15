@@ -71,7 +71,7 @@ export function createRace(track, opts = {}) {
       susPitch: 0, susPitchV: 0, // suspension visual state (dive/squat)
       susRoll: 0, susRollV: 0,   // body roll
       susHeave: 0, susHeaveV: 0, // ride height bob
-      surface: 'asphalt', sliding: false, contact: false, impact: 0,
+      surface: 'asphalt', sliding: false, contact: false,
     },
     ers: 0,
     ersToggle: false,
@@ -175,18 +175,15 @@ export function step(rs, input) {
   const surf = t.surfaces[surfName] || t.surfaces.asphalt;
   c.surface = surfName;
 
-  // --- ERS (PRD §5.2): player-deployed boost ---
-  // The bar charges from wall hugging. The player spends it (input.deploy =
-  // Shift hold / E toggle) for a sustained engine shove that drains the bar;
-  // a slow idle bleed otherwise. Boost only applies while actually deploying.
-  const deploying = !!input.deploy && rs.ers > 0;
-  if (deploying) rs.ers = Math.max(0, rs.ers - t.ersDeployDrain * dt);
-  else rs.ers = Math.max(0, rs.ers - t.ersDecay * dt);
-  const boost = deploying ? 1 : 0;
-  const powerMul = (1 + t.ersPassivePower * boost) * surf.power;
-  const topSpeed = t.topSpeed * (1 + t.ersPassiveTop * boost) * surf.top;
-  rs.boostPct = Math.round(t.ersPassivePower * boost * 100); // current added power %
-  rs.deploying = deploying;                    // HUD readout + VFX + audio
+  // --- ERS (PRD §5.2): passive always-on boost scaled by the stored bar ---
+  // The bar bleeds off over time; whatever is banked continuously raises power
+  // and top speed. No deploy button — hug walls to keep the boost alive.
+  const ersFrac = rs.ers / t.ersCap;          // 0..1 charge level
+  rs.ers = Math.max(0, rs.ers - t.ersDecay * dt);
+  const powerMul = (1 + t.ersPassivePower * ersFrac) * surf.power;
+  const topSpeed = t.topSpeed * (1 + t.ersPassiveTop * ersFrac) * surf.top;
+  rs.boostPct = Math.round(t.ersPassivePower * ersFrac * 100); // current added power %
+  rs.deploying = ersFrac > 0.04;              // HUD readout + audio
 
   // --- suspension load (raycast-style): per-axle normal load from a
   //     spring-damper resting on flat ground + longitudinal weight transfer
@@ -211,8 +208,6 @@ export function step(rs, input) {
       driveF = -t.reverseForce * surf.power * Math.max(0, 1 + Math.min(vF, 0) / t.reverseTop);
     }
   }
-  // handbrake (Space): lock the rear axle to scrub speed and break rear grip
-  if (input.handbrake && vF > 0.5) brakeR += -t.brakeForce * t.handbrakeBrake;
   // boost pads shove you forward — but only while actually rolling forward, so
   // a car stopped against a wall on a pad isn't pinned there and can back off
   if (surfName === 'boost' && vF > 2) extraAccel += t.boostAccel;
@@ -225,8 +220,6 @@ export function step(rs, input) {
   const slipR = Math.atan2(vL - r * t.lr, vFs);
   let FyF = -t.corneringStiff * FzF * slipF;
   let FyR = -t.corneringStiff * FzR * slipR;
-  // handbrake breaks the rear loose so it steps out for a tight apex clip
-  if (input.handbrake) FyR *= t.handbrakeGrip;
 
   // friction circle per axle: longitudinal use eats into lateral capacity
   const capF = mu * FzF, capR = mu * FzR;
@@ -295,7 +288,6 @@ export function step(rs, input) {
   // collides at its true extents — the nose stops at the wall instead of
   // visually clipping through it.
   c.contact = false;
-  c.impact = 0;
   const off = t.carColOffset;
   // collide at the wall's visible inner face (centerline + render half-thickness)
   const R = t.carColRadius + t.wallHalf;
@@ -321,12 +313,10 @@ export function step(rs, input) {
       c.vx -= nx * vn * (1 + t.wallRestitution);
       c.vz -= nz * vn * (1 + t.wallRestitution);
       const sp = Math.hypot(c.vx, c.vz);
-      const scrub = Math.min(t.wallScrubMax, t.wallFrictionK * Math.abs(vn) / Math.max(sp, 5));
+      const scrub = Math.min(0.30, t.wallFrictionK * Math.abs(vn) / Math.max(sp, 5));
       c.vx *= 1 - scrub;
       c.vz *= 1 - scrub;
       c.yaw *= t.wallYawDamp;
-      // impact magnitude (normal closing speed) — drives shake + scrape audio
-      c.impact = Math.max(c.impact || 0, Math.abs(vn));
     }
     c.contact = true;
     // Contact voids the hug zone — no partial credit (PRD §5.1).
