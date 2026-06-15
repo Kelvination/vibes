@@ -52,7 +52,8 @@ function b64ToBytes(b64) {
 
 export async function exportMapString(map) {
   const payload = JSON.stringify({
-    name: map.name, authorTime: map.authorTime || null, placements: map.placements,
+    name: map.name, authorTime: map.authorTime || null,
+    laps: Math.max(1, Math.min(99, map.laps | 0) || 1), placements: map.placements,
   });
   if (typeof CompressionStream !== 'undefined') {
     const stream = new Blob([payload]).stream().pipeThrough(new CompressionStream('gzip'));
@@ -79,6 +80,7 @@ export async function importMapString(str) {
     key: 'custom:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     name: String(data.name || 'Imported map').slice(0, 40),
     authorTime: typeof data.authorTime === 'number' ? data.authorTime : null,
+    laps: Math.max(1, Math.min(99, data.laps | 0) || 1),
     placements: data.placements.map((p) => ({
       id: String(p.id), x: p.x | 0, z: p.z | 0, rot: p.rot & 3,
       ...(p.zn ? { zn: p.zn.map((v) => (v ? 1 : 0)) } : {}),

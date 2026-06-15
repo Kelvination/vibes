@@ -62,6 +62,8 @@ export function createRace(track, opts = {}) {
     lap: 1,                  // current lap (1-based)
     totalLaps: Math.max(1, opts.laps || 1),
     finishCooldown: 0,       // ticks after a lap rollover before finish re-arms
+    finishArmed: false,      // must leave the finish line before it can count
+                             // (the car starts on it when using a Start/Finish block)
     car: {
       x: start.x, z: start.z, h,
       vx: 0, vz: 0, yaw: 0, steer: 0,
@@ -120,6 +122,7 @@ export function respawn(rs) {
   c.aF = 0; c.aL = 0; c.steerAngle = 0;
   c.susPitch = c.susPitchV = c.susRoll = c.susRollV = c.susHeave = c.susHeaveV = 0;
   rs.ersToggle = false;
+  rs.finishArmed = false; // must drive clear of the line again before it counts
   rs.events.push({ type: 'respawn' });
 }
 
@@ -391,27 +394,30 @@ export function step(rs, input) {
 
   // --- lap / finish (all checkpoints needed before the finish line counts) ---
   if (rs.finishCooldown > 0) rs.finishCooldown--;
-  if (rs.cpCount === rs.track.cps.length && rs.finishCooldown <= 0) {
-    for (const fin of rs.track.finishes) {
-      const cp = closestOnSeg(c.x, c.z, fin.a, fin.b);
-      if (Math.hypot(c.x - cp.x, c.z - cp.z) < 1.8) {
-        if (rs.lap < rs.totalLaps) {
-          // start a fresh lap: re-arm checkpoints and hug zones (ERS carries over)
-          rs.lap++;
-          rs.cpHit = rs.track.cps.map(() => false);
-          rs.cpCount = 0;
-          for (const z of rs.zones) { z.state = Z_ARMED; z.minDist = Infinity; z.minSpeed = 0; }
-          takeSnapshot(rs, { x: c.x, z: c.z, dir: Math.round(c.h / (Math.PI / 2)) & 3 });
-          rs.finishCooldown = 150;  // ~1.5 s so we clear the line before re-checking
-          rs.events.push({ type: 'lap', lap: rs.lap, total: rs.totalLaps, ticks: rs.tick });
-        } else {
-          rs.phase = 'finished';
-          rs.finished = true;
-          rs.finalTicks = rs.tick;
-          rs.events.push({ type: 'finish', ticks: rs.tick });
-        }
-        break;
-      }
+  // Are we currently on a finish line? The line only arms once the car has
+  // driven clear of it, so spawning on a Start/Finish block can't insta-trigger.
+  let onFinish = false;
+  for (const fin of rs.track.finishes) {
+    const cp = closestOnSeg(c.x, c.z, fin.a, fin.b);
+    if (Math.hypot(c.x - cp.x, c.z - cp.z) < 1.8) { onFinish = true; break; }
+  }
+  if (!onFinish) rs.finishArmed = true;
+  if (onFinish && rs.finishArmed && rs.cpCount === rs.track.cps.length && rs.finishCooldown <= 0) {
+    rs.finishArmed = false;
+    if (rs.lap < rs.totalLaps) {
+      // start a fresh lap: re-arm checkpoints and hug zones (ERS carries over)
+      rs.lap++;
+      rs.cpHit = rs.track.cps.map(() => false);
+      rs.cpCount = 0;
+      for (const z of rs.zones) { z.state = Z_ARMED; z.minDist = Infinity; z.minSpeed = 0; }
+      takeSnapshot(rs, { x: c.x, z: c.z, dir: Math.round(c.h / (Math.PI / 2)) & 3 });
+      rs.finishCooldown = 150;  // ~1.5 s so we clear the line before re-checking
+      rs.events.push({ type: 'lap', lap: rs.lap, total: rs.totalLaps, ticks: rs.tick });
+    } else {
+      rs.phase = 'finished';
+      rs.finished = true;
+      rs.finalTicks = rs.tick;
+      rs.events.push({ type: 'finish', ticks: rs.tick });
     }
   }
 

@@ -72,7 +72,8 @@
       <p><b>The racing line:</b> corners reward outside–inside–outside. Enter wide hugging the outer wall (entry zone on the segment before the turn), clip the glowing <em>apex zone</em> on the inside wall — the main payout — then run wide again across the exit zone on the segment after the turn.</p>
       <p><b>Editor:</b> click to place · R rotate · right-click delete · 1/2/3 toggle Entry/Apex/Exit zones on a hovered curve · Ctrl+Z/Y undo/redo ·
         T test drive · finish a test run to set the author time (medals derive from it) · middle-drag/Shift-drag pan · wheel zoom · Q/E rotate camera.
-        The green guide line at each corner shows the ideal racing line the zones reward; entry/exit zones are placed automatically on the segments before and after each turn.</p>
+        The green guide line at each corner shows the ideal racing line the zones reward; entry/exit zones are placed automatically on the segments before and after each turn.
+        The green arrow on the Start block shows which way the car faces at the line — rotate the block to aim it. Use the <b>Start / Finish</b> block for a single start-and-finish line, and set <b>Laps</b> in the toolbar for multi-lap circuits.</p>
       <p><b>Editor on mobile:</b> drag to pan, pinch to zoom. Line the cyan crosshair up over a cell, then tap <b>Place</b> or <b>Erase</b>. <b>⟳ Rot</b> rotates the piece, <b>Z1/Z2/Z3</b> toggle a placed block's zones, <b>↶/↷</b> undo/redo. Curves come in three radii — mix tight corners and long sweepers for flow.</p>
       <button class="btn-back">Back</button>
     </div>
@@ -127,6 +128,7 @@
   <div id="screen-editor" class="screen hud-screen">
     <div id="editor-toolbar">
       <input id="editor-name" placeholder="Map name" maxlength="40">
+      <label id="editor-laps-wrap">Laps <input id="editor-laps" type="number" min="1" max="99" value="1"></label>
       <button id="editor-test">Test (T)</button>
       <button id="editor-save">Save</button>
       <button id="editor-export">Share</button>

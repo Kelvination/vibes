@@ -17,6 +17,7 @@ export class Editor {
     this.hover = null;     // {x,z} cell
     this.mapKey = null;
     this.authorTime = null;
+    this.laps = 1;
     this.cam = { x: GRID * S / 2, z: GRID * S / 2, yaw: 0, pitch: 1.05, dist: 220 };
     this.preview = null;
     this.active = false;
@@ -67,13 +68,17 @@ export class Editor {
       this.placements = map.placements.map((p) => ({ ...p }));
       this.mapKey = map.key;
       this.authorTime = map.authorTime || null;
+      this.laps = Math.max(1, Math.min(99, map.laps | 0) || 1);
       $('editor-name').value = map.name || '';
     } else {
       this.placements = [];
       this.mapKey = null;
       this.authorTime = null;
+      this.laps = 1;
       $('editor-name').value = '';
     }
+    const lapsEl = $('editor-laps');
+    if (lapsEl) lapsEl.value = this.laps;
     this.undoStack = [];
     this.redoStack = [];
     this.r.grid.visible = true;
@@ -97,6 +102,7 @@ export class Editor {
       key: this.mapKey || ('custom:' + Date.now().toString(36)),
       name: $('editor-name').value.trim() || 'Untitled map',
       authorTime: this.authorTime,
+      laps: this.laps,
       placements: this.placements.map((p) => ({ ...p })),
     };
   }
@@ -323,6 +329,23 @@ export class Editor {
     btn('ed-z1', () => this.toggleZone(0));
     btn('ed-z2', () => this.toggleZone(1));
     btn('ed-z3', () => this.toggleZone(2));
+
+    const lapsEl = $('editor-laps');
+    if (lapsEl) {
+      const apply = (clamp) => {
+        let v = parseInt(lapsEl.value, 10);
+        if (!isFinite(v)) v = this.laps;
+        v = Math.max(1, Math.min(99, v));
+        if (clamp) lapsEl.value = v;
+        if (v === this.laps) return;
+        this.laps = v;
+        // changing lap count changes the run length, so any author time is stale
+        this.authorTime = null;
+        this.updateAuthorLabel();
+      };
+      lapsEl.addEventListener('input', () => apply(false));
+      lapsEl.addEventListener('change', () => apply(true));
+    }
   }
 
   updateHover(e) { this.updateHoverAt(e.clientX, e.clientY); }

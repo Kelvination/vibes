@@ -193,6 +193,8 @@ input[type=text], input:not([type]) {
   padding: 10px 14px; background: linear-gradient(#0c1220ee, #0c122000); pointer-events: auto;
 }
 #editor-toolbar input { width: 220px; }
+#editor-laps-wrap { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dim); white-space: nowrap; }
+#editor-toolbar #editor-laps { width: 56px; }
 #editor-author { font-size: 13px; }
 #editor-palette {
   position: absolute; top: 60px; left: 0; bottom: 40px; width: 168px; overflow-y: auto;

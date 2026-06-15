@@ -291,6 +291,12 @@ export class Renderer3D {
       case 'start':
         flat(roadW, S, COL.asphalt, S / 2, S / 2);
         flat(roadW, 1.8, COL.startStrip, S / 2, S / 2, 0.08);
+        if (this.showGuides) I.add(this.startArrow());
+        break;
+      case 'startfinish':
+        flat(roadW, S, COL.asphalt, S / 2, S / 2);
+        flat(roadW, 3, null, S / 2, S / 2, 0.08, this.checker);
+        if (this.showGuides) I.add(this.startArrow());
         break;
       case 'checkpoint':
         flat(roadW, S, COL.asphalt, S / 2, S / 2);
@@ -320,6 +326,28 @@ export class Renderer3D {
       // wall / hugwall: no surface; wall boxes come from compiled track
     }
     return G;
+  }
+
+  // A flat ground arrow pointing along local +Z — the spawn/forward direction.
+  // Authored in the block's local frame so the surface group's rotation makes it
+  // point the way the car will actually face. Editor-only (gated by showGuides).
+  startArrow() {
+    const cx = S / 2, cz = S / 2, y = 0.16;
+    const v = [];
+    const tri = (ax, az, bx, bz, dx, dz) => v.push(ax, y, az, bx, y, bz, dx, y, dz);
+    const sw = 1.1;                 // shaft half-width
+    const z0 = cz - 5.0, z1 = cz + 1.5; // shaft span
+    tri(cx - sw, z0, cx + sw, z0, cx + sw, z1);
+    tri(cx - sw, z0, cx + sw, z1, cx - sw, z1);
+    const hw = 3.1;                 // arrowhead half-width
+    tri(cx - hw, z1, cx + hw, z1, cx, cz + 6.2); // head points toward +Z
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(v), 3));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshBasicMaterial({
+      color: COL.startStrip, transparent: true, opacity: 0.95, side: THREE.DoubleSide,
+    });
+    return new THREE.Mesh(geo, mat);
   }
 
   // Preview mesh for the editor (surfaces + local walls, semi-transparent handled by caller)
