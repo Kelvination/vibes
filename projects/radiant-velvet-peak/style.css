@@ -341,6 +341,9 @@ body.touch #hud-bottom { bottom: 120px; }
 body.touch #hud-ers { width: min(200px, 42vw); }
 body.touch #hud-time { top: 52px; }
 body.touch #hud-split { top: 84px; }
+/* trim top-right clutter on phones so the track stays clear */
+body.touch #hud-medals { display: none; }
+body.touch #hud-topright { font-size: 11px; opacity: 0.6; }
 
 @media (max-width: 600px) {
   .menu-box { margin: 3vh 14px; padding: 22px 18px; }

@@ -199,6 +199,16 @@ Key Blender conventions to follow:
 - **Socket types**: When a mode changes the output type (e.g., Random Value Float→Vector), the output socket type actually changes.
 - **Field evaluation**: Fields are lazy per-element functions evaluated against domain elements.
 
+## radiant-velvet-peak: Wall Hugger racing game
+
+**Keep the decision log up to date.** `projects/radiant-velvet-peak/DECISIONS.md`
+records intentional gameplay/UX decisions (passive ERS, world-fixed chase
+camera, capsule hitbox, slide-recovery assist, mild boosters, mobile editor,
+uncluttered mobile HUD, etc.) that have been reverted-by-accident before. Before
+changing handling, camera, ERS, or UI in this project, read it; after making a
+deliberate decision of this kind, add or update the relevant entry in the same
+PR. Do not silently undo a logged decision.
+
 ## Response Format
 
 At the end of every response, provide a link to create a new PR for the current branch. Use this format:
