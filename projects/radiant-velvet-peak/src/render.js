@@ -451,16 +451,9 @@ export class Renderer3D {
   }
 
   snapCamera(car) {
-    // Chase cam keeps a constant world heading (+Z), so it never rotates with
-    // the car. Just sit behind the car in -Z; hood cam still uses heading.
-    if (this.camMode === 'hood') {
-      const fx = Math.sin(car.h), fz = Math.cos(car.h);
-      this.camPos.set(car.x - fx * 11, 5.2, car.z - fz * 11);
-      this.camLook.set(car.x + fx * 6, 1.2, car.z + fz * 6);
-    } else {
-      this.camPos.set(car.x, 6.6, car.z - 12);
-      this.camLook.set(car.x, 1.2, car.z + 6);
-    }
+    const fx = Math.sin(car.h), fz = Math.cos(car.h);
+    this.camPos.set(car.x - fx * 11, 5.2, car.z - fz * 11);
+    this.camLook.set(car.x + fx * 6, 1.2, car.z + fz * 6);
   }
 
   updateChase(car, speed, deploying, dt) {
@@ -470,18 +463,16 @@ export class Renderer3D {
       this.camera.lookAt(car.x + fx * 30, 0.9, car.z + fz * 30);
       this.camera.fov = 78 + Math.min(speed, 70) * 0.18;
     } else {
-      // Fixed-orientation chase: follow the car's POSITION but hold a constant
-      // world heading (+Z into the screen). The view never spins when the car
-      // turns — the car rotates within frame instead — which kills the
-      // motion-sickness from the old heading-locked orbit camera.
-      const back = 12 + Math.min(speed, 70) * 0.06;
-      const tx = car.x, tz = car.z - back;
+      // Smoothed chase that follows the car's heading (the original feel). The
+      // damping (k) keeps it from snapping, so it tracks turns without whipping.
+      const back = 10.5 + Math.min(speed, 70) * 0.05;
+      const tx = car.x - fx * back, tz = car.z - fz * back;
       const k = 1 - Math.exp(-dt * 7);
       this.camPos.x += (tx - this.camPos.x) * k;
       this.camPos.z += (tz - this.camPos.z) * k;
-      this.camPos.y += (6.6 - this.camPos.y) * k;
+      this.camPos.y += (5.2 - this.camPos.y) * k;
       this.camera.position.copy(this.camPos);
-      this.camera.lookAt(car.x, 1.1, car.z + 7);
+      this.camera.lookAt(car.x + fx * 7, 1.1, car.z + fz * 7);
       this.camera.fov = 70 + Math.min(speed, 70) * 0.22;
     }
     this.camera.updateProjectionMatrix();
