@@ -193,8 +193,6 @@ input[type=text], input:not([type]) {
   padding: 10px 14px; background: linear-gradient(#0c1220ee, #0c122000); pointer-events: auto;
 }
 #editor-toolbar input { width: 220px; }
-#editor-laps-wrap { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dim); white-space: nowrap; }
-#editor-toolbar #editor-laps { width: 56px; }
 #editor-author { font-size: 13px; }
 #editor-palette {
   position: absolute; top: 60px; left: 0; bottom: 40px; width: 168px; overflow-y: auto;
@@ -238,19 +236,52 @@ body.touch #editor-touch { display: block; }
 #editor-tools .ed-zrow { display: flex; gap: 6px; }
 #editor-tools .ed-zrow button { flex: 1; padding: 9px 0; }
 
-/* touch palette: horizontal scrolling strip across the bottom */
-body.touch #editor-palette {
-  top: auto; bottom: 0; left: 0; right: 0; width: auto; height: 78px;
-  flex-direction: row; align-items: center; gap: 6px;
-  overflow-x: auto; overflow-y: hidden; padding: 8px 10px;
-  -webkit-overflow-scrolling: touch;
+/* On touch the left sidebar palette is replaced by the folder picker modal,
+   opened from the on-screen Block button. */
+body.touch #editor-palette { display: none; }
+body.touch #editor-status { font-size: 12px; padding: 6px 12px; padding-left: 160px; }
+
+/* ===== mobile block-picker button (opens the folder modal) ===== */
+#editor-block-btn { display: none; }
+body.touch #editor-block-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  position: fixed; left: max(10px, env(safe-area-inset-left)); bottom: 10px; z-index: 41;
+  max-width: 44vw; padding: 11px 14px; font-size: 15px; font-weight: 600;
+  background: #14405a; border-color: var(--cyan); pointer-events: auto;
 }
-body.touch .pal-cat {
-  margin: 0 2px; align-self: center; font-size: 10px; writing-mode: vertical-rl;
-  transform: rotate(180deg); opacity: 0.7;
+#editor-block-btn #editor-block-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ===== modals (map settings + block picker) ===== */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 90; display: none;
+  background: rgba(4, 8, 16, 0.6); place-items: center; pointer-events: auto;
 }
-body.touch .pal-block { flex: 0 0 auto; white-space: nowrap; font-size: 14px; padding: 9px 12px; }
-body.touch #editor-status { bottom: 78px; font-size: 12px; padding: 6px 12px; }
+.modal-overlay.show { display: grid; }
+.modal-box {
+  width: min(440px, 92vw); max-height: 86vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px; padding: 22px;
+  background: var(--panel); border: 1px solid #2e4263; border-radius: 14px;
+}
+.modal-box.tall { width: min(520px, 94vw); height: min(640px, 86vh); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; }
+.modal-head h3 { margin: 0; }
+.modal-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 16px; }
+.modal-row input[type=number] { width: 90px; font: inherit; font-size: 16px; text-align: center; padding: 8px; }
+
+/* block picker accordion */
+#blockmodal-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+.bm-cat { border: 1px solid #243450; border-radius: 8px; overflow: hidden; }
+.bm-cathead {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  background: #16223a; border: none; border-radius: 0; padding: 13px 14px;
+  font-size: 16px; font-weight: 600; color: var(--cyan);
+}
+.bm-chev { transition: transform .18s ease; color: var(--dim); }
+.bm-cat.open .bm-chev { transform: rotate(90deg); }
+.bm-group { display: none; flex-wrap: wrap; gap: 6px; padding: 0; }
+.bm-cat.open .bm-group { display: flex; padding: 8px; }
+.bm-block { flex: 1 1 44%; text-align: left; padding: 12px; font-size: 15px; }
+.bm-block.sel { border-color: var(--cyan); background: #14405a; }
 
 @media (max-width: 760px) {
   #editor-toolbar { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
