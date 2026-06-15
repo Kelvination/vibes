@@ -207,6 +207,56 @@ input[type=text], input:not([type]) {
   font-size: 13px; color: var(--dim); background: rgba(12, 20, 36, .8);
 }
 
+/* ===== mobile editor (touch) ===== */
+#editor-touch { display: none; }
+body.touch #editor-touch { display: block; }
+
+/* centre crosshair — marks the cell that Place/Erase/Z act on */
+#editor-crosshair {
+  position: fixed; left: 50%; top: 50%; width: 30px; height: 30px;
+  transform: translate(-50%, -50%); pointer-events: none; z-index: 30;
+}
+#editor-crosshair::before, #editor-crosshair::after {
+  content: ''; position: absolute; background: var(--cyan); box-shadow: 0 0 6px #000;
+}
+#editor-crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+#editor-crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+
+#editor-tools {
+  position: fixed; right: max(10px, env(safe-area-inset-right)); top: 50%;
+  transform: translateY(-50%); z-index: 40; pointer-events: auto;
+  display: flex; flex-direction: column; gap: 7px; width: 132px;
+}
+#editor-tools button {
+  padding: 11px 8px; font-size: 15px; font-weight: 600;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+#editor-tools .ed-prime { background: #14405a; border-color: var(--cyan); font-size: 17px; }
+#editor-tools .ed-zrow { display: flex; gap: 6px; }
+#editor-tools .ed-zrow button { flex: 1; padding: 9px 0; }
+
+/* touch palette: horizontal scrolling strip across the bottom */
+body.touch #editor-palette {
+  top: auto; bottom: 0; left: 0; right: 0; width: auto; height: 78px;
+  flex-direction: row; align-items: center; gap: 6px;
+  overflow-x: auto; overflow-y: hidden; padding: 8px 10px;
+  -webkit-overflow-scrolling: touch;
+}
+body.touch .pal-cat {
+  margin: 0 2px; align-self: center; font-size: 10px; writing-mode: vertical-rl;
+  transform: rotate(180deg); opacity: 0.7;
+}
+body.touch .pal-block { flex: 0 0 auto; white-space: nowrap; font-size: 14px; padding: 9px 12px; }
+body.touch #editor-status { bottom: 78px; font-size: 12px; padding: 6px 12px; }
+
+@media (max-width: 760px) {
+  #editor-toolbar { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
+  #editor-toolbar input { width: 120px; }
+  #editor-toolbar button { padding: 7px 9px; font-size: 13px; }
+  #editor-author { width: 100%; }
+}
+
 /* ===== tuning panel ===== */
 #tuning-panel {
   position: fixed; top: 60px; right: 12px; width: 320px; max-height: 75vh;

@@ -21,8 +21,10 @@ export class Editor {
     this.preview = null;
     this.active = false;
     this.occ = new Map();
+    this.isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     this.buildPalette();
     this.bindPointer();
+    this.bindControls();
   }
 
   buildPalette() {
@@ -51,8 +53,11 @@ export class Editor {
     document.querySelectorAll('.pal-block').forEach((b) => b.classList.toggle('sel', b.dataset.block === id));
     this.rebuildPreview();
     const def = BLOCKS[id];
-    this.cb.setStatus(`${def.name} — click to place, R rotate, right-click delete` +
-      (def.zoneSlots ? `, hover placed block + 1/2/3 to toggle zones (${def.zoneSlots.join('/')})` : ''));
+    this.cb.setStatus(this.isTouch
+      ? `${def.name} selected — drag to pan, pinch to zoom, aim the crosshair, tap Place`
+        + (def.zoneSlots ? `. On placed blocks Z1/Z2/Z3 toggle ${def.zoneSlots.join('/')}` : '')
+      : `${def.name} — click to place, R rotate, right-click delete`
+        + (def.zoneSlots ? `, hover placed block + 1/2/3 to toggle zones (${def.zoneSlots.join('/')})` : ''));
   }
 
   enter(map) {
@@ -232,9 +237,23 @@ export class Editor {
   bindPointer() {
     const canvas = this.r.renderer.domElement;
     let panning = false, lastX = 0, lastY = 0;
+    const touches = new Map();   // pointerId -> {x,y}
+    let pinchDist = 0;
 
     canvas.addEventListener('pointerdown', (e) => {
       if (!this.active) return;
+      if (e.pointerType === 'touch') {
+        // Touch: fingers only drive the camera (pan/pinch). Editing is done
+        // with the on-screen tool buttons aiming the centre crosshair, so a
+        // stray tap never drops or deletes a block.
+        e.preventDefault();
+        touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (touches.size === 2) {
+          const [a, b] = [...touches.values()];
+          pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+        }
+        return;
+      }
       if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
         panning = true; lastX = e.clientX; lastY = e.clientY;
         e.preventDefault();
@@ -244,20 +263,39 @@ export class Editor {
         this.erase();
       }
     });
-    canvas.addEventListener('pointerup', () => { panning = false; });
+
+    const endTouch = (e) => {
+      if (e.pointerType === 'touch') { touches.delete(e.pointerId); pinchDist = 0; }
+      else panning = false;
+    };
+    canvas.addEventListener('pointerup', endTouch);
+    canvas.addEventListener('pointercancel', endTouch);
     canvas.addEventListener('contextmenu', (e) => { if (this.active) e.preventDefault(); });
+
     canvas.addEventListener('pointermove', (e) => {
       if (!this.active) return;
+      if (e.pointerType === 'touch') {
+        const prev = touches.get(e.pointerId);
+        if (!prev) return;
+        if (touches.size >= 2) {
+          touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          const [a, b] = [...touches.values()];
+          const d = Math.hypot(a.x - b.x, a.y - b.y);
+          if (pinchDist > 0) this.cam.dist = Math.max(40, Math.min(700, this.cam.dist * pinchDist / d));
+          pinchDist = d;
+        } else {
+          this._panScreen(e.clientX - prev.x, e.clientY - prev.y);
+          touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        }
+        return;
+      }
       if (panning) {
-        const k = this.cam.dist / 700;
-        const dx = (e.clientX - lastX) * k, dy = (e.clientY - lastY) * k;
-        const cy = Math.cos(this.cam.yaw), sy = Math.sin(this.cam.yaw);
-        this.cam.x -= dx * cy - dy * sy;
-        this.cam.z += dx * sy + dy * cy;
+        this._panScreen(e.clientX - lastX, e.clientY - lastY);
         lastX = e.clientX; lastY = e.clientY;
       }
       this.updateHover(e);
     });
+
     canvas.addEventListener('wheel', (e) => {
       if (!this.active) return;
       e.preventDefault();
@@ -265,10 +303,38 @@ export class Editor {
     }, { passive: false });
   }
 
-  updateHover(e) {
+  _panScreen(dxPix, dyPix) {
+    const k = this.cam.dist / 700;
+    const dx = dxPix * k, dy = dyPix * k;
+    const cy = Math.cos(this.cam.yaw), sy = Math.sin(this.cam.yaw);
+    this.cam.x -= dx * cy - dy * sy;
+    this.cam.z += dx * sy + dy * cy;
+  }
+
+  // wire the on-screen editor buttons (mobile) to the same edit actions
+  bindControls() {
+    const btn = (id, fn) => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+      el.addEventListener('pointerup', (e) => { e.preventDefault(); fn(); });
+    };
+    btn('ed-place', () => this.place());
+    btn('ed-erase', () => this.erase());
+    btn('ed-rot', () => this.rotate());
+    btn('ed-undo', () => this.undo());
+    btn('ed-redo', () => this.redo());
+    btn('ed-z1', () => this.toggleZone(0));
+    btn('ed-z2', () => this.toggleZone(1));
+    btn('ed-z3', () => this.toggleZone(2));
+  }
+
+  updateHover(e) { this.updateHoverAt(e.clientX, e.clientY); }
+
+  updateHoverAt(px, py) {
     const cam = this.r.camera;
-    const ndcX = (e.clientX / innerWidth) * 2 - 1;
-    const ndcY = -(e.clientY / innerHeight) * 2 + 1;
+    const ndcX = (px / innerWidth) * 2 - 1;
+    const ndcY = -(py / innerHeight) * 2 + 1;
     // unproject ray to y=0 plane
     const origin = cam.position;
     const v = { x: ndcX, y: ndcY, z: 0.5 };
@@ -333,6 +399,12 @@ export class Editor {
   frame() {
     if (!this.active) return;
     this.r.setOrbit({ x: this.cam.x, y: 0, z: this.cam.z }, this.cam.yaw, this.cam.pitch, this.cam.dist);
+    // On touch the target cell is whatever the centre crosshair is over, so the
+    // preview tracks the camera as you pan/pinch the map around underneath it.
+    if (this.isTouch) {
+      this.r.camera.updateMatrixWorld();
+      this.updateHoverAt(innerWidth / 2, innerHeight / 2);
+    }
     if (this.preview) {
       if (this.hover) {
         this.preview.visible = true;

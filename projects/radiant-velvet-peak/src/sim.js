@@ -33,6 +33,20 @@ function polylineDist(px, pz, pts) {
   return { dist: best, atEnd: bestEnd };
 }
 
+// Distance from the car *body* to a polyline, measured from the nearer of the
+// two capsule ends (front/rear) — i.e. the closest point on the car, not its
+// center. Matches the collision capsule so "how close did the car get" lines
+// up with what actually touches the wall.
+function carPolylineDist(c, t, pts) {
+  const fX = Math.sin(c.h), fZ = Math.cos(c.h), off = t.carColOffset;
+  let best = Infinity, atEnd = false;
+  for (let s = -1; s <= 1; s += 2) {
+    const d = polylineDist(c.x + fX * off * s, c.z + fZ * off * s, pts);
+    if (d.dist < best) { best = d.dist; atEnd = d.atEnd; }
+  }
+  return { dist: best, atEnd };
+}
+
 // Zone pass states
 export const Z_ARMED = 0, Z_TRACKING = 1, Z_PAID = 2, Z_VOID = 3;
 
@@ -336,8 +350,8 @@ export function step(rs, input) {
     const isNear = touched.has(zi);
     if (zs.state === Z_ARMED && !isNear) continue;
     const zone = rs.track.zones[zi];
-    const { dist, atEnd } = polylineDist(c.x, c.z, zone.pts);
-    const faceDist = Math.max(0, dist - t.carHalfWidth);
+    const { dist, atEnd } = carPolylineDist(c, t, zone.pts);
+    const faceDist = Math.max(0, dist - t.carColRadius);
     if (zs.state === Z_ARMED) {
       if (!atEnd && faceDist < t.zoneBand) {
         zs.state = Z_TRACKING;

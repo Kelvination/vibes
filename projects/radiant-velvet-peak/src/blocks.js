@@ -185,6 +185,7 @@ export const BLOCKS = {
   road_hug:   { id: 'road_hug',   name: 'Hug Road',        cat: 'Road',    W: 1, H: 1, geo: straightGeo({ hug: true }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT, zoneSlots: ['Left', 'Right'] },
   curve1:     { id: 'curve1',     name: 'Curve 1',         cat: 'Road',    W: 1, H: 1, geo: curveGeo(1), surf: curveSurf(1, 'asphalt'), conn: connCurve(1), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 1 },
   curve2:     { id: 'curve2',     name: 'Curve 2',         cat: 'Road',    W: 2, H: 2, geo: curveGeo(2), surf: curveSurf(2, 'asphalt'), conn: connCurve(2), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 2 },
+  curve3:     { id: 'curve3',     name: 'Curve 3 (sweep)', cat: 'Road',    W: 3, H: 3, geo: curveGeo(3), surf: curveSurf(3, 'asphalt'), conn: connCurve(3), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 3 },
   dirt:       { id: 'dirt',       name: 'Dirt Road',       cat: 'Dirt',    W: 1, H: 1, geo: straightGeo({ surface: 'dirt' }), surf: roadSurf('dirt'), conn: CONN_STRAIGHT, dirt: true },
   dirt_curve: { id: 'dirt_curve', name: 'Dirt Curve',      cat: 'Dirt',    W: 1, H: 1, geo: curveGeo(1), surf: curveSurf(1, 'dirt'), conn: connCurve(1), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 1, dirt: true },
   start:      { id: 'start',      name: 'Start',           cat: 'Special', W: 1, H: 1, geo: straightGeo({ spawn: true }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
@@ -429,8 +430,8 @@ export class PathBuilder {
     return this;
   }
   s(n = 1, id = 'road', opts) { for (let i = 0; i < n; i++) this.place(id, 'fwd', opts); return this; }
-  R(k = 1, opts) { return this.place(k === 2 ? 'curve2' : 'curve1', 'fwd', opts); }
-  L(k = 1, opts) { return this.place(k === 2 ? 'curve2' : 'curve1', 'rev', opts); }
+  R(k = 1, opts) { return this.place(k === 3 ? 'curve3' : k === 2 ? 'curve2' : 'curve1', 'fwd', opts); }
+  L(k = 1, opts) { return this.place(k === 3 ? 'curve3' : k === 2 ? 'curve2' : 'curve1', 'rev', opts); }
   dR(opts) { return this.place('dirt_curve', 'fwd', opts); }
   dL(opts) { return this.place('dirt_curve', 'rev', opts); }
   start() { return this.place('start', 'fwd'); }

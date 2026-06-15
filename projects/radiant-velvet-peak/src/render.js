@@ -115,42 +115,66 @@ export class Renderer3D {
 
   makeCar(color, opacity) {
     const g = new THREE.Group();
-    const mat = new THREE.MeshLambertMaterial({ color, transparent: opacity < 1, opacity });
-    const dark = new THREE.MeshLambertMaterial({ color: 0x14181f, transparent: opacity < 1, opacity });
+    const tr = opacity < 1;
+    const mat = new THREE.MeshLambertMaterial({ color, transparent: tr, opacity });
+    const dark = new THREE.MeshLambertMaterial({ color: 0x14181f, transparent: tr, opacity });
+    const glass = new THREE.MeshLambertMaterial({ color: 0x0a0e16, transparent: tr, opacity });
+    const accent = new THREE.MeshLambertMaterial({
+      color: new THREE.Color(color).offsetHSL(0, 0.05, 0.14), transparent: tr, opacity,
+    });
+    const add = (parent, geo, m, x, y, z, ry = 0) => {
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(x, y, z);
+      if (ry) mesh.rotation.y = ry;
+      parent.add(mesh);
+      return mesh;
+    };
 
-    // Sprung mass (body + cabin + glow) — tilts with the suspension; the
-    // wheels stay planted on the ground so the body visibly rolls and dives.
+    // Sprung mass — a low, wedge-nosed sports prototype. Tilts with the
+    // suspension; the wheels stay planted so the body visibly rolls and dives.
     const chassis = new THREE.Group();
     g.add(chassis);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.62, 4.2), mat);
-    body.position.y = 0.55;
-    chassis.add(body);
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 1.7), dark);
-    cabin.position.set(0, 1.05, -0.35);
-    chassis.add(cabin);
+    // low wide hull + raised engine/cockpit deck
+    add(chassis, new THREE.BoxGeometry(1.78, 0.42, 4.0), mat, 0, 0.40, -0.1);
+    add(chassis, new THREE.BoxGeometry(1.62, 0.34, 2.0), mat, 0, 0.66, -0.5);
+    // wedge nose (lower at the tip) + front splitter
+    add(chassis, new THREE.BoxGeometry(1.5, 0.26, 1.5), mat, 0, 0.30, 1.55);
+    add(chassis, new THREE.BoxGeometry(1.86, 0.07, 0.5), dark, 0, 0.17, 2.15);
+    // canopy / cockpit glass, tapered toward the tail
+    add(chassis, new THREE.BoxGeometry(1.14, 0.40, 1.5), glass, 0, 0.98, -0.05);
+    add(chassis, new THREE.BoxGeometry(0.9, 0.30, 0.9), glass, 0, 1.16, 0.2);
+    // dorsal accent stripe + rear haunches
+    add(chassis, new THREE.BoxGeometry(0.34, 0.06, 3.0), accent, 0, 0.86, -0.3);
+    add(chassis, new THREE.BoxGeometry(1.8, 0.40, 1.2), mat, 0, 0.5, -1.5);
+    // side skirts
+    add(chassis, new THREE.BoxGeometry(0.16, 0.18, 2.4), dark, -0.92, 0.28, -0.1);
+    add(chassis, new THREE.BoxGeometry(0.16, 0.18, 2.4), dark, 0.92, 0.28, -0.1);
+    // rear wing on two pylons
+    add(chassis, new THREE.BoxGeometry(0.1, 0.36, 0.16), dark, -0.6, 0.96, -1.95);
+    add(chassis, new THREE.BoxGeometry(0.1, 0.36, 0.16), dark, 0.6, 0.96, -1.95);
+    add(chassis, new THREE.BoxGeometry(1.84, 0.08, 0.52), accent, 0, 1.18, -2.0);
+    // twin exhaust tips
+    add(chassis, new THREE.CylinderGeometry(0.1, 0.1, 0.2, 8), dark, -0.35, 0.4, -2.05).rotation.x = Math.PI / 2;
+    add(chassis, new THREE.CylinderGeometry(0.1, 0.1, 0.2, 8), dark, 0.35, 0.4, -2.05).rotation.x = Math.PI / 2;
 
-    const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.32, 10);
+    // wheels — low-profile, rears wider/taller for a planted stance
+    const frontGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.34, 12);
+    const rearGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.46, 12);
     const frontWheels = [];
     for (const [x, z, front] of [[-0.95, 1.35, true], [0.95, 1.35, true], [-0.95, -1.35, false], [0.95, -1.35, false]]) {
       const pivot = new THREE.Group();        // steers (front) about vertical
-      pivot.position.set(x, 0.38, z);
-      const w = new THREE.Mesh(wheelGeo, dark);
+      pivot.position.set(x, front ? 0.4 : 0.45, z);
+      const w = new THREE.Mesh(front ? frontGeo : rearGeo, dark);
       w.rotation.z = Math.PI / 2;
       pivot.add(w);
+      // wheel hub accent
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.5, 8), accent);
+      hub.rotation.z = Math.PI / 2;
+      pivot.add(hub);
       g.add(pivot);
       if (front) frontWheels.push(pivot);
     }
 
-    // ERS exhaust glow (PRD §8.1)
-    const glow = new THREE.Mesh(
-      new THREE.ConeGeometry(0.45, 2.2, 8),
-      new THREE.MeshBasicMaterial({ color: 0x40c8ff, transparent: true, opacity: 0.75 })
-    );
-    glow.rotation.x = Math.PI / 2;
-    glow.position.set(0, 0.55, -3.0);
-    glow.visible = false;
-    chassis.add(glow);
-    g.userData.glow = glow;
     g.userData.chassis = chassis;
     g.userData.frontWheels = frontWheels;
     return g;
@@ -285,8 +309,8 @@ export class Renderer3D {
         flat(roadW * 0.7, S * 0.6, COL.boost, S / 2, S / 2, 0.08);
         break;
       }
-      case 'curve1': case 'curve2': case 'dirt_curve': {
-        const k = p.id === 'curve2' ? 2 : 1;
+      case 'curve1': case 'curve2': case 'curve3': case 'dirt_curve': {
+        const k = def.curveK || 1;
         const rIn = (k - 1) * S + MARGIN, rOut = k * S - MARGIN;
         const ring = new THREE.Mesh(
           new THREE.RingGeometry(rIn, rOut, 14 * k, 1, -Math.PI, Math.PI / 2),

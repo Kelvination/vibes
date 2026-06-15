@@ -74,6 +74,7 @@
       <p><b>Editor:</b> click to place · R rotate · right-click delete · 1/2/3 toggle Entry/Apex/Exit zones on a hovered curve · Ctrl+Z/Y undo/redo ·
         T test drive · finish a test run to set the author time (medals derive from it) · middle-drag/Shift-drag pan · wheel zoom · Q/E rotate camera.
         The green guide line at each corner shows the ideal racing line the zones reward; entry/exit zones are placed automatically on the segments before and after each turn.</p>
+      <p><b>Editor on mobile:</b> drag to pan, pinch to zoom. Line the cyan crosshair up over a cell, then tap <b>Place</b> or <b>Erase</b>. <b>⟳ Rot</b> rotates the piece, <b>Z1/Z2/Z3</b> toggle a placed block's zones, <b>↶/↷</b> undo/redo. Curves come in three radii — mix tight corners and long sweepers for flow.</p>
       <button class="btn-back">Back</button>
     </div>
   </div>
@@ -138,6 +139,25 @@
     </div>
     <div id="editor-palette"></div>
     <div id="editor-status"></div>
+
+    <!-- Touch editing aids — shown only on touch devices (body.touch) -->
+    <div id="editor-touch">
+      <div id="editor-crosshair"></div>
+      <div id="editor-tools">
+        <button id="ed-place" class="ed-prime">Place</button>
+        <button id="ed-erase">Erase</button>
+        <button id="ed-rot">⟳ Rot</button>
+        <div class="ed-zrow">
+          <button id="ed-z1">Z1</button>
+          <button id="ed-z2">Z2</button>
+          <button id="ed-z3">Z3</button>
+        </div>
+        <div class="ed-zrow">
+          <button id="ed-undo">↶</button>
+          <button id="ed-redo">↷</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ===== Debug tuning panel (PRD M1) ===== -->
