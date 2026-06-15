@@ -189,6 +189,7 @@ export const BLOCKS = {
   dirt:       { id: 'dirt',       name: 'Dirt Road',       cat: 'Dirt',    W: 1, H: 1, geo: straightGeo({ surface: 'dirt' }), surf: roadSurf('dirt'), conn: CONN_STRAIGHT, dirt: true },
   dirt_curve: { id: 'dirt_curve', name: 'Dirt Curve',      cat: 'Dirt',    W: 1, H: 1, geo: curveGeo(1), surf: curveSurf(1, 'dirt'), conn: connCurve(1), zoneSlots: ['Entry', 'Apex', 'Exit'], curveK: 1, dirt: true },
   start:      { id: 'start',      name: 'Start',           cat: 'Special', W: 1, H: 1, geo: straightGeo({ spawn: true }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
+  startfinish:{ id: 'startfinish',name: 'Start / Finish',   cat: 'Special', W: 1, H: 1, geo: straightGeo({ trigger: 'finish', spawn: true }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
   checkpoint: { id: 'checkpoint', name: 'Checkpoint',      cat: 'Special', W: 1, H: 1, geo: straightGeo({ trigger: 'cp', spawn: true }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
   finish:     { id: 'finish',     name: 'Finish',          cat: 'Special', W: 1, H: 1, geo: straightGeo({ trigger: 'finish' }), surf: roadSurf('asphalt'), conn: CONN_STRAIGHT },
   booster:    { id: 'booster',    name: 'Booster',         cat: 'Special', W: 1, H: 1, geo: straightGeo(), surf: boostSurf, conn: CONN_STRAIGHT },
@@ -217,7 +218,7 @@ function insertSeg(map, idx, a, b) {
 
 // Blocks that may receive injected entry/exit approach zones when they flank
 // a corner. road_hug is excluded — it already carries its own full-wall zones.
-const APPROACH_BLOCKS = new Set(['road', 'start', 'checkpoint', 'finish', 'booster', 'dirt']);
+const APPROACH_BLOCKS = new Set(['road', 'start', 'startfinish', 'checkpoint', 'finish', 'booster', 'dirt']);
 
 function quadBez(a, c, b, n) {
   const pts = [];
@@ -357,7 +358,7 @@ export function compile(placements) {
       if (geo.trigger.kind === 'finish') track.finishes.push(trig);
       else track.cps.push({ ...trig, spawn: geo.spawn ? { ...tw(geo.spawn), dir: (geo.spawn.dir + r) & 3 } : null });
     }
-    if (geo.spawn && p.id === 'start') {
+    if (geo.spawn && (p.id === 'start' || p.id === 'startfinish')) {
       track.start = { ...tw(geo.spawn), dir: (geo.spawn.dir + r) & 3 };
     }
     if (geo.line) track.line.push(...geo.line.map(tw));
@@ -381,8 +382,9 @@ export function compile(placements) {
 }
 
 export function validate(placements) {
-  const starts = placements.filter((p) => p.id === 'start').length;
-  const finishes = placements.filter((p) => p.id === 'finish').length;
+  // a Start/Finish block counts as both a start spawn and a finish line
+  const starts = placements.filter((p) => p.id === 'start' || p.id === 'startfinish').length;
+  const finishes = placements.filter((p) => p.id === 'finish' || p.id === 'startfinish').length;
   const errs = [];
   if (starts !== 1) errs.push(`Map must have exactly one Start (has ${starts})`);
   if (finishes < 1) errs.push('Map must have at least one Finish');
@@ -419,6 +421,7 @@ export class PathBuilder {
   dR(opts) { return this.place('dirt_curve', 'fwd', opts); }
   dL(opts) { return this.place('dirt_curve', 'rev', opts); }
   start() { return this.place('start', 'fwd'); }
+  startFinish() { return this.place('startfinish', 'fwd'); }
   cp() { return this.place('checkpoint', 'fwd'); }
   finish() { return this.place('finish', 'fwd'); }
   boost() { return this.place('booster', 'fwd'); }

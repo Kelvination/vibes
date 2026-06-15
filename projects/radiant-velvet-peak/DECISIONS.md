@@ -46,6 +46,18 @@ entry here (and add new ones).** Newest first.
 - **Editor works on touch**: one-finger pan, pinch zoom, centre crosshair +
   on-screen tools (Place/Erase/Rot/Z1-3/undo-redo). A stray tap must never
   place/delete. Desktop mouse/keyboard editing unchanged.
+- **Start direction is shown in the editor** as a green ground arrow on the Start
+  / Start-Finish blocks, drawn in the block's local +Z frame so it rotates with
+  the block (`render.js` `startArrow()`, gated by `showGuides` so it's editor-only
+  — never in a race). Spawn dir 0 = local +Z = the car's forward at the line.
+- **Start / Finish combo block** (`startfinish`): one block that is both the spawn
+  and a finish line (`straightGeo({ trigger:'finish', spawn:true })`). The car
+  spawns ON the line, so the finish only counts once the car has driven clear of
+  it (`sim.js` `finishArmed`) — don't remove that gate or lap 1 self-completes.
+  `validate()` counts it as both a Start and a Finish.
+- **Lap count is editor-authored** (`editor-laps` toolbar input, 1–99, stored as
+  `map.laps`, carried through export/import). Changing it clears the author time
+  (run length changed). Campaign maps keep their own `laps`.
 
 ## Mobile UI
 - Keep the driving view uncluttered: no track-description popups over the track,
