@@ -278,24 +278,92 @@ const TUNE_SECTIONS = [
   ['Car body', ['carColRadius', 'carColOffset', 'carHalfWidth']],
   ['Chassis & mass', ['mass', 'gravity', 'Iz', 'lf', 'lr', 'hcg']],
   ['Engine & longitudinal', ['engineForce', 'topSpeed', 'brakeForce', 'brakeBias',
-    'reverseForce', 'reverseTop', 'reverseThresh', 'rollK', 'dragK']],
-  ['Tires', ['baseMu', 'corneringStiff', 'lowSpeedRef', 'yawDamp']],
+    'brakeRotation', 'reverseForce', 'reverseTop', 'reverseThresh', 'rollK', 'dragK']],
+  ['Tires & grip', ['baseMu', 'gripFront', 'gripRear', 'corneringStiff', 'lowSpeedRef', 'yawDamp']],
   ['Steering', ['maxSteerAngle', 'steerSpeedK', 'steerRate', 'recenterRate']],
   ['Slide recovery', ['counterSteerBoost', 'assistMinSlip', 'assistFullSlip', 'assistYaw', 'assistVRef']],
   ['Suspension (visual)', ['susStiff', 'susDamp', 'susPitchGain', 'susRollGain', 'susHeaveGain']],
   ['Boosters', ['boostAccel']],
   ['Walls', ['wallHalf', 'wallRestitution', 'wallFrictionK', 'wallYawDamp']],
-  ['ERS', ['ersCap', 'ersPassivePower', 'ersPassiveTop', 'ersDecay']],
+  ['ERS', ['ersCap', 'ersPassivePower', 'ersPassiveTop', 'ersPassiveGrip', 'ersDecay']],
   ['Hug zones', ['zoneBand', 'zoneMax', 'zoneCurveExp', 'zoneSpeedRef', 'zonePerfect', 'zoneClose']],
 ];
 const TUNE_SURFACES = ['asphalt', 'dirt', 'grass', 'boost'];
 
-function tuneRow(label, get, set) {
+// Friendly label + plain-language description for each tuning value, so the
+// panel explains what every knob does instead of showing a bare variable name.
+const TUNE_META = {
+  dt: ['Timestep', 'Physics step in seconds (0.01 = 100 Hz). Lower is more precise but costs more.'],
+  countdownTicks: ['Countdown', 'Length of the start countdown, in ticks (100 ticks = 1 second).'],
+  carColRadius: ['Body radius', 'Half-width of the car collision capsule (m) — how fat the hitbox is.'],
+  carColOffset: ['Body length', 'How far the two capsule ends sit fore/aft of centre (m).'],
+  carHalfWidth: ['Hug half-width', 'Car half-width used when measuring wall-hug zone distance (m).'],
+  mass: ['Mass', 'Car weight (kg). Heavier = more inertia, lazier direction changes.'],
+  gravity: ['Gravity', 'm/s². Combined with mass it sets how hard the tyres press the road.'],
+  Iz: ['Yaw inertia', 'Resistance to spinning (kg·m²). Higher = slower to rotate or spin out.'],
+  lf: ['CG → front', 'Distance from centre of mass to the front axle (m).'],
+  lr: ['CG → rear', 'Distance from centre of mass to the rear axle (m). lf > lr adds stabilising understeer.'],
+  hcg: ['CG height', 'Centre-of-mass height (m). Higher = more weight shifts under braking/accel.'],
+  engineForce: ['Engine power', 'Drive force at full throttle (N). Bigger = harder acceleration.'],
+  topSpeed: ['Top speed', 'Soft max speed (m/s) — drag climbs steeply past it. Multiply by ~3.6 for km/h (52 ≈ 187 km/h).'],
+  brakeForce: ['Brake power', 'Total braking force (N).'],
+  brakeBias: ['Brake bias', 'Share of braking on the FRONT (0.62 = 62% front). Lower sends more to the rear, so the rear locks and rotates the car more.'],
+  brakeRotation: ['Brake rotation', 'How much a locked rear under braking spins the car into the corner (trail-braking rotation). 0 = off, higher = the rear steps out sooner.'],
+  reverseForce: ['Reverse power', 'Drive force when reversing (N).'],
+  reverseTop: ['Reverse top', 'Maximum reverse speed (m/s).'],
+  reverseThresh: ['Reverse point', 'Below this forward speed, holding brake shifts into reverse (m/s).'],
+  rollK: ['Rolling drag', 'Rolling resistance — bleeds speed steadily even when coasting.'],
+  dragK: ['Aero drag', 'Air resistance (grows with speed²). With engine power it sets the natural top speed.'],
+  baseMu: ['Overall grip', 'Base tyre friction on asphalt. Higher = more grip everywhere (braking, cornering, accel).'],
+  gripFront: ['Front grip', 'Front-tyre grip multiplier. Below 1 = more understeer (nose washes wide); above 1 = sharper turn-in.'],
+  gripRear: ['Rear grip', 'Rear-tyre grip multiplier. Below 1 = looser rear (oversteer, spins easily); above 1 = more planted.'],
+  corneringStiff: ['Tyre sharpness', 'How hard tyres bite per degree of slip. Higher = sharper, twitchier turn-in.'],
+  lowSpeedRef: ['Low-speed fade', 'Below this speed (m/s) tyre forces fade out, killing jitter at a near-standstill.'],
+  yawDamp: ['Yaw damping', 'Resists rotation (N·m·s/rad). Higher = more stable and harder to drift/spin.'],
+  maxSteerAngle: ['Max steer', 'Maximum front-wheel angle at low speed (rad; 0.5 ≈ 29°).'],
+  steerSpeedK: ['Steer falloff', 'How much the steering lock shrinks as speed rises (for high-speed stability).'],
+  steerRate: ['Steer-in rate', 'How fast steering winds on (1/s). Lower feels heavier/slower.'],
+  recenterRate: ['Recentre rate', 'How fast the wheel returns to centre when you let go (1/s).'],
+  counterSteerBoost: ['Counter-steer', 'Extra steering lock handed back during a big slide so you can catch it.'],
+  assistMinSlip: ['Catch starts', 'Slide angle (rad) where the auto-catch assist begins (0.45 ≈ 26°).'],
+  assistFullSlip: ['Catch full', 'Slide angle (rad) where the auto-catch assist is fully active (1.05 ≈ 60°).'],
+  assistYaw: ['Catch strength', 'Strength of the assist that straightens out big slides.'],
+  assistVRef: ['Catch speed ref', 'Speed (m/s) at which the catch assist reaches full strength.'],
+  susStiff: ['Susp. stiffness', 'Visual-only suspension spring rate (body lean/dive). No effect on grip.'],
+  susDamp: ['Susp. damping', 'Visual-only suspension damping. Higher = less bounce.'],
+  susPitchGain: ['Dive / squat', 'How much the body pitches forward braking / back on power (visual).'],
+  susRollGain: ['Body roll', 'How much the body leans in corners (visual).'],
+  susHeaveGain: ['Heave', 'How much the body bobs vertically under load (visual).'],
+  boostAccel: ['Boost pad', 'Forward acceleration added by booster pads (m/s²).'],
+  wallHalf: ['Wall thickness', 'Half-thickness of walls for collision (m); the car stops at the visible face.'],
+  wallRestitution: ['Wall bounce', 'How bouncy walls are (0 = dead, no rebound).'],
+  wallFrictionK: ['Wall scrub', 'How much speed you scrub off when scraping along a wall.'],
+  wallYawDamp: ['Wall yaw damp', 'How much wall contact kills your spin (lower = kills more).'],
+  ersCap: ['ERS capacity', 'Maximum stored ERS — the size of the boost bar.'],
+  ersPassivePower: ['ERS power', 'Extra engine power at a full bar (0.24 = +24%).'],
+  ersPassiveTop: ['ERS top speed', 'Extra top speed at a full bar (0.13 = +13%).'],
+  ersPassiveGrip: ['ERS grip', 'Extra tyre grip at a full bar (0.10 = +10%, front and rear).'],
+  ersDecay: ['ERS decay', 'How fast the ERS bar bleeds away (per second).'],
+  zoneBand: ['Hug band', 'Distance from a wall (m) within which hugging charges ERS.'],
+  zoneMax: ['Max hug award', 'ERS charge (% of bar) earned by a perfect wall-hug pass.'],
+  zoneCurveExp: ['Hug falloff', 'How steeply the reward drops as you move off the wall (higher = must be closer).'],
+  zoneSpeedRef: ['Hug speed ref', 'Speed (m/s) for full hug credit — slower passes pay less.'],
+  zonePerfect: ['Perfect dist', 'Closest-approach distance (m) that earns a PERFECT rating.'],
+  zoneClose: ['Close dist', 'Closest-approach distance (m) that earns a CLOSE rating.'],
+};
+const SURF_META = {
+  grip: ['Grip', 'Grip multiplier on this surface (1 = full asphalt grip).'],
+  power: ['Power', 'Engine power multiplier on this surface.'],
+  top: ['Top speed', 'Top-speed multiplier on this surface (1 = full; lower = capped slower here).'],
+};
+
+function tuneRow(label, get, set, help) {
   const def = get();
   const row = document.createElement('label');
   row.className = 'tune-row';
   const span = document.createElement('span');
   span.textContent = label;
+  if (help) span.title = help;
   const range = document.createElement('input');
   range.type = 'range';
   const span3 = (Math.abs(def) || 1) * 3;
@@ -317,7 +385,14 @@ function tuneRow(label, get, set) {
   range.oninput = () => apply(range.value, true);
   num.oninput = () => apply(num.value, false);
   row.append(span, range, num);
-  return row;
+  if (!help) return row;
+  const wrap = document.createElement('div');
+  wrap.className = 'tune-rowwrap';
+  const desc = document.createElement('div');
+  desc.className = 'tune-help';
+  desc.textContent = help;
+  wrap.append(row, desc);
+  return wrap;
 }
 
 function buildTuningPanel() {
@@ -330,7 +405,8 @@ function buildTuningPanel() {
     det.appendChild(sum);
     for (const k of keys) {
       if (typeof TUNING[k] !== 'number') continue;
-      det.appendChild(tuneRow(k, () => TUNING[k], (v) => { TUNING[k] = v; }));
+      const meta = TUNE_META[k] || [k, ''];
+      det.appendChild(tuneRow(meta[0], () => TUNING[k], (v) => { TUNING[k] = v; }, meta[1]));
     }
     body.appendChild(det);
   }
@@ -345,9 +421,10 @@ function buildTuningPanel() {
     sub.textContent = s;
     det.appendChild(sub);
     for (const prop of ['grip', 'power', 'top']) {
-      det.appendChild(tuneRow(prop,
+      const meta = SURF_META[prop];
+      det.appendChild(tuneRow(meta[0],
         () => TUNING.surfaces[s][prop],
-        (v) => { TUNING.surfaces[s][prop] = v; }));
+        (v) => { TUNING.surfaces[s][prop] = v; }, meta[1]));
     }
   }
   body.appendChild(det);
