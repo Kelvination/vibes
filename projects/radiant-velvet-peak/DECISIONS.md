@@ -5,11 +5,13 @@ get silently reverted by later work. **If you change one of these, update the
 entry here (and add new ones).** Newest first.
 
 ## Camera
-- **Chase camera is world-fixed orientation, not heading-locked.** It follows
-  the car's position but always looks down +Z; it must NOT rotate/orbit with the
-  car's heading. The old heading-locked orbit cam caused motion sickness on
-  twisty tracks. (`render.js` `updateChase` / `snapCamera`, chase branch.)
-  Hood cam still uses heading (first-person, expected).
+- **Chase camera follows the car's heading, smoothly damped** (back ~10.5, height
+  5.2, lookAt ~7 ahead, `k = 1 - exp(-dt*7)`). This is the intended feel — keep
+  the damping so it tracks turns without whipping. Do NOT make it a fully
+  world-fixed/non-rotating camera, and do NOT remove the smoothing (a hard
+  heading-lock with no damping is the nauseating version that got reverted).
+  (`render.js` `updateChase` / `snapCamera`, chase branch.) Hood cam is
+  first-person and uses heading directly.
 
 ## ERS
 - **ERS is PASSIVE, not a deploy button.** The stored bar continuously scales
